@@ -9,6 +9,8 @@ import ordersRoutes from "./routes/orders.routes.js";
 export function createApp() {
   const app = express();
 
+  console.log("CORS_ORIGIN =", ENV.CORS_ORIGIN)
+
   // Allows the frontend (5173) to call the backend (5000) in the browser
   app.use(cors({ origin: ENV.CORS_ORIGIN }));
   app.use(express.json());

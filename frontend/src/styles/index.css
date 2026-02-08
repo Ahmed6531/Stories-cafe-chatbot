@@ -1,0 +1,26 @@
+.app-shell{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+.sidebar{border-right:1px solid #e9e9e9;padding:18px;display:flex;flex-direction:column;justify-content:space-between;background:#fff}
+.side-nav{display:flex;flex-direction:column;gap:10px}
+.side-link{padding:10px 12px;border-radius:12px;font-weight:700}
+.side-link.active{background:rgba(0,112,74,.10);color:#00704a}
+.side-link.past-orders-btn{background:rgba(0,112,74,.10);color:#00704a;border:1px solid rgba(0,112,74,.2);transition:all 0.3s ease}
+.side-link.past-orders-btn:hover{background:rgba(0,112,74,.15);border-color:rgba(0,112,74,.3)}
+.faux-link{background:transparent;border:0;text-align:left;cursor:pointer}
+
+.main{display:flex;flex-direction:column}
+.topbar{padding:14px 18px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e9e9e9;background:#fff}
+.logo-box{background:#fff;border:1px solid #e9e9e9;border-radius:14px;padding:8px 12px;display:flex;align-items:center;min-height:44px}
+.logo-img{height:28px;width:auto}
+
+.top-pill{border:2px solid #00704a;background:#fff;color:#00704a;border-radius:999px;padding:10px 14px;font-weight:900;cursor:pointer}
+.top-pill.auth{background:#00704a;color:#fff;border-color:#00704a;margin-right:12px}
+.top-pill.auth:hover{background:#147d56;border-color:#147d56}
+.cart-badge{display:inline-grid;place-items:center;min-width:22px;height:22px;border-radius:999px;background:#00704a;color:#fff;font-size:12px;margin-left:8px;padding:0 6px}
+
+.breadcrumb{padding:10px 18px;border-bottom:1px solid #e9e9e9;background:#fff;color:#79747e;font-weight:700}
+.crumb-link{color:#79747e;text-decoration:none;transition:all 0.2s ease;padding:2px 4px;border-radius:4px}
+.crumb-link:hover{color:#00704a;background:rgba(0,112,74,.08);text-decoration:underline}
+.crumb-sep{margin:0 8px;opacity:.7}
+.page{padding:18px}
+.auth-btn{width:100%;padding:12px 14px;border:0;border-radius:12px;background:#00704a;color:#fff;font-weight:900;cursor:pointer}
+.auth-btn:hover{background:#147d56}
