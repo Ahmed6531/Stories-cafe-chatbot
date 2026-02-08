@@ -1,18 +1,163 @@
 import { MenuItem } from "../models/MenuItem.js";
+import { VariantGroup } from "../models/VariantGroup.js";
 
+// GET /api/menu - Returns all menu items with minimal data
 export async function getMenu(req, res) {
   try {
     console.log("📥 GET /menu request received");
 
-    const items = await MenuItem.find({ isAvailable: true });
+    // Only return essential fields, exclude variantGroups from list view
+    const items = await MenuItem.find({ isAvailable: true })
+      .select(
+        "name slug image category description basePrice isAvailable isFeatured",
+      )
+      .sort({ category: 1, name: 1 });
 
-    console.log(`📤 Returning ${items.length} menu items`);
-    res.status(200).json({ items });
+    console.log(`📤 Returning ${items.length} menu items (minimal data)`);
+    res.status(200).json({
+      success: true,
+      count: items.length,
+      items,
+    });
   } catch (error) {
     console.error("❌ Failed to fetch menu:", error.message);
-
     res.status(500).json({
+      success: false,
       error: "Failed to load menu. Please try again later.",
+    });
+  }
+}
+
+// GET /api/menu/:slug - Returns single menu item with full variant data
+export async function getMenuItem(req, res) {
+  try {
+    const { slug } = req.params;
+    console.log(`📥 GET /menu/${slug} request received`);
+
+    // Find the menu item
+    const menuItem = await MenuItem.findOne({
+      slug,
+      isAvailable: true,
+    });
+
+    if (!menuItem) {
+      return res.status(404).json({
+        success: false,
+        error: "Menu item not found",
+      });
+    }
+
+    // If item has no variant groups, return it as is
+    if (!menuItem.variantGroups || menuItem.variantGroups.length === 0) {
+      return res.status(200).json({
+        success: true,
+        item: menuItem.toObject(),
+      });
+    }
+
+    // Fetch all variant groups referenced by this item
+    const variantGroups = await VariantGroup.find({
+      groupId: { $in: menuItem.variantGroups },
+    });
+
+    // Map variant groups to ensure they're in the correct order
+    const orderedVariantGroups = menuItem.variantGroups
+      .map((groupId) => {
+        const group = variantGroups.find((g) => g.groupId === groupId);
+        return group ? group.toObject() : null;
+      })
+      .filter((group) => group !== null); // Remove any null groups (if reference is invalid)
+
+    // Create the response object with resolved variants
+    const itemWithVariants = {
+      ...menuItem.toObject(),
+      variants: orderedVariantGroups,
+    };
+
+    // Remove the variantGroups array since we're using the resolved variants
+    delete itemWithVariants.variantGroups;
+    if (itemWithVariants.variantGroupOrder) {
+      delete itemWithVariants.variantGroupOrder;
+    }
+
+    console.log(
+      `📤 Returning menu item "${menuItem.name}" with ${orderedVariantGroups.length} variant groups`,
+    );
+    res.status(200).json({
+      success: true,
+      item: itemWithVariants,
+    });
+  } catch (error) {
+    console.error(
+      `❌ Failed to fetch menu item ${req.params.slug}:`,
+      error.message,
+    );
+    res.status(500).json({
+      success: false,
+      error: "Failed to load menu item. Please try again later.",
+    });
+  }
+}
+
+// Optional: GET /api/menu/featured - Returns featured items with full data
+export async function getFeaturedMenu(req, res) {
+  try {
+    console.log("📥 GET /menu/featured request received");
+
+    // Find featured items
+    const featuredItems = await MenuItem.find({
+      isFeatured: true,
+      isAvailable: true,
+    });
+
+    // For each featured item, resolve its variants
+    const itemsWithVariants = await Promise.all(
+      featuredItems.map(async (item) => {
+        if (!item.variantGroups || item.variantGroups.length === 0) {
+          return {
+            ...item.toObject(),
+            variants: [],
+          };
+        }
+
+        const variantGroups = await VariantGroup.find({
+          groupId: { $in: item.variantGroups },
+        });
+
+        const orderedVariantGroups = item.variantGroups
+          .map((groupId) => {
+            const group = variantGroups.find((g) => g.groupId === groupId);
+            return group ? group.toObject() : null;
+          })
+          .filter((group) => group !== null);
+
+        const itemWithVariants = {
+          ...item.toObject(),
+          variants: orderedVariantGroups,
+        };
+
+        delete itemWithVariants.variantGroups;
+        if (itemWithVariants.variantGroupOrder) {
+          delete itemWithVariants.variantGroupOrder;
+        }
+
+        return itemWithVariants;
+      }),
+    );
+
+    console.log(
+      `📤 Returning ${itemsWithVariants.length} featured items with full data`,
+    );
+    res.status(200).json({
+      success: true,
+      count: itemsWithVariants.length,
+      items: itemsWithVariants,
+    });
+  } catch (error) {
+    console.error("❌ Failed to fetch featured menu:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to load featured menu. Please try again later.",
     });
   }
 }

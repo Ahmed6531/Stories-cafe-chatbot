@@ -1,43 +1,248 @@
 [
   {
-    "slug": "espresso",
-    "name": "Espresso",
-    "description": "Single shot espresso.",
-    "basePrice": 2.5,
-    "category": "coffee",
-    "options": [
-      { "label": "Single", "priceDelta": 0 },
-      { "label": "Double", "priceDelta": 1.0 }
-    ],
-    "isFeatured": true,
-    "isAvailable": true
-  },
-  {
-    "slug": "caffe-latte",
-    "name": "Caffè Latte",
-    "description": "Espresso with steamed milk.",
-    "basePrice": 3.5,
-    "category": "coffee",
-    "options": [
-      { "label": "Small", "priceDelta": 0 },
-      { "label": "Medium", "priceDelta": 0.5 },
-      { "label": "Large", "priceDelta": 1.0 },
-      { "label": "Oat milk", "priceDelta": 0.75 }
-    ],
-    "isFeatured": true,
-    "isAvailable": true
-  },
-  {
-    "slug": "iced-americano",
-    "name": "Iced Americano",
-    "description": "Cold espresso with water and ice.",
-    "basePrice": 3.0,
-    "category": "coffee",
-    "options": [
-      { "label": "Medium", "priceDelta": 0 },
-      { "label": "Large", "priceDelta": 0.5 }
-    ],
+    "name": "Frozen Yogurt Combo",
+    "slug": "frozen-yogurt-combo",
+    "image": "/images/frozen-yogurt-combo.png",
+    "category": "Yogurts",
+    "description": "A refreshing, tangy dessert that combines the flavors and textures of ice cream and sherbet. With free toppings!",
+    "basePrice": 590000,
+    "isAvailable": true,
     "isFeatured": false,
-    "isAvailable": true
+    "variantGroups": ["yogurt-size", "yogurt-flavors-standard"]
+  },
+  {
+    "name": "Frozen Yogurt",
+    "slug": "frozen-yogurt",
+    "image": "/images/frozen-yogurt.png",
+    "category": "Yogurts",
+    "description": "A refreshing, tangy dessert that combines the flavors and textures of ice cream and sherbet. With no toppings!",
+    "basePrice": 500000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["yogurt-size", "yogurt-flavors-standard"]
+  },
+  {
+    "name": "Pistachio Frozen Yogurt",
+    "slug": "pistachio-frozen-yogurt",
+    "image": "/images/pistachio-frozen-yogurt.png",
+    "category": "Yogurts",
+    "description": "A refreshing, tangy dessert that combines the flavors and textures of ice cream and sherbet. With free toppings!",
+    "basePrice": 750000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["yogurt-size", "yogurt-flavors-pistachio"]
+  },
+  {
+    "name": "Espresso",
+    "slug": "espresso",
+    "image": "/images/espresso.png",
+    "category": "Coffee",
+    "description": "Our smooth signature Espresso Roast with rich flavor and caramelly sweetness is at the very heart of everything we do.",
+    "basePrice": 270000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["coffee-espresso-options", "coffee-milk-options"]
+  },
+  {
+    "name": "Flat White",
+    "slug": "flat-white",
+    "image": "/images/flat-white.png",
+    "category": "Coffee",
+    "description": "Smooth ristretto shots of espresso get the perfect amount of steamed whole milk to create a not-too-strong, not-too-creamy, just-right flavor.",
+    "basePrice": 330000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options-with-large",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "Hot Double Shot",
+    "slug": "hot-double-shot",
+    "image": "/images/hot-double-shot.png",
+    "category": "Coffee",
+    "description": "A delicious and bold hot version of the favorite Double Shot Iced Shaken.",
+    "basePrice": 380000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "Caramel Macchiato",
+    "slug": "caramel-macchiato",
+    "image": "/images/caramel-macchiato.png",
+    "category": "Coffee",
+    "description": "We combine our rich, full-bodied espresso with vanilla-flavored syrup and milk, then top it off with a caramel drizzle for an oh-so-sweet finish.",
+    "basePrice": 380000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "Latte",
+    "slug": "latte",
+    "image": "/images/latte.png",
+    "category": "Coffee",
+    "description": "A perfect milk-forward warm-up!",
+    "basePrice": 330000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "Hot Chocolate",
+    "slug": "hot-chocolate",
+    "image": "/images/hot-chocolate.png",
+    "category": "Coffee",
+    "description": "Steamed milk with chocolate-flavored syrups. Topped with sweetened whipped cream and chocolate-flavored drizzle. A timeless classic made to sweeten your spirits.",
+    "basePrice": 350000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "Cappuccino",
+    "slug": "cappuccino",
+    "image": "/images/cappuccino.png",
+    "category": "Coffee",
+    "description": "Dark, rich espresso lies in wait under a smoothed and stretched layer of thick milk foam. An alchemy of barista artistry and craft.",
+    "basePrice": 330000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "Mocha",
+    "slug": "mocha",
+    "image": "/images/mocha.png",
+    "category": "Coffee",
+    "description": "Our rich, full-bodied espresso combined with bittersweet mocha sauce and steamed milk, then topped with sweetened whipped cream. The classic coffee drink that always sweetly satisfies.",
+    "basePrice": 380000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "White Mocha",
+    "slug": "white-mocha",
+    "image": "/images/white-mocha.png",
+    "category": "Coffee",
+    "description": "Our signature espresso meets white chocolate sauce and steamed milk, and then is finished off with sweetened whipped cream to create this supreme white chocolate delight.",
+    "basePrice": 350000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "Matcha Latte",
+    "slug": "matcha-latte",
+    "image": "/images/matcha-latte.png",
+    "category": "Coffee",
+    "description": "Smooth and creamy matcha sweetened just right and served with steamed milk. This favorite will transport your senses to pure green delight.",
+    "basePrice": 330000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "matcha-size",
+      "coffee-espresso-options",
+      "coffee-milk-options-with-large",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "Double Espresso Macchiato",
+    "slug": "double-espresso-macchiato",
+    "image": "/images/double-espresso-macchiato.png",
+    "category": "Coffee",
+    "description": "Our rich espresso marked with dollop of steamed milk and foam. A European-style classic.",
+    "basePrice": 340000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["coffee-espresso-options", "coffee-milk-options"]
+  },
+  {
+    "name": "Double Espresso",
+    "slug": "double-espresso",
+    "image": "/images/double-espresso.png",
+    "category": "Coffee",
+    "description": "Our smooth signature Espresso Roast with rich flavor and caramelly sweetness is at the very heart of everything we do.",
+    "basePrice": 340000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["coffee-espresso-options", "coffee-milk-options"]
+  },
+  {
+    "name": "Espresso Macchiato",
+    "slug": "espresso-macchiato",
+    "image": "/images/espresso-macchiato.png",
+    "category": "Coffee",
+    "description": "Our rich espresso marked with dollop of steamed milk and foam. A European-style classic.",
+    "basePrice": 270000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["coffee-espresso-options", "coffee-milk-options"]
+  },
+  {
+    "name": "Filtered Coffee",
+    "slug": "filtered-coffee",
+    "image": "/images/filtered-coffee.png",
+    "category": "Coffee",
+    "description": "Iconic Stories coffee that's smooth, balanced and rich in flavor – perfect for every day.",
+    "basePrice": 270000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["coffee-size-with-large", "coffee-milk-options-americano"]
+  },
+  {
+    "name": "Americano",
+    "slug": "americano",
+    "image": "/images/americano.png",
+    "category": "Coffee",
+    "description": "Espresso shots topped with hot water create a light layer of crema culminating in this wonderfully rich cup with depth and nuance.",
+    "basePrice": 300000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-with-large",
+      "coffee-espresso-options",
+      "coffee-milk-options-americano"
+    ]
   }
 ]
