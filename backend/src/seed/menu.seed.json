@@ -1,5 +1,6 @@
 [
   {
+    "id": 1,
     "name": "Frozen Yogurt Combo",
     "slug": "frozen-yogurt-combo",
     "image": "/images/frozen-yogurt-combo.png",
@@ -15,6 +16,7 @@
     ]
   },
   {
+    "id": 2,
     "slug": "frozen-yogurt",
     "name": "Frozen Yogurt",
     "image": "/images/frozen-yogurt.png",
@@ -26,6 +28,7 @@
     "variantGroups": ["yogurt-size", "yogurt-flavors-standard"]
   },
   {
+    "id": 3,
     "name": "Pistachio Frozen Yogurt",
     "slug": "pistachio-frozen-yogurt",
     "image": "/images/pistachio-frozen-yogurt.png",
@@ -37,6 +40,7 @@
     "variantGroups": ["yogurt-size", "yogurt-flavors-pistachio"]
   },
   {
+    "id": 4,
     "name": "Espresso",
     "slug": "espresso",
     "image": "/images/espresso.png",
@@ -48,6 +52,7 @@
     "variantGroups": ["coffee-espresso-options", "coffee-milk-options"]
   },
   {
+    "id": 5,
     "name": "Flat White",
     "slug": "flat-white",
     "image": "/images/flat-white.png",
@@ -64,6 +69,7 @@
     ]
   },
   {
+    "id": 6,
     "name": "Hot Double Shot",
     "slug": "hot-double-shot",
     "image": "/images/hot-double-shot.png",
@@ -80,6 +86,7 @@
     ]
   },
   {
+    "id": 7,
     "name": "Caramel Macchiato",
     "slug": "caramel-macchiato",
     "image": "/images/caramel-macchiato.png",
@@ -96,6 +103,7 @@
     ]
   },
   {
+    "id": 8,
     "name": "Latte",
     "slug": "latte",
     "image": "/images/latte.png",
@@ -112,6 +120,7 @@
     ]
   },
   {
+    "id": 9,
     "name": "Hot Chocolate",
     "slug": "hot-chocolate",
     "image": "/images/hot-chocolate.png",
@@ -127,6 +136,7 @@
     ]
   },
   {
+    "id": 10,
     "name": "Cappuccino",
     "slug": "cappuccino",
     "image": "/images/cappuccino.png",
@@ -143,6 +153,7 @@
     ]
   },
   {
+    "id": 11,
     "name": "Mocha",
     "slug": "mocha",
     "image": "/images/mocha.png",
@@ -159,6 +170,7 @@
     ]
   },
   {
+    "id": 12,
     "name": "White Mocha",
     "slug": "white-mocha",
     "image": "/images/white-mocha.png",
@@ -175,6 +187,7 @@
     ]
   },
   {
+    "id": 13,
     "name": "Matcha Latte",
     "slug": "matcha-latte",
     "image": "/images/matcha-latte.png",
@@ -191,6 +204,7 @@
     ]
   },
   {
+    "id": 14,
     "name": "Double Espresso Macchiato",
     "slug": "double-espresso-macchiato",
     "image": "/images/double-espresso-macchiato.png",
@@ -202,6 +216,7 @@
     "variantGroups": ["coffee-espresso-options", "coffee-milk-options"]
   },
   {
+    "id": 15,
     "name": "Double Espresso",
     "slug": "double-espresso",
     "image": "/images/double-espresso.png",
@@ -213,6 +228,7 @@
     "variantGroups": ["coffee-espresso-options", "coffee-milk-options"]
   },
   {
+    "id": 16,
     "name": "Espresso Macchiato",
     "slug": "espresso-macchiato",
     "image": "/images/espresso-macchiato.png",
@@ -224,6 +240,7 @@
     "variantGroups": ["coffee-espresso-options", "coffee-milk-options"]
   },
   {
+    "id": 17,
     "name": "Filtered Coffee",
     "slug": "filtered-coffee",
     "image": "/images/filtered-coffee.png",
@@ -235,6 +252,7 @@
     "variantGroups": ["coffee-size-with-large", "coffee-milk-options-americano"]
   },
   {
+    "id": 18,
     "name": "Americano",
     "slug": "americano",
     "image": "/images/americano.png",
@@ -250,6 +268,7 @@
     ]
   },
   {
+    "id": 19,
     "slug": "earl-grey",
     "name": "Earl Grey",
     "image": "/images/earl-grey.png",
@@ -261,6 +280,7 @@
     "variantGroups": ["tea-size-hot", "tea-extra-bag"]
   },
   {
+    "id": 20,
     "slug": "english-breakfast",
     "name": "English Breakfast",
     "image": "/images/english-breakfast.png",
@@ -272,6 +292,7 @@
     "variantGroups": ["tea-size-hot", "tea-extra-bag"]
   },
   {
+    "id": 21,
     "slug": "green-tea",
     "name": "Green Tea",
     "image": "/images/green-tea.png",
@@ -283,6 +304,7 @@
     "variantGroups": ["tea-size-hot", "tea-extra-bag"]
   },
   {
+    "id": 22,
     "slug": "mint-tea",
     "name": "Mint Tea",
     "image": "/images/mint-tea.png",
@@ -294,6 +316,7 @@
     "variantGroups": ["tea-size-hot", "tea-extra-bag"]
   },
   {
+    "id": 23,
     "slug": "iced-peach-tea",
     "name": "Iced Peach Tea",
     "image": "/images/iced-peach-tea.png",
@@ -310,6 +333,7 @@
     ]
   },
   {
+    "id": 24,
     "slug": "thyme-croissant",
     "name": "Thyme Croissant",
     "image": "/images/thyme-croissant.png",
@@ -321,6 +345,7 @@
     "variantGroups": ["pastry-warming-options"]
   },
   {
+    "id": 25,
     "slug": "chocolate-croissant",
     "name": "Chocolate Croissant",
     "image": "/images/chocolate-croissant.png",
@@ -332,6 +357,7 @@
     "variantGroups": ["pastry-warming-options"]
   },
   {
+    "id": 26,
     "slug": "cheese-croissant",
     "name": "Cheese Croissant",
     "image": "/images/cheese-croissant.png",
@@ -343,6 +369,7 @@
     "variantGroups": ["pastry-warming-options"]
   },
   {
+    "id": 27,
     "slug": "double-chocolate-chip-walnut",
     "name": "Double Chocolate Chip Walnut",
     "image": "/images/double-chocolate-chip-walnut.png",
@@ -354,6 +381,7 @@
     "variantGroups": ["pastry-warming-options"]
   },
   {
+    "id": 28,
     "slug": "cinnamon-rolls",
     "name": "Cinnamon Rolls",
     "image": "/images/cinnamon-rolls.png",
@@ -365,6 +393,7 @@
     "variantGroups": []
   },
   {
+    "id": 29,
     "slug": "lazy-cake",
     "name": "Lazy Cake",
     "image": "/images/lazy-cake.png",
@@ -376,6 +405,7 @@
     "variantGroups": []
   },
   {
+    "id": 30,
     "slug": "nutella-roll",
     "name": "Nutella Roll",
     "image": "/images/nutella-roll.jpg",
@@ -387,6 +417,7 @@
     "variantGroups": []
   },
   {
+    "id": 31,
     "slug": "strawberry-dried-drops",
     "name": "Strawberry Dried Drops",
     "image": "/images/strawberry-dried-drops.png",
@@ -398,6 +429,7 @@
     "variantGroups": []
   },
   {
+    "id": 32,
     "slug": "steamed-milk",
     "name": "Steamed Milk",
     "image": "/images/steamed-milk.png",
@@ -414,6 +446,7 @@
     ]
   },
   {
+    "id": 33,
     "slug": "iced-mocha",
     "name": "Iced Mocha",
     "image": "/images/iced-mocha.png",
@@ -430,6 +463,7 @@
     ]
   },
   {
+    "id": 34,
     "slug": "hazelnut-coffee-frap",
     "name": "Hazelnut Coffee Frap",
     "image": "/images/hazelnut-coffee-frap.png",
@@ -446,6 +480,7 @@
     ]
   },
   {
+    "id": 35,
     "slug": "coffee-frap",
     "name": "Coffee Frap",
     "image": "/images/coffee-frap.png",
@@ -462,6 +497,7 @@
     ]
   },
   {
+    "id": 36,
     "slug": "vanilla-coffee-frap",
     "name": "Vanilla Coffee Frap",
     "image": "/images/vanilla-coffee-frap.png",
@@ -478,6 +514,7 @@
     ]
   },
   {
+    "id": 37,
     "slug": "strawberry-cream-frap",
     "name": "Strawberry Cream Frap",
     "image": "/images/strawberry-cream-frap.png",
@@ -494,6 +531,7 @@
     ]
   },
   {
+    "id": 38,
     "slug": "matcha-cream-frap",
     "name": "Matcha Cream Frap",
     "image": "/images/matcha-cream-frap.png",
@@ -510,6 +548,7 @@
     ]
   },
   {
+    "id": 39,
     "slug": "vanilla-cream-frap",
     "name": "Vanilla Cream Frap",
     "image": "/images/vanilla-cream-frap.png",
@@ -526,6 +565,7 @@
     ]
   },
   {
+    "id": 40,
     "slug": "caramel-cream-frap",
     "name": "Caramel Cream Frap",
     "image": "/images/caramel-cream-frap.png",
@@ -542,6 +582,7 @@
     ]
   },
   {
+    "id": 41,
     "slug": "chocolate-cream-frap",
     "name": "Chocolate Cream Frap",
     "image": "/images/choco-cream-frap.png",
@@ -558,6 +599,7 @@
     ]
   },
   {
+    "id": 42,
     "slug": "white-mocha-frap",
     "name": "White Mocha Frap",
     "image": "/images/white-mocha-frap.png",
@@ -574,6 +616,7 @@
     ]
   },
   {
+    "id": 43,
     "slug": "white-mocha-cream-frap",
     "name": "White Mocha Cream Frap",
     "image": "/images/white-mocha-cream-frap.png",
@@ -590,6 +633,7 @@
     ]
   },
   {
+    "id": 44,
     "slug": "iced-chocolate",
     "name": "Iced Chocolate",
     "image": "/images/iced-chocolate.png",
@@ -606,6 +650,7 @@
     ]
   },
   {
+    "id": 45,
     "slug": "double-shot-shaken",
     "name": "Double Shot Shaken",
     "image": "/images/double-shot-shaken.png",
@@ -622,6 +667,7 @@
     ]
   },
   {
+    "id": 46,
     "slug": "iced-matcha",
     "name": "Iced Matcha",
     "image": "/images/iced-matcha.png",
@@ -638,6 +684,7 @@
     ]
   },
   {
+    "id": 47,
     "slug": "iced-americano",
     "name": "Iced Americano",
     "image": "/images/iced-americano.png",
@@ -654,6 +701,7 @@
     ]
   },
   {
+    "id": 48,
     "slug": "bluenade",
     "name": "Bluenade",
     "image": "/images/bluenade.png",
@@ -669,6 +717,7 @@
     ]
   },
   {
+    "id": 49,
     "slug": "caramel-frap",
     "name": "Caramel Frap",
     "image": "/images/caramel-frap.png",
@@ -685,6 +734,7 @@
     ]
   },
   {
+    "id": 50,
     "slug": "mocha-frap",
     "name": "Mocha Frap",
     "image": "/images/mocha-frap.png",
@@ -701,6 +751,7 @@
     ]
   },
   {
+    "id": 51,
     "slug": "espresso-frap",
     "name": "Espresso Frap",
     "image": "/images/espresso-frap.png",
@@ -717,6 +768,7 @@
     ]
   },
   {
+    "id": 52,
     "slug": "iced-latte",
     "name": "Iced Latte",
     "image": "/images/iced-latte.png",
@@ -733,6 +785,7 @@
     ]
   },
   {
+    "id": 53,
     "slug": "iced-white-mocha",
     "name": "Iced White Mocha",
     "image": "/images/iced-white-mocha.png",
@@ -749,6 +802,7 @@
     ]
   },
   {
+    "id": 54,
     "slug": "iced-caramel-macchiato",
     "name": "Iced Caramel Macchiato",
     "image": "/images/iced-caramel-macchiato.png",
@@ -765,6 +819,7 @@
     ]
   },
   {
+    "id": 55,
     "slug": "tuna-pasta-salad",
     "name": "Tuna Pasta Salad",
     "image": "/images/tuna-pasta-salad.jpg",
@@ -776,6 +831,7 @@
     "variantGroups": []
   },
   {
+    "id": 56,
     "slug": "rocca-salad",
     "name": "Rocca Salad",
     "image": "/images/rocca-salad.jpg",
@@ -787,6 +843,7 @@
     "variantGroups": []
   },
   {
+    "id": 57,
     "slug": "greek-salad",
     "name": "Greek Salad",
     "image": "/images/greek-salad.jpg",
@@ -798,6 +855,7 @@
     "variantGroups": []
   },
   {
+    "id": 58,
     "slug": "quinoa-salad",
     "name": "Quinoa Salad",
     "image": "/images/quinoa-salad.jpg",
@@ -809,6 +867,7 @@
     "variantGroups": []
   },
   {
+    "id": 59,
     "slug": "rim-sparkling-water",
     "name": "Rim Sparkling Water",
     "image": "/images/rim-sparkling-water.jpg",
@@ -820,6 +879,7 @@
     "variantGroups": ["water-temperature-options"]
   },
   {
+    "id": 60,
     "slug": "rim-330ml",
     "name": "Rim 330ML",
     "image": "/images/rim-330ml.jpg",
@@ -831,6 +891,7 @@
     "variantGroups": ["water-temperature-options"]
   },
   {
+    "id": 61,
     "slug": "san-benedetto-lemon-330ml",
     "name": "San Benedetto Lemon 330ML",
     "image": "/images/san-benedetto-lemon.jpg",
@@ -842,6 +903,7 @@
     "variantGroups": []
   },
   {
+    "id": 62,
     "slug": "san-benedetto-clementine-330",
     "name": "San Benedetto Clementine 330",
     "image": "/images/san-benedetto-clementine.jpg",
@@ -853,6 +915,7 @@
     "variantGroups": []
   },
   {
+    "id": 63,
     "slug": "san-benedetto-glass-250",
     "name": "San Benedetto Glass 250",
     "image": "/images/san-benedetto-glass.jpg",
@@ -864,6 +927,7 @@
     "variantGroups": []
   },
   {
+    "id": 64,
     "slug": "balkis-juice",
     "name": "Balkis Juice",
     "image": "/images/balkis-juice.png",
@@ -875,6 +939,7 @@
     "variantGroups": []
   },
   {
+    "id": 65,
     "slug": "tuna-sub",
     "name": "Tuna Sub",
     "image": "/images/tuna-sub.png",
@@ -891,6 +956,7 @@
     ]
   },
   {
+    "id": 66,
     "slug": "chicken-teriyaki",
     "name": "Chicken Teriyaki",
     "image": "/images/chicken-teriyaki.png",
@@ -907,6 +973,7 @@
     ]
   },
   {
+    "id": 67,
     "slug": "turkey-cheese",
     "name": "Turkey & Cheese",
     "image": "/images/turkey-cheese.png",
@@ -923,6 +990,7 @@
     ]
   },
   {
+    "id": 68,
     "slug": "labneh",
     "name": "Labneh",
     "image": "/images/labneh.png",
@@ -939,6 +1007,7 @@
     ]
   },
   {
+    "id": 69,
     "slug": "halloumi-pesto",
     "name": "Halloumi Pesto",
     "image": "/images/halloumi-pesto.png",
