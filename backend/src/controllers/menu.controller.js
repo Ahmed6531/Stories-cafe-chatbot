@@ -161,3 +161,46 @@ export async function getFeaturedMenu(req, res) {
     });
   }
 }
+// GET /api/menu/category/:category - Returns all menu items by category
+export async function getMenuByCategory(req, res) {
+  try {
+    const { category } = req.params;
+    console.log(`📥 GET /menu/category/${category} request received`);
+
+    // Find all items in this category - only return essential fields
+    const items = await MenuItem.find({
+      category: { $regex: new RegExp(`^${category}$`, "i") },
+      isAvailable: true,
+    })
+      .select(
+        "id name slug image category description basePrice isAvailable isFeatured",
+      )
+      .sort({ name: 1 });
+
+    if (!items || items.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: `No items found in category: ${category}`,
+      });
+    }
+
+    console.log(
+      `📤 Returning ${items.length} items for category "${category}" (minimal data)`,
+    );
+    res.status(200).json({
+      success: true,
+      count: items.length,
+      category: category,
+      items: items,
+    });
+  } catch (error) {
+    console.error(
+      `❌ Failed to fetch menu items by category ${req.params.category}:`,
+      error.message,
+    );
+    res.status(500).json({
+      success: false,
+      error: "Failed to load menu items by category. Please try again later.",
+    });
+  }
+}
