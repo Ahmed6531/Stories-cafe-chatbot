@@ -1,0 +1,104 @@
+import crypto from "crypto";
+import { Cart } from "../models/Cart.js";
+import { MenuItem } from "../models/MenuItem.js";
+
+function makeCartId() {
+  return crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex");
+}
+
+function normalizeOptions(opts) {
+  if (!Array.isArray(opts)) return [];
+  return opts.map(String).sort();
+}
+
+function sameOptions(a, b) {
+  const A = normalizeOptions(a);
+  const B = normalizeOptions(b);
+  if (A.length !== B.length) return false;
+  for (let i = 0; i < A.length; i++) if (A[i] !== B[i]) return false;
+  return true;
+}
+
+async function getOrCreateCart(req) {
+  let cartId = req.get("x-cart-id") || req.query.cartId;
+
+  if (!cartId) {
+    cartId = makeCartId();
+    const cart = await Cart.create({ cartId, items: [] });
+    return { cart, cartId };
+  }
+
+  let cart = await Cart.findOne({ cartId });
+  if (!cart) cart = await Cart.create({ cartId, items: [] });
+
+  return { cart, cartId };
+}
+
+async function buildCartResponse(cart) {
+  // Minimal response for add-to-cart UI (count + items)
+  const ids = cart.items.map((x) => x.menuItemId);
+  const menuItems = await MenuItem.find({ _id: { $in: ids } });
+  const byId = new Map(menuItems.map((m) => [String(m._id), m]));
+
+  const items = cart.items.map((line) => {
+    const menuItem = byId.get(String(line.menuItemId));
+    return {
+      lineId: line._id,
+      menuItemId: line.menuItemId,
+      name: menuItem ? menuItem.name : "Unknown item",
+      qty: line.qty,
+      selectedOptions: normalizeOptions(line.selectedOptions),
+      isAvailable: menuItem ? !!menuItem.isAvailable : false
+    };
+  });
+
+  const count = items.reduce((sum, x) => sum + (x.qty || 0), 0);
+
+  return { cartId: cart.cartId, count, items };
+}
+
+export async function getCart(req, res) {
+  try {
+    const { cart, cartId } = await getOrCreateCart(req);
+    const payload = await buildCartResponse(cart);
+    res.set("x-cart-id", cartId);
+    res.json(payload);
+  } catch {
+    res.status(500).json({ error: "Failed to load cart" });
+  }
+}
+
+export async function addToCart(req, res) {
+  try {
+    const { cart, cartId } = await getOrCreateCart(req);
+
+    const { menuItemId, qty = 1, selectedOptions = [] } = req.body || {};
+    const nQty = Number(qty);
+
+    if (!menuItemId || !Number.isFinite(nQty) || nQty < 1) {
+      return res.status(400).json({ error: "menuItemId and qty >= 1 are required" });
+    }
+
+    const menuItem = await MenuItem.findById(menuItemId);
+    if (!menuItem || !menuItem.isAvailable) {
+      return res.status(400).json({ error: "Menu item not available" });
+    }
+
+    const opts = normalizeOptions(selectedOptions);
+
+    const existing = cart.items.find(
+      (l) => String(l.menuItemId) === String(menuItemId) && sameOptions(l.selectedOptions, opts)
+    );
+
+    if (existing) existing.qty += nQty;
+    else cart.items.push({ menuItemId, qty: nQty, selectedOptions: opts });
+
+    await cart.save();
+
+    const payload = await buildCartResponse(cart);
+    res.set("x-cart-id", cartId);
+    res.status(201).json(payload);
+  } catch {
+    res.status(500).json({ error: "Failed to add to cart" });
+  }
+}
