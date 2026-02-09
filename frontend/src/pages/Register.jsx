@@ -23,10 +23,11 @@ export default function Register() {
     }
     // TODO: Implement actual registration logic
     try {
-      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/auth/register`, {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          name: formData.name,
           email: formData.email,
           password: formData.password,
         }),

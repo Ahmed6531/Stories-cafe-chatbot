@@ -8,6 +8,7 @@ import Success from '../pages/Success.jsx'
 import Login from '../pages/Login.jsx'
 import Register from '../pages/Register.jsx'
 import MenuItemDetails from '../pages/MenuItemDetails.jsx'
+import Dashboard from '../pages/Dashboard.jsx'
 
 // Layout wrapper: Navbar contains sidebar + top header + breadcrumb
 function Layout() {
@@ -25,7 +26,7 @@ export default function AppRoutes() {
         <Route path="/success" element={<Success />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-
+        <Route path="/dashboard" element={<Dashboard />} />
         {/* Item selected page */}
         <Route path="/item/:id" element={<MenuItemDetails />} />
 

@@ -16,7 +16,7 @@ export default function Dashboard() {
       }
 
       try {
-        const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/protected`, {
+        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/protected`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -37,7 +37,7 @@ export default function Dashboard() {
     };
 
     fetchProtected();
-  }, []);
+  }, [navigate]);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
