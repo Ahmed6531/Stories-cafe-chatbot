@@ -39,28 +39,25 @@ export default function Menu() {
   useEffect(() => {
     const loadMenu = async () => {
       try {
-        setLoading(true)
-        const data = await fetchMenu()
-        setItems(data.items)
-        setCategories(data.categories)
-        setError(null)
+        setLoading(true);
+        const data = await fetchMenu(category);
+        setItems(data.items);
+        setCategories(data.categories);
+        setError(null);
       } catch (err) {
-        setError(err.message)
-        console.error(err)
+        setError(err.message);
+        console.error(err);
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    }
+    };
+    loadMenu();
+  }, [category]);
 
-    loadMenu()
-  }, [])
-
-  // Filter items by selected category, skip items missing id or name (should already be filtered in API, but double check)
+  // Items are already filtered by backend
   const filteredItems = useMemo(() => {
-    const validItems = items.filter((i) => i && i.id && i.name)
-    if (!category) return validItems // No category selected = show all
-    return validItems.filter((i) => i.category === category)
-  }, [items, category])
+    return items.filter((i) => i && i.id && i.name);
+  }, [items]);
 
   if (error) {
     return (

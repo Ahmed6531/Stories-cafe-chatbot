@@ -24,29 +24,34 @@ function transformMenuItem(item) {
  * Fetch menu items from backend API
  * @returns {Promise<Object>} Menu data with items and extracted categories
  */
-export async function fetchMenu() {
+export async function fetchMenu(category) {
   try {
-    console.log("👉 Calling GET /menu")
-    const response = await http.get('/menu')
-    console.log("✅ Menu response:", response.data)
-    const { items } = response.data
-
-    // Transform items to frontend format, filter out nulls (skipped items)
-    const transformedItems = items.map(transformMenuItem).filter(Boolean)
-
-    // Extract unique categories from items
+    let itemsUrl = '/menu';
+    if (category) {
+      itemsUrl = `/menu/category/${encodeURIComponent(category)}`;
+    }
+    // Always fetch all categories for the category bar
+    const categoriesResponse = await http.get('/menu');
+    const allItems = categoriesResponse.data.items || [];
     const categoriesSet = new Set(
-      transformedItems.map((item) => item.category).filter(Boolean)
-    )
-    const categories = Array.from(categoriesSet).sort()
+      allItems.map((item) => item.category).filter(Boolean)
+    );
+    const categories = Array.from(categoriesSet).sort();
 
+    // Fetch filtered items if category is selected, else use all
+    let items = allItems;
+    if (category) {
+      const filteredResponse = await http.get(itemsUrl);
+      items = filteredResponse.data.items || [];
+    }
+    const transformedItems = items.map(transformMenuItem).filter(Boolean);
     return {
       items: transformedItems,
       categories,
-    }
+    };
   } catch (error) {
-    console.error('Failed to fetch menu:', error)
-    throw new Error(error.response?.data?.error || 'Failed to load menu')
+    console.error('Failed to fetch menu:', error);
+    throw new Error(error.response?.data?.error || 'Failed to load menu');
   }
 }
 
