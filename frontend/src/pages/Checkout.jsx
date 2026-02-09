@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCart } from '../state/useCart'
@@ -150,3 +151,6 @@ export default function Checkout() {
     </div>
   )
 }
+=======
+
+>>>>>>> loginconfig

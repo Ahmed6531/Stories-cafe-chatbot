@@ -91,4 +91,8 @@ export default function Login() {
       </p>
     </div>
   )
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> loginconfig

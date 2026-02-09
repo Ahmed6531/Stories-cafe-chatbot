@@ -148,4 +148,8 @@ export default function Register() {
       </p>
     </div>
   )
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> loginconfig

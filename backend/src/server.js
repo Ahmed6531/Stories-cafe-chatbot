@@ -2,6 +2,7 @@ import { createApp } from "./app.js";
 import { connectDB } from "./config/db.js";
 import { ENV } from "./config/env.js";
 
+
 async function start() {
   await connectDB();
 
@@ -15,3 +16,5 @@ start().catch((err) => {
   console.error("❌ Server failed to start:", err.message);
   process.exit(1);
 });
+
+
