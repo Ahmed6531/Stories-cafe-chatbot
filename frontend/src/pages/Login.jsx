@@ -6,11 +6,32 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const navigate = useNavigate()
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     // TODO: Implement actual login logic
-    navigate('/')
-  }
+     try {
+      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.token) {
+        // Save JWT to localStorage
+        localStorage.setItem("token", data.token);
+
+        // Navigate to protected page
+        navigate("/dashboard");
+      } else {
+        alert(data.message || "Login failed");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Server error, please try again");
+    }
+  };
 
   return (
     <div className="page-wrap" style={{ maxWidth: '400px', margin: '0 auto' }}>
