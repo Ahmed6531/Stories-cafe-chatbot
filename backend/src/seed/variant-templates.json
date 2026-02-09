@@ -30,7 +30,6 @@
         }
       ]
     },
-
     "yogurt-flavors-standard": {
       "name": "Flavors",
       "description": "Feel free to choose your favorite flavor!",
@@ -75,7 +74,6 @@
         }
       ]
     },
-
     "yogurt-flavors-pistachio": {
       "name": "Flavors",
       "description": "Choose your favorite flavor!",
@@ -106,7 +104,36 @@
         }
       ]
     },
-
+    "yogurt-toppings": {
+      "name": "Toppings",
+      "description": "Choose your toppings!",
+      "isRequired": false,
+      "maxSelections": null,
+      "order": 3,
+      "options": [
+        {
+          "name": "Mango",
+          "description": "Mango topping",
+          "additionalPrice": 120000,
+          "isActive": true,
+          "order": 1
+        },
+        {
+          "name": "Pineapple",
+          "description": "Pineapple topping",
+          "additionalPrice": 120000,
+          "isActive": true,
+          "order": 2
+        },
+        {
+          "name": "Strawberry",
+          "description": "Strawberry topping",
+          "additionalPrice": 120000,
+          "isActive": true,
+          "order": 3
+        }
+      ]
+    },
     "coffee-size-standard": {
       "name": "Choose Size",
       "description": "",
@@ -130,7 +157,6 @@
         }
       ]
     },
-
     "coffee-size-with-large": {
       "name": "Choose Size",
       "description": "",
@@ -161,7 +187,6 @@
         }
       ]
     },
-
     "coffee-espresso-options": {
       "name": "Espresso Options",
       "description": null,
@@ -192,7 +217,6 @@
         }
       ]
     },
-
     "coffee-milk-options": {
       "name": "Milk",
       "description": null,
@@ -251,7 +275,6 @@
         }
       ]
     },
-
     "coffee-milk-options-with-large": {
       "name": "Milk",
       "description": null,
@@ -324,7 +347,6 @@
         }
       ]
     },
-
     "coffee-milk-options-americano": {
       "name": "Milk",
       "description": null,
@@ -397,7 +419,6 @@
         }
       ]
     },
-
     "coffee-add-ons": {
       "name": "Add-ons",
       "description": null,
@@ -484,7 +505,6 @@
         }
       ]
     },
-
     "matcha-size": {
       "name": "Choose Size",
       "description": "",
@@ -512,6 +532,218 @@
           "additionalPrice": 110000,
           "isActive": false,
           "order": 3
+        }
+      ]
+    },
+    "tea-size-hot": {
+      "name": "Choose Size",
+      "description": "",
+      "isRequired": true,
+      "maxSelections": 1,
+      "order": 1,
+      "options": [
+        {
+          "name": "Medium",
+          "description": "Medium",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 1
+        }
+      ]
+    },
+    "tea-size-iced": {
+      "name": "Choose Size",
+      "description": "Choose Size",
+      "isRequired": true,
+      "maxSelections": 1,
+      "order": 1,
+      "options": [
+        {
+          "name": "Small",
+          "description": "Small",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 1
+        },
+        {
+          "name": "Medium",
+          "description": "Medium",
+          "additionalPrice": 50000,
+          "isActive": true,
+          "order": 2
+        },
+        {
+          "name": "Large",
+          "description": "Large",
+          "additionalPrice": 100000,
+          "isActive": false,
+          "order": 3
+        }
+      ]
+    },
+    "tea-extra-bag": {
+      "name": "Tea Bags",
+      "description": null,
+      "isRequired": false,
+      "maxSelections": null,
+      "order": 2,
+      "options": [
+        {
+          "name": "Extra Bag",
+          "description": "bag",
+          "additionalPrice": 50000,
+          "isActive": false,
+          "order": 1
+        }
+      ]
+    },
+    "tea-water-concentration": {
+      "name": "Water Concentration",
+      "description": "Water Concentration",
+      "isRequired": false,
+      "maxSelections": 1,
+      "order": 2,
+      "options": [
+        {
+          "name": "Normal",
+          "description": "Normal",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 1
+        },
+        {
+          "name": "Light",
+          "description": "Light",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 2
+        },
+        {
+          "name": "Extra",
+          "description": "Extra",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 3
+        },
+        {
+          "name": "No water",
+          "description": "No water",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 4
+        }
+      ]
+    },
+    "tea-ice-options": {
+      "name": "Ice",
+      "description": "Ice",
+      "isRequired": false,
+      "maxSelections": 1,
+      "order": 3,
+      "options": [
+        {
+          "name": "Normal",
+          "description": "Normal",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 1
+        },
+        {
+          "name": "Light",
+          "description": "Light",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 2
+        },
+        {
+          "name": "Extra",
+          "description": "Extra",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 3
+        },
+        {
+          "name": "No ice",
+          "description": "No ice",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 4
+        }
+      ]
+    },
+    "tea-peach-juice": {
+      "name": "Peach Juice",
+      "description": "Peach Juice",
+      "isRequired": false,
+      "maxSelections": 1,
+      "order": 4,
+      "options": [
+        {
+          "name": "Normal",
+          "description": "Normal",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 1
+        },
+        {
+          "name": "Light",
+          "description": "Light",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 2
+        },
+        {
+          "name": "Extra",
+          "description": "Extra",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 3
+        }
+      ]
+    },
+    "pastry-warming-options": {
+      "name": "Warming",
+      "description": "Warming",
+      "isRequired": false,
+      "maxSelections": 1,
+      "order": 1,
+      "options": [
+        {
+          "name": "Warmed",
+          "description": "Warmed",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 1
+        },
+        {
+          "name": "Not warmed",
+          "description": "Not warmed",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 2
+        }
+      ]
+    },
+    "water-temperature-options": {
+      "name": "Temperature",
+      "description": "Temperature",
+      "isRequired": true,
+      "maxSelections": 1,
+      "order": 1,
+      "options": [
+        {
+          "name": "Room Temperature",
+          "description": "Room Temperature",
+          "additionalPrice": 0,
+          "isActive": false,
+          "order": 1
+        },
+        {
+          "name": "Cold Water",
+          "description": "Cold Water",
+          "additionalPrice": 0,
+          "isActive": false,
+          "order": 2
         }
       ]
     }
