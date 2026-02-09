@@ -1,43 +1,957 @@
 [
   {
-    "slug": "espresso",
-    "name": "Espresso",
-    "description": "Single shot espresso.",
-    "basePrice": 2.5,
-    "category": "coffee",
-    "options": [
-      { "label": "Single", "priceDelta": 0 },
-      { "label": "Double", "priceDelta": 1.0 }
-    ],
+    "name": "Frozen Yogurt Combo",
+    "slug": "frozen-yogurt-combo",
+    "image": "/images/frozen-yogurt-combo.png",
+    "category": "Yogurts",
+    "description": "A refreshing, tangy dessert that combines the flavors and textures of ice cream and sherbet. With free toppings!",
+    "basePrice": 590000,
+    "isAvailable": true,
     "isFeatured": true,
-    "isAvailable": true
+    "variantGroups": [
+      "yogurt-size",
+      "yogurt-flavors-standard",
+      "yogurt-toppings"
+    ]
   },
   {
-    "slug": "caffe-latte",
-    "name": "Caffè Latte",
-    "description": "Espresso with steamed milk.",
-    "basePrice": 3.5,
-    "category": "coffee",
-    "options": [
-      { "label": "Small", "priceDelta": 0 },
-      { "label": "Medium", "priceDelta": 0.5 },
-      { "label": "Large", "priceDelta": 1.0 },
-      { "label": "Oat milk", "priceDelta": 0.75 }
-    ],
+    "slug": "frozen-yogurt",
+    "name": "Frozen Yogurt",
+    "image": "/images/frozen-yogurt.png",
+    "category": "Yogurts",
+    "description": "A refreshing, tangy dessert that combines the flavors and textures of ice cream and sherbet. With no toppings!",
+    "basePrice": 500000,
+    "isAvailable": true,
     "isFeatured": true,
-    "isAvailable": true
+    "variantGroups": ["yogurt-size", "yogurt-flavors-standard"]
+  },
+  {
+    "name": "Pistachio Frozen Yogurt",
+    "slug": "pistachio-frozen-yogurt",
+    "image": "/images/pistachio-frozen-yogurt.png",
+    "category": "Yogurts",
+    "description": "A refreshing, tangy dessert that combines the flavors and textures of ice cream and sherbet. With free toppings!",
+    "basePrice": 750000,
+    "isAvailable": true,
+    "isFeatured": true,
+    "variantGroups": ["yogurt-size", "yogurt-flavors-pistachio"]
+  },
+  {
+    "name": "Espresso",
+    "slug": "espresso",
+    "image": "/images/espresso.png",
+    "category": "Coffee",
+    "description": "Our smooth signature Espresso Roast with rich flavor and caramelly sweetness is at the very heart of everything we do.",
+    "basePrice": 270000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["coffee-espresso-options", "coffee-milk-options"]
+  },
+  {
+    "name": "Flat White",
+    "slug": "flat-white",
+    "image": "/images/flat-white.png",
+    "category": "Coffee",
+    "description": "Smooth ristretto shots of espresso get the perfect amount of steamed whole milk to create a not-too-strong, not-too-creamy, just-right flavor.",
+    "basePrice": 330000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options-with-large",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "Hot Double Shot",
+    "slug": "hot-double-shot",
+    "image": "/images/hot-double-shot.png",
+    "category": "Coffee",
+    "description": "A delicious and bold hot version of the favorite Double Shot Iced Shaken.",
+    "basePrice": 380000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "Caramel Macchiato",
+    "slug": "caramel-macchiato",
+    "image": "/images/caramel-macchiato.png",
+    "category": "Coffee",
+    "description": "We combine our rich, full-bodied espresso with vanilla-flavored syrup and milk, then top it off with a caramel drizzle for an oh-so-sweet finish.",
+    "basePrice": 380000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "Latte",
+    "slug": "latte",
+    "image": "/images/latte.png",
+    "category": "Coffee",
+    "description": "A perfect milk-forward warm-up!",
+    "basePrice": 330000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "Hot Chocolate",
+    "slug": "hot-chocolate",
+    "image": "/images/hot-chocolate.png",
+    "category": "Coffee",
+    "description": "Steamed milk with chocolate-flavored syrups. Topped with sweetened whipped cream and chocolate-flavored drizzle. A timeless classic made to sweeten your spirits.",
+    "basePrice": 350000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "Cappuccino",
+    "slug": "cappuccino",
+    "image": "/images/cappuccino.png",
+    "category": "Coffee",
+    "description": "Dark, rich espresso lies in wait under a smoothed and stretched layer of thick milk foam. An alchemy of barista artistry and craft.",
+    "basePrice": 330000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "Mocha",
+    "slug": "mocha",
+    "image": "/images/mocha.png",
+    "category": "Coffee",
+    "description": "Our rich, full-bodied espresso combined with bittersweet mocha sauce and steamed milk, then topped with sweetened whipped cream. The classic coffee drink that always sweetly satisfies.",
+    "basePrice": 380000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "White Mocha",
+    "slug": "white-mocha",
+    "image": "/images/white-mocha.png",
+    "category": "Coffee",
+    "description": "Our signature espresso meets white chocolate sauce and steamed milk, and then is finished off with sweetened whipped cream to create this supreme white chocolate delight.",
+    "basePrice": 350000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "Matcha Latte",
+    "slug": "matcha-latte",
+    "image": "/images/matcha-latte.png",
+    "category": "Coffee",
+    "description": "Smooth and creamy matcha sweetened just right and served with steamed milk. This favorite will transport your senses to pure green delight.",
+    "basePrice": 330000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "matcha-size",
+      "coffee-espresso-options",
+      "coffee-milk-options-with-large",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "name": "Double Espresso Macchiato",
+    "slug": "double-espresso-macchiato",
+    "image": "/images/double-espresso-macchiato.png",
+    "category": "Coffee",
+    "description": "Our rich espresso marked with dollop of steamed milk and foam. A European-style classic.",
+    "basePrice": 340000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["coffee-espresso-options", "coffee-milk-options"]
+  },
+  {
+    "name": "Double Espresso",
+    "slug": "double-espresso",
+    "image": "/images/double-espresso.png",
+    "category": "Coffee",
+    "description": "Our smooth signature Espresso Roast with rich flavor and caramelly sweetness is at the very heart of everything we do.",
+    "basePrice": 340000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["coffee-espresso-options", "coffee-milk-options"]
+  },
+  {
+    "name": "Espresso Macchiato",
+    "slug": "espresso-macchiato",
+    "image": "/images/espresso-macchiato.png",
+    "category": "Coffee",
+    "description": "Our rich espresso marked with dollop of steamed milk and foam. A European-style classic.",
+    "basePrice": 270000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["coffee-espresso-options", "coffee-milk-options"]
+  },
+  {
+    "name": "Filtered Coffee",
+    "slug": "filtered-coffee",
+    "image": "/images/filtered-coffee.png",
+    "category": "Coffee",
+    "description": "Iconic Stories coffee that's smooth, balanced and rich in flavor – perfect for every day.",
+    "basePrice": 270000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["coffee-size-with-large", "coffee-milk-options-americano"]
+  },
+  {
+    "name": "Americano",
+    "slug": "americano",
+    "image": "/images/americano.png",
+    "category": "Coffee",
+    "description": "Espresso shots topped with hot water create a light layer of crema culminating in this wonderfully rich cup with depth and nuance.",
+    "basePrice": 300000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-with-large",
+      "coffee-espresso-options",
+      "coffee-milk-options-americano"
+    ]
+  },
+  {
+    "slug": "earl-grey",
+    "name": "Earl Grey",
+    "image": "/images/earl-grey.png",
+    "category": "Tea",
+    "description": "We take a strong black tea base and add the essence of bergamot, a citrus fruit with subtle lemon and floral lavender notes, to create this aromatically awesome tea flavor.",
+    "basePrice": 250000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["tea-size-hot", "tea-extra-bag"]
+  },
+  {
+    "slug": "english-breakfast",
+    "name": "English Breakfast",
+    "image": "/images/english-breakfast.png",
+    "category": "Tea",
+    "description": "Each sip of this beloved morning black tea unfolds to reveal the complexity of the high-grown full leaves. An elegant, time-honored classic that brings a royal nod to every cup.",
+    "basePrice": 250000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["tea-size-hot", "tea-extra-bag"]
+  },
+  {
+    "slug": "green-tea",
+    "name": "Green Tea",
+    "image": "/images/green-tea.png",
+    "category": "Tea",
+    "description": "This gently smoky, softly sweet green tea—cultivated at 3,500 feet and shrouded in ethereal clouds and mist—is tasty no matter what language you say it in.",
+    "basePrice": 250000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["tea-size-hot", "tea-extra-bag"]
+  },
+  {
+    "slug": "mint-tea",
+    "name": "Mint Tea",
+    "image": "/images/mint-tea.png",
+    "category": "Tea",
+    "description": "The fresh scent of garden mint leaves fills the air as this herbal tea steeped to perfection. A simple cup offers calm and clarity of mind through each refreshing sip of this restorative blend designed to rejuvenate the spirit.",
+    "basePrice": 250000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["tea-size-hot", "tea-extra-bag"]
+  },
+  {
+    "slug": "iced-peach-tea",
+    "name": "Iced Peach Tea",
+    "image": "/images/iced-peach-tea.png",
+    "category": "Tea",
+    "description": "An escape to an orchard retreat, this sun-kissed blend of steeped black tea and peach essence cools the soul on a hot summer day. Each thirst quenching sip reveals notes of ripe peach and a gentle hint of honey that teases the senses and renews the spirit.",
+    "basePrice": 350000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "tea-size-iced",
+      "tea-water-concentration",
+      "tea-ice-options",
+      "tea-peach-juice"
+    ]
+  },
+  {
+    "slug": "thyme-croissant",
+    "name": "Thyme Croissant",
+    "image": "/images/thyme-croissant.png",
+    "category": "Pastries",
+    "description": "A delicious combination of sweet and savory, our thyme croissant is perfect for a quick breakfast or snack.",
+    "basePrice": 300000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["pastry-warming-options"]
+  },
+  {
+    "slug": "chocolate-croissant",
+    "name": "Chocolate Croissant",
+    "image": "/images/chocolate-croissant.png",
+    "category": "Pastries",
+    "description": "Two generous pieces of chocolate wrapped in a butter croissant with soft, flaky layers and a golden-brown crust.",
+    "basePrice": 350000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["pastry-warming-options"]
+  },
+  {
+    "slug": "cheese-croissant",
+    "name": "Cheese Croissant",
+    "image": "/images/cheese-croissant.png",
+    "category": "Pastries",
+    "description": "A flaky, buttery croissant is filled to perfection with a luscious spread of rich prune cheese filling that balances tart and sweet in perfect harmony, delivering an irresistible morning pastry that lifts the spirit with its flavor symphony in every bite.",
+    "basePrice": 350000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["pastry-warming-options"]
+  },
+  {
+    "slug": "double-chocolate-chip-walnut",
+    "name": "Double Chocolate Chip Walnut",
+    "image": "/images/double-chocolate-chip-walnut.png",
+    "category": "Pastries",
+    "description": "Semisweet chocolate chips and raw walnuts mixed in a thick, chewy cookie. Soft on the inside and crunchy on the outside.",
+    "basePrice": 500000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["pastry-warming-options"]
+  },
+  {
+    "slug": "cinnamon-rolls",
+    "name": "Cinnamon Rolls",
+    "image": "/images/cinnamon-rolls.png",
+    "category": "Pastries",
+    "description": "Made with a combination of warm dough, legendary Makara cinnamon, and signature cream cheese for a freshly baked, irresistible sweet treat.",
+    "basePrice": 500000,
+    "isAvailable": true,
+    "isFeatured": true,
+    "variantGroups": []
+  },
+  {
+    "slug": "lazy-cake",
+    "name": "Lazy Cake",
+    "image": "/images/lazy-cake.png",
+    "category": "Pastries",
+    "description": "An indulgent blend of biscuit layers saturated in rich chocolate, this no-fuss dessert delivers maximum comfort in minimum effort, satisfying the soul's sweetest cravings in every heavenly bite.",
+    "basePrice": 550000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": []
+  },
+  {
+    "slug": "nutella-roll",
+    "name": "Nutella Roll",
+    "image": "/images/nutella-roll.jpg",
+    "category": "Pastries",
+    "description": "Cinnamon Roll topped with Nutella and Roasted Hazelnuts",
+    "basePrice": 550000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": []
+  },
+  {
+    "slug": "strawberry-dried-drops",
+    "name": "Strawberry Dried Drops",
+    "image": "/images/strawberry-dried-drops.png",
+    "category": "Pastries",
+    "description": "Strawberry Dried Drops",
+    "basePrice": 330000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": []
+  },
+  {
+    "slug": "steamed-milk",
+    "name": "Steamed Milk",
+    "image": "/images/steamed-milk.png",
+    "category": "Mixed Beverages",
+    "description": "Enjoy a warm cup of skim steamed for your sipping pleasure.",
+    "basePrice": 220000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options-with-large",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "iced-mocha",
+    "name": "Iced Mocha",
+    "image": "/images/iced-mocha.png",
+    "category": "Mixed Beverages",
+    "description": "Our signature espresso meets white chocolate sauce, milk and ice, and then is finished off with sweetened whipped cream to create this supreme white chocolate delight.",
+    "basePrice": 380000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "hazelnut-coffee-frap",
+    "name": "Hazelnut Coffee Frap",
+    "image": "/images/hazelnut-coffee-frap.png",
+    "category": "Mixed Beverages",
+    "description": "Coffee and flavors of Hazelnut blended with rich Frappuccino chips",
+    "basePrice": 350000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "coffee-frap",
+    "name": "Coffee Frap",
+    "image": "/images/coffee-frap.png",
+    "category": "Mixed Beverages",
+    "description": "Coffee meets milk and ice in a blender for a rumble-and-tumble togetherness to create one of our most-beloved original Frappuccino blended beverages.",
+    "basePrice": 300000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "vanilla-coffee-frap",
+    "name": "Vanilla Coffee Frap",
+    "image": "/images/vanilla-coffee-frap.png",
+    "category": "Mixed Beverages",
+    "description": "We take Frappuccino roast coffee and vanilla bean powder, combine them with milk and ice, topped with whipped cream. Tastes like happiness.",
+    "basePrice": 350000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "strawberry-cream-frap",
+    "name": "Strawberry Cream Frap",
+    "image": "/images/strawberry-cream-frap.png",
+    "category": "Mixed Beverages",
+    "description": "Summer's favorite berry is the star of this delicious Frappuccino Blended Beverage: a blend of ice, milk and strawberry puree layered on top of a splash of strawberry puree and finished with vanilla whipped cream.",
+    "basePrice": 380000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "matcha-cream-frap",
+    "name": "Matcha Cream Frap",
+    "image": "/images/matcha-cream-frap.png",
+    "category": "Mixed Beverages",
+    "description": "This blend of sweetened premium matcha green tea, milk and ice, topped off with sweetened whipped cream, inspires a delicious boost and good green vibes.",
+    "basePrice": 380000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "vanilla-cream-frap",
+    "name": "Vanilla Cream Frap",
+    "image": "/images/vanilla-cream-frap.png",
+    "category": "Mixed Beverages",
+    "description": "This rich and creamy blend of vanilla bean, milk and ice topped with whipped cream takes vanilla flavor to another level. To change things up, try it affogato-style with a hot espresso shot poured right over the top.",
+    "basePrice": 350000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "caramel-cream-frap",
+    "name": "Caramel Cream Frap",
+    "image": "/images/caramel-cream-frap.png",
+    "category": "Mixed Beverages",
+    "description": "Coffee and flavors of sweet caramel blended with rich Frappuccino chips",
+    "basePrice": 380000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "chocolate-cream-frap",
+    "name": "Chocolate Cream Frap",
+    "image": "/images/choco-cream-frap.png",
+    "category": "Mixed Beverages",
+    "description": "Coffee and flavors of sweet chocolate blended with rich Frappuccino chips",
+    "basePrice": 380000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "white-mocha-frap",
+    "name": "White Mocha Frap",
+    "image": "/images/white-mocha-frap.png",
+    "category": "Mixed Beverages",
+    "description": "Mocha sauce, Frappuccino Roast coffee, milk and ice all come together for a mocha flavor that'll leave you wanting more. To change things up, try it affogato-style with a hot espresso shot poured right over the top.",
+    "basePrice": 350000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "white-mocha-cream-frap",
+    "name": "White Mocha Cream Frap",
+    "image": "/images/white-mocha-cream-frap.png",
+    "category": "Mixed Beverages",
+    "description": "White chocolate Frappuccino Roast coffee, milk and ice get together for what might be the best thing that happens to you all day. Oh, and there's whipped cream on top.",
+    "basePrice": 350000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "iced-chocolate",
+    "name": "Iced Chocolate",
+    "image": "/images/iced-chocolate.png",
+    "category": "Mixed Beverages",
+    "description": "Our signature drink combined with cocoa and ground chocolate, then topped with cold milk and served over iced, makes a perfect mocha companion day or night.",
+    "basePrice": 350000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "double-shot-shaken",
+    "name": "Double Shot Shaken",
+    "image": "/images/double-shot-shaken.png",
+    "category": "Mixed Beverages",
+    "description": "Made with the rich, full-bodied espresso you love, then shaken, chilled and mellowed with sweetness and a touch of milk to create a delightfully and deliciously convenient on-the-go drink.",
+    "basePrice": 330000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "iced-matcha",
+    "name": "Iced Matcha",
+    "image": "/images/iced-matcha.png",
+    "category": "Mixed Beverages",
+    "description": "Our signature drink combined with cocoa and ground chocolate, then topped with cold milk and served over iced, makes a perfect mocha companion day or night.",
+    "basePrice": 330000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
   },
   {
     "slug": "iced-americano",
     "name": "Iced Americano",
-    "description": "Cold espresso with water and ice.",
-    "basePrice": 3.0,
-    "category": "coffee",
-    "options": [
-      { "label": "Medium", "priceDelta": 0 },
-      { "label": "Large", "priceDelta": 0.5 }
-    ],
+    "image": "/images/iced-americano.png",
+    "category": "Mixed Beverages",
+    "description": "Espresso shots topped with cold water produce a light layer of crema, then served over ice. The result: a wonderfully rich cup with depth and nuance.",
+    "basePrice": 340000,
+    "isAvailable": true,
     "isFeatured": false,
-    "isAvailable": true
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "bluenade",
+    "name": "Bluenade",
+    "image": "/images/bluenade.png",
+    "category": "Mixed Beverages",
+    "description": "Blue, fit perfectly with the ocean theme. And the combination of three different blue colored berries (blueberries, blackberries and blue raspberries) plus lemon, creates a unique flavor with a strikingly Blue Ocean feel.",
+    "basePrice": 440000,
+    "isAvailable": true,
+    "isFeatured": true,
+    "variantGroups": [
+      "coffee-espresso-options",
+      "coffee-milk-options-with-large",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "caramel-frap",
+    "name": "Caramel Frap",
+    "image": "/images/caramel-frap.png",
+    "category": "Mixed Beverages",
+    "description": "Coffee and flavors of sweet caramel blended with rich Frappuccino chips",
+    "basePrice": 380000,
+    "isAvailable": true,
+    "isFeatured": true,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "mocha-frap",
+    "name": "Mocha Frap",
+    "image": "/images/mocha-frap.png",
+    "category": "Mixed Beverages",
+    "description": "Mocha sauce, Frappuccino Roast coffee, milk and ice all come together for a mocha flavor that'll leave you wanting more. To change things up, try it affogato-style with a hot espresso shot poured right over the top.",
+    "basePrice": 380000,
+    "isAvailable": true,
+    "isFeatured": true,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "espresso-frap",
+    "name": "Espresso Frap",
+    "image": "/images/espresso-frap.png",
+    "category": "Mixed Beverages",
+    "description": "Coffee is combined with a shot of espresso and milk, then blended with ice to give you a nice little jolt and lots of sipping joy.",
+    "basePrice": 300000,
+    "isAvailable": true,
+    "isFeatured": true,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "iced-latte",
+    "name": "Iced Latte",
+    "image": "/images/iced-latte.png",
+    "category": "Mixed Beverages",
+    "description": "Small-lot espresso combined with milk and served over ice creates perfectly handcrafted sips of cool.",
+    "basePrice": 330000,
+    "isAvailable": true,
+    "isFeatured": true,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "iced-white-mocha",
+    "name": "Iced White Mocha",
+    "image": "/images/iced-white-mocha.png",
+    "category": "Mixed Beverages",
+    "description": "Our signature espresso meets white chocolate sauce, milk and ice, and then is finished off with sweetened whipped cream to create this supreme white chocolate delight.",
+    "basePrice": 380000,
+    "isAvailable": true,
+    "isFeatured": true,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "iced-caramel-macchiato",
+    "name": "Iced Caramel Macchiato",
+    "image": "/images/iced-caramel-macchiato.png",
+    "category": "Mixed Beverages",
+    "description": "We combine our rich, full-bodied espresso with vanilla-flavored syrup, milk and ice, then top it off with a caramel drizzle for an oh-so-sweet finish.",
+    "basePrice": 380000,
+    "isAvailable": true,
+    "isFeatured": true,
+    "variantGroups": [
+      "coffee-size-standard",
+      "coffee-espresso-options",
+      "coffee-milk-options",
+      "coffee-add-ons"
+    ]
+  },
+  {
+    "slug": "tuna-pasta-salad",
+    "name": "Tuna Pasta Salad",
+    "image": "/images/tuna-pasta-salad.jpg",
+    "category": "Salad",
+    "description": "Iceberg, fussili pasta, tuna, oregano, tuna sauce with mayo mustard dressing",
+    "basePrice": 770000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": []
+  },
+  {
+    "slug": "rocca-salad",
+    "name": "Rocca Salad",
+    "image": "/images/rocca-salad.jpg",
+    "category": "Salad",
+    "description": "Rocca, cherry tomato, fresh mushroom, beetroot, fetta cheese, oregano, rosemary with balsamic sauce",
+    "basePrice": 770000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": []
+  },
+  {
+    "slug": "greek-salad",
+    "name": "Greek Salad",
+    "image": "/images/greek-salad.jpg",
+    "category": "Salad",
+    "description": "Iceberg, Green Pepper, Cherry Tomato, Olive, Cucumber, Fetta Cheese, Olive & Lemon dressing",
+    "basePrice": 700000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": []
+  },
+  {
+    "slug": "quinoa-salad",
+    "name": "Quinoa Salad",
+    "image": "/images/quinoa-salad.jpg",
+    "category": "Salad",
+    "description": "Lolo Rosso, Quinoa, Cherry Tomato, Beetroot, Olive, Halloumi Cheese, Honey Walnut with Pomegranate Sauce",
+    "basePrice": 770000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": []
+  },
+  {
+    "slug": "rim-sparkling-water",
+    "name": "Rim Sparkling Water",
+    "image": "/images/rim-sparkling-water.jpg",
+    "category": "Soft Drinks",
+    "description": "Never feel thirsty!",
+    "basePrice": 120000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["water-temperature-options"]
+  },
+  {
+    "slug": "rim-330ml",
+    "name": "Rim 330ML",
+    "image": "/images/rim-330ml.jpg",
+    "category": "Soft Drinks",
+    "description": "Never feel thirsty!",
+    "basePrice": 70000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": ["water-temperature-options"]
+  },
+  {
+    "slug": "san-benedetto-lemon-330ml",
+    "name": "San Benedetto Lemon 330ML",
+    "image": "/images/san-benedetto-lemon.jpg",
+    "category": "Soft Drinks",
+    "description": "A perfect balance between sweet, delicately-flavoured teas and a great low mineral content water as pure and light as San Benedetto",
+    "basePrice": 280000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": []
+  },
+  {
+    "slug": "san-benedetto-clementine-330",
+    "name": "San Benedetto Clementine 330",
+    "image": "/images/san-benedetto-clementine.jpg",
+    "category": "Soft Drinks",
+    "description": "A perfect balance between sweet, delicately-flavoured teas and a great low mineral content water as pure and light as San Benedetto",
+    "basePrice": 280000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": []
+  },
+  {
+    "slug": "san-benedetto-glass-250",
+    "name": "San Benedetto Glass 250",
+    "image": "/images/san-benedetto-glass.jpg",
+    "category": "Soft Drinks",
+    "description": "A perfect balance between sweet, delicately-flavoured teas and a great low mineral content water as pure and light as San Benedetto",
+    "basePrice": 230000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": []
+  },
+  {
+    "slug": "balkis-juice",
+    "name": "Balkis Juice",
+    "image": "/images/balkis-juice.png",
+    "category": "Soft Drinks",
+    "description": "Orange, Mawardi, Lemon, Apple, Pomegranate",
+    "basePrice": 310000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": []
+  },
+  {
+    "slug": "tuna-sub",
+    "name": "Tuna Sub",
+    "image": "/images/tuna-sub.png",
+    "category": "Sandwiches",
+    "description": "Packed with flaky tuna, fresh veggies, and creamy mayo, it's the perfect blend of flavor and texture. Whether you keep it simple or pile on the toppings, you can't go wrong with this classic sub.",
+    "basePrice": 550000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "sandwich-bread-options",
+      "sandwich-ingredients-tuna",
+      "sandwich-toppings",
+      "sandwich-extras"
+    ]
+  },
+  {
+    "slug": "chicken-teriyaki",
+    "name": "Chicken Teriyaki",
+    "image": "/images/chicken-teriyaki.png",
+    "category": "Sandwiches",
+    "description": "Tender and juicy strips of grilled chicken, smothered in a rich and savory teriyaki sauce. It is layered onto your choice of freshly baked bread, along with fresh veggies and other toppings of your choice.",
+    "basePrice": 550000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "sandwich-bread-options",
+      "sandwich-ingredients-chicken",
+      "sandwich-toppings",
+      "sandwich-extras"
+    ]
+  },
+  {
+    "slug": "turkey-cheese",
+    "name": "Turkey & Cheese",
+    "image": "/images/turkey-cheese.png",
+    "category": "Sandwiches",
+    "description": "A classic sandwich that's always in style. Tender and juicy sliced turkey layered onto your choice of freshly baked bread and topped with melty cheese and crisp veggies.",
+    "basePrice": 590000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "sandwich-bread-options",
+      "sandwich-ingredients-turkey",
+      "sandwich-toppings",
+      "sandwich-extras"
+    ]
+  },
+  {
+    "slug": "labneh",
+    "name": "Labneh",
+    "image": "/images/labneh.png",
+    "category": "Sandwiches",
+    "description": "Basically... this sums up your relationship with labneh!",
+    "basePrice": 400000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "sandwich-bread-options",
+      "sandwich-ingredients-labneh",
+      "sandwich-toppings",
+      "sandwich-extras"
+    ]
+  },
+  {
+    "slug": "halloumi-pesto",
+    "name": "Halloumi Pesto",
+    "image": "/images/halloumi-pesto.png",
+    "category": "Sandwiches",
+    "description": "There's nothing like a good sandwich made with fresh ingredients.",
+    "basePrice": 540000,
+    "isAvailable": true,
+    "isFeatured": false,
+    "variantGroups": [
+      "sandwich-bread-options",
+      "sandwich-ingredients-halloumi",
+      "sandwich-toppings",
+      "sandwich-extras"
+    ]
   }
 ]

@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+/*import mongoose from "mongoose";
 
 const OptionSchema = new mongoose.Schema(
   {
@@ -22,4 +22,67 @@ const MenuItemSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export const MenuItem = mongoose.model("MenuItem", MenuItemSchema);
+export const MenuItem = mongoose.model("MenuItem", MenuItemSchema);*/
+
+import mongoose from "mongoose";
+
+const menuItemSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    slug: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      lowercase: true,
+    },
+    image: {
+      type: String,
+      required: true,
+    },
+    category: {
+      type: String,
+      required: true,
+    },
+    description: {
+      type: String,
+      required: true,
+    },
+    basePrice: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    isAvailable: {
+      type: Boolean,
+      default: true,
+    },
+    isFeatured: {
+      type: Boolean,
+      default: false,
+    },
+    // NEW: Reference to variant groups instead of storing them directly
+    variantGroups: [
+      {
+        type: String,
+        required: false,
+      },
+    ],
+    // Optional: Store order of variant groups if needed
+    variantGroupOrder: [
+      {
+        type: String,
+        required: false,
+      },
+    ],
+  },
+  {
+    timestamps: true,
+  },
+);
+
+export const MenuItem = mongoose.model("MenuItem", menuItemSchema);
