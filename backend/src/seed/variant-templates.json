@@ -746,6 +746,294 @@
           "order": 2
         }
       ]
+    },
+    "sandwich-bread-options": {
+      "name": "Bread",
+      "description": "Choose your bread type",
+      "isRequired": true,
+      "maxSelections": 1,
+      "order": 1,
+      "options": [
+        {
+          "name": "White Bread",
+          "description": "Regular white bread",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 1
+        },
+        {
+          "name": "Brown Bread",
+          "description": "Whole wheat brown bread",
+          "additionalPrice": 50000,
+          "isActive": true,
+          "order": 2
+        }
+      ]
+    },
+    "sandwich-ingredients-base": {
+      "name": "Ingredients",
+      "description": "Choose your ingredients",
+      "isRequired": false,
+      "maxSelections": null,
+      "order": 2,
+      "options": [
+        {
+          "name": "Rocca",
+          "description": "Fresh rocca leaves",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 1
+        },
+        {
+          "name": "Cheddar Cheese",
+          "description": "Cheddar cheese slice",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 2
+        },
+        {
+          "name": "Mint",
+          "description": "Fresh mint leaves",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 3
+        },
+        {
+          "name": "Onion",
+          "description": "Sliced onion",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 4
+        },
+        {
+          "name": "Pepper",
+          "description": "Bell pepper slices",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 5
+        },
+        {
+          "name": "Cherry Tomatoes",
+          "description": "Fresh cherry tomatoes",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 6
+        },
+        {
+          "name": "Jalapeno",
+          "description": "Spicy jalapeno slices",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 7
+        },
+        {
+          "name": "Lettuce",
+          "description": "Fresh lettuce leaves",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 8
+        },
+        {
+          "name": "Olives",
+          "description": "Sliced olives",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 9
+        },
+        {
+          "name": "Pickles",
+          "description": "Pickle slices",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 10
+        },
+        {
+          "name": "Turkey",
+          "description": "Turkey slices",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 11
+        }
+      ]
+    },
+    "sandwich-toppings": {
+      "name": "Toppings",
+      "description": "Choose your toppings",
+      "isRequired": false,
+      "maxSelections": null,
+      "order": 3,
+      "options": [
+        {
+          "name": "Mayo",
+          "description": "Mayonnaise",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 1,
+          "suboptions": [
+            {
+              "name": "Less",
+              "additionalPrice": 0
+            },
+            {
+              "name": "Regular",
+              "additionalPrice": 0
+            },
+            {
+              "name": "Extra",
+              "additionalPrice": 0
+            }
+          ]
+        },
+        {
+          "name": "BBQ",
+          "description": "BBQ Sauce",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 2,
+          "suboptions": [
+            {
+              "name": "Less",
+              "additionalPrice": 0
+            },
+            {
+              "name": "Regular",
+              "additionalPrice": 0
+            },
+            {
+              "name": "Extra",
+              "additionalPrice": 0
+            }
+          ]
+        },
+        {
+          "name": "Honey Mustard",
+          "description": "Honey Mustard Sauce",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 3,
+          "suboptions": [
+            {
+              "name": "Less",
+              "additionalPrice": 0
+            },
+            {
+              "name": "Regular",
+              "additionalPrice": 0
+            },
+            {
+              "name": "Extra",
+              "additionalPrice": 0
+            }
+          ]
+        },
+        {
+          "name": "Mustard",
+          "description": "Mustard",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 4,
+          "suboptions": [
+            {
+              "name": "Less",
+              "additionalPrice": 0
+            },
+            {
+              "name": "Regular",
+              "additionalPrice": 0
+            },
+            {
+              "name": "Extra",
+              "additionalPrice": 0
+            }
+          ]
+        },
+        {
+          "name": "Salt",
+          "description": "Salt",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 5,
+          "suboptions": [
+            {
+              "name": "Less",
+              "additionalPrice": 0
+            },
+            {
+              "name": "Regular",
+              "additionalPrice": 0
+            },
+            {
+              "name": "Extra",
+              "additionalPrice": 0
+            }
+          ]
+        },
+        {
+          "name": "Pepper",
+          "description": "Pepper",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 6,
+          "suboptions": [
+            {
+              "name": "Less",
+              "additionalPrice": 0
+            },
+            {
+              "name": "Regular",
+              "additionalPrice": 0
+            },
+            {
+              "name": "Extra",
+              "additionalPrice": 0
+            }
+          ]
+        }
+      ]
+    },
+    "sandwich-extras": {
+      "name": "Extras",
+      "description": "Add extra ingredients",
+      "isRequired": false,
+      "maxSelections": null,
+      "order": 4,
+      "options": [
+        {
+          "name": "Cheddar Cheese",
+          "description": "Extra cheddar cheese",
+          "additionalPrice": 100000,
+          "isActive": true,
+          "order": 1
+        },
+        {
+          "name": "Chicken Teriyaki",
+          "description": "Extra chicken teriyaki",
+          "additionalPrice": 150000,
+          "isActive": true,
+          "order": 2
+        },
+        {
+          "name": "Tuna",
+          "description": "Extra tuna",
+          "additionalPrice": 200000,
+          "isActive": true,
+          "order": 3
+        },
+        {
+          "name": "Roast Beef",
+          "description": "Extra roast beef",
+          "additionalPrice": 150000,
+          "isActive": true,
+          "order": 4
+        },
+        {
+          "name": "Beef Ham",
+          "description": "Extra beef ham",
+          "additionalPrice": 150000,
+          "isActive": true,
+          "order": 5
+        }
+      ]
     }
   }
 }
