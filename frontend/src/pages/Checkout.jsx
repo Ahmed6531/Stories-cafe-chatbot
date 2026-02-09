@@ -4,18 +4,16 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 function Checkout() {
-  // Dummy menu items
-  const dummyMenu = [
-    { id: 1, name: "Espresso", price: 3 },
-    { id: 2, name: "Caffe Latte", price: 4 },
-    { id: 3, name: "Iced Americano", price: 2 },
-  ];
+  const [cartItems, setCartItems] = useState(() => {
+    const savedCart = localStorage.getItem("cart");
+    return savedCart ? JSON.parse(savedCart) : [];
+  });
 
-  // Cart state
-  const [cartItems, setCartItems] = useState([
-    { id: 1, name: "Espresso", price: 3, quantity: 1 },
-    { id: 2, name: "Iced Americano", price: 2, quantity: 1 },
-  ]);
+  // Sync cart to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem("cart", JSON.stringify(cartItems));
+  }, [cartItems]);
+
 
   // Update quantity functions
   const increaseQty = (id) => {
