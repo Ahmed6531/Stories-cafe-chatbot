@@ -83,4 +83,8 @@
 .menu-item-footer{display:flex;align-items:center;justify-content:flex-start;padding:10px 12px;border-top:1px solid #eee}
 .pill{padding:6px 10px;border-radius:999px;font-weight:800;font-size:12px}
 .pill.ok{background:rgba(0,112,74,.10);color:#00704a}
-.pill.off{background:#eee;color:#777}
+.pill.off{background:#fee;color:#d00}
+
+/* Unavailable items */
+.menu-item-card.unavailable{opacity:.7;cursor:default}
+.menu-item-card.unavailable:hover{transform:none}

@@ -5,13 +5,25 @@ export default function MenuItem({ item }) {
   const navigate = useNavigate()
   const formatPrice = (p) => `L.L ${Number(p).toLocaleString()}`
 
+  const handleClick = () => {
+    if (item.isAvailable) {
+      navigate(`/item/${item.slug}`)
+    }
+  }
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && item.isAvailable) {
+      navigate(`/item/${item.slug}`)
+    }
+  }
+
   return (
     <div
-      className="menu-item-card compact"
-      role="button"
-      tabIndex={0}
-      onClick={() => navigate(`/item/${item.slug}`)}
-      onKeyDown={(e) => e.key === 'Enter' && navigate(`/item/${item.slug}`)}
+      className={`menu-item-card compact ${!item.isAvailable ? 'unavailable' : ''}`}
+      role={item.isAvailable ? "button" : undefined}
+      tabIndex={item.isAvailable ? 0 : -1}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
     >
       <div className="menu-item-image-container compact">
         <img src={item.image} alt={item.name} className="menu-item-image" />

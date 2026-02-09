@@ -1,10 +1,43 @@
 import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useCart } from '../state/useCart'
+import { fetchMenuItemBySlug } from '../API/menuApi'
 import '../styles/index.css'
 
 function useBreadcrumb() {
   const location = useLocation()
+  const [item, setItem] = useState(null)
+  const [prevCategory, setPrevCategory] = useState(null)
+
+  useEffect(() => {
+    // Update prevCategory when location changes
+    if (location.pathname === '/menu') {
+      const params = new URLSearchParams(location.search)
+      const category = params.get('category')
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPrevCategory(category && category !== 'All' ? category : null)
+    }
+  }, [location.pathname, location.search])
+
+  useEffect(() => {
+    const fetchItem = async () => {
+      if (location.pathname.startsWith('/item/')) {
+        const slug = location.pathname.split('/item/')[1]
+        if (slug) {
+          try {
+            const data = await fetchMenuItemBySlug(slug)
+            setItem(data)
+          } catch (err) {
+            console.error('Failed to fetch item for breadcrumb:', err)
+            setItem(null)
+          }
+        }
+      } else {
+        setItem(null)
+      }
+    }
+    fetchItem()
+  }, [location.pathname])
 
   return useMemo(() => {
     const crumbs = [{ label: 'Home', to: '/' }]
@@ -23,14 +56,23 @@ function useBreadcrumb() {
     if (location.pathname.startsWith('/register')) crumbs.push({ label: 'Register', to: '/register' })
 
     // Item details: show category and item name in breadcrumb
-    // Breadcrumb for item details page: fallback to just 'Menu' if no backend data
     if (location.pathname.startsWith('/item/')) {
       crumbs.push({ label: 'Menu', to: '/menu' })
-      // Optionally, fetch item details from backend here if needed for breadcrumb
+      if (item) {
+        crumbs.push({ label: item.category, to: `/menu?category=${encodeURIComponent(item.category)}` })
+        crumbs.push({ label: item.name, to: location.pathname })
+      } else {
+        if (prevCategory) {
+          crumbs.push({ label: prevCategory, to: `/menu?category=${encodeURIComponent(prevCategory)}` })
+        } else {
+          crumbs.push({ label: '---', to: '#' })
+        }
+        crumbs.push({ label: '---', to: '#' })
+      }
     }
 
     return crumbs
-  }, [location.pathname, location.search])
+  }, [location.pathname, location.search, item, prevCategory])
 }
 
 export default function Navbar() {

@@ -7,7 +7,7 @@ export async function getMenu(req, res) {
     console.log("📥 GET /menu request received");
 
     // Only return essential fields, exclude variantGroups from list view
-    const items = await MenuItem.find({ isAvailable: true })
+    const items = await MenuItem.find({})
       .select(
         "name slug image category description basePrice isAvailable isFeatured",
       )
