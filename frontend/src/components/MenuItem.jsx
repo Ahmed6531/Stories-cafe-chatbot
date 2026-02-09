@@ -7,13 +7,13 @@ export default function MenuItem({ item }) {
 
   const handleClick = () => {
     if (item.isAvailable) {
-      navigate(`/item/${item.slug}`)
+      navigate(`/item/${item.id}`)
     }
   }
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && item.isAvailable) {
-      navigate(`/item/${item.slug}`)
+      navigate(`/item/${item.id}`)
     }
   }
 

@@ -6,11 +6,34 @@ import '../styles/menu.css'
 
 export default function Menu() {
   const [params, setParams] = useSearchParams()
-  const category = params.get('category') || 'All'
+  const category = params.get('category') // No default - falsy means show all
   const [items, setItems] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  // Category image mapping
+  const categoryImages = {
+    'Coffee': '/images/coffee.png',
+    'Mixed Beverages': '/images/mixedbev.png',
+    'Pastries': '/images/pastries.png',
+    'Salad': '/images/salad.jpg',
+    'Sandwiches': '/images/sandwiches.png',
+    'Soft Drinks': '/images/soft-drinks.png',
+    'Tea': '/images/tea.png',
+    'Yogurts': '/images/yogurt.png'
+  }
+
+  // Handle category selection - clicking active category deselects it
+  const handleCategoryClick = (selectedCategory) => {
+    if (category === selectedCategory) {
+      // Clicking active category - show all items
+      setParams({})
+    } else {
+      // Clicking different category - filter by it
+      setParams({ category: selectedCategory })
+    }
+  }
 
   // Fetch menu data on component mount
   useEffect(() => {
@@ -32,10 +55,10 @@ export default function Menu() {
     loadMenu()
   }, [])
 
-  // Filter items by selected category, skip items missing slug or name (should already be filtered in API, but double check)
+  // Filter items by selected category, skip items missing id or name (should already be filtered in API, but double check)
   const filteredItems = useMemo(() => {
-    const validItems = items.filter((i) => i && i.slug && i.name)
-    if (category === 'All') return validItems
+    const validItems = items.filter((i) => i && i.id && i.name)
+    if (!category) return validItems // No category selected = show all
     return validItems.filter((i) => i.category === category)
   }, [items, category])
 
@@ -74,22 +97,22 @@ export default function Menu() {
 
       <h2 className="section-title">CATEGORIES</h2>
       <div className="catbar">
-        <button 
-          type="button" 
-          className={`cat-chip ${category === 'All' ? 'active' : ''}`}
-          onClick={() => setParams({ category: 'All' })}
-        >
-          All
-        </button>
         {categories.length > 0 ? (
           categories.map((c) => (
             <button 
               key={c} 
               type="button" 
               className={`cat-chip ${category === c ? 'active' : ''}`}
-              onClick={() => setParams({ category: c })}
+              onClick={() => handleCategoryClick(c)}
             >
-              {c}
+              <div className="cat-chip-content">
+                <img 
+                  src={categoryImages[c] || '/images/placeholder.png'} 
+                  alt={c} 
+                  className="cat-chip-image" 
+                />
+                <span className="cat-chip-text">{c}</span>
+              </div>
             </button>
           ))
         ) : (

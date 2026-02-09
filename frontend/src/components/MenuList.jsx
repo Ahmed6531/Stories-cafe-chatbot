@@ -6,7 +6,7 @@ export default function MenuList({ items }) {
     <div className="menu-list-container">
       <div className="menu-items-grid compact">
         {items.map((item) => (
-          <MenuItem key={item.slug} item={item} />
+          <MenuItem key={item.id} item={item} />
         ))}
       </div>
     </div>

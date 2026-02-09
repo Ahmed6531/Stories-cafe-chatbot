@@ -4,10 +4,10 @@ import http from './http'
  * Transform backend menu item to frontend format
  */
 function transformMenuItem(item) {
-  // Skip items missing slug or name (robustness for partial backend data)
-  if (!item.slug || !item.name) return null;
+  // Skip items missing id or name (robustness for partial backend data)
+  if (!item.id || !item.name) return null;
   return {
-    slug: item.slug,
+    id: item.id,  // Use the numeric ID from the database
     name: item.name,
     description: item.description,
     price: item.price || item.basePrice || 0,
@@ -52,17 +52,17 @@ export async function fetchMenu() {
 
 /**
 /**
- * Get a single menu item by slug
- * @param {string} slug - Menu item slug
+ * Get a single menu item by ID
+ * @param {string} id - Menu item ID
  * @returns {Promise<Object>} Menu item
  */
-export async function fetchMenuItemBySlug(slug) {
+export async function fetchMenuItemById(id) {
   try {
-    const response = await http.get(`/menu/${slug}`)
+    const response = await http.get(`/menu/${id}`)
     const item = response.data?.item
     return transformMenuItem(item)
   } catch (error) {
-    console.error(`Failed to fetch menu item ${slug}:`, error)
+    console.error(`Failed to fetch menu item ${id}:`, error)
     throw new Error(error.response?.data?.error || 'Failed to load menu item')
   }
 }

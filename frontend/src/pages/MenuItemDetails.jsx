@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { fetchMenuItemBySlug } from '../API/menuApi'
+import { fetchMenuItemById } from '../API/menuApi'
 import '../styles/menu.css'
 
 export default function MenuItemDetails() {
@@ -17,7 +17,7 @@ export default function MenuItemDetails() {
     const loadItem = async () => {
       try {
         setLoading(true)
-        const data = await fetchMenuItemBySlug(id)
+        const data = await fetchMenuItemById(id)
         setItem(data)
       } catch (err) {
         console.error('Failed to fetch item:', err)

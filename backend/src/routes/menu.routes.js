@@ -13,7 +13,7 @@ router.get("/", getMenu);
 // GET /api/menu/featured - Featured items with full variant data
 router.get("/featured", getFeaturedMenu);
 
-// GET /api/menu/:slug - Single item with full variant data
-router.get("/:slug", getMenuItem);
+// GET /api/menu/:id - Single item with full variant data
+router.get("/:id", getMenuItem);
 
 export default router;

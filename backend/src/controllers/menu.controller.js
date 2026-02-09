@@ -9,7 +9,7 @@ export async function getMenu(req, res) {
     // Only return essential fields, exclude variantGroups from list view
     const items = await MenuItem.find({})
       .select(
-        "name slug image category description basePrice isAvailable isFeatured",
+        "id name slug image category description basePrice isAvailable isFeatured",
       )
       .sort({ category: 1, name: 1 });
 
@@ -28,15 +28,15 @@ export async function getMenu(req, res) {
   }
 }
 
-// GET /api/menu/:slug - Returns single menu item with full variant data
+// GET /api/menu/:id - Returns single menu item with full variant data
 export async function getMenuItem(req, res) {
   try {
-    const { slug } = req.params;
-    console.log(`📥 GET /menu/${slug} request received`);
+    const { id } = req.params;
+    console.log(`📥 GET /menu/${id} request received`);
 
-    // Find the menu item
+    // Find the menu item by numeric ID
     const menuItem = await MenuItem.findOne({
-      slug,
+      id: parseInt(id),
       isAvailable: true,
     });
 
@@ -89,7 +89,7 @@ export async function getMenuItem(req, res) {
     });
   } catch (error) {
     console.error(
-      `❌ Failed to fetch menu item ${req.params.slug}:`,
+      `❌ Failed to fetch menu item ${req.params.id}:`,
       error.message,
     );
     res.status(500).json({

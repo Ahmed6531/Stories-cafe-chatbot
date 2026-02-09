@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
 import { useMemo, useState, useEffect } from 'react'
 import { useCart } from '../state/useCart'
-import { fetchMenuItemBySlug } from '../API/menuApi'
+import { fetchMenuItemById } from '../API/menuApi'
 import '../styles/index.css'
 
 function useBreadcrumb() {
@@ -22,10 +22,10 @@ function useBreadcrumb() {
   useEffect(() => {
     const fetchItem = async () => {
       if (location.pathname.startsWith('/item/')) {
-        const slug = location.pathname.split('/item/')[1]
-        if (slug) {
+        const id = location.pathname.split('/item/')[1]
+        if (id) {
           try {
-            const data = await fetchMenuItemBySlug(slug)
+            const data = await fetchMenuItemById(id)
             setItem(data)
           } catch (err) {
             console.error('Failed to fetch item for breadcrumb:', err)

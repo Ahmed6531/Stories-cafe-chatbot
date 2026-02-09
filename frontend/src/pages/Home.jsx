@@ -11,6 +11,18 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
+  // Category image mapping
+  const categoryImages = {
+    'Coffee': '/images/coffee.png',
+    'Mixed Beverages': '/images/mixedbev.png',
+    'Pastries': '/images/pastries.png',
+    'Salad': '/images/salad.jpg',
+    'Sandwiches': '/images/sandwiches.png',
+    'Soft Drinks': '/images/soft-drinks.png',
+    'Tea': '/images/tea.png',
+    'Yogurts': '/images/yogurt.png'
+  }
+
   // Fetch menu data on component mount
   useEffect(() => {
     const loadMenu = async () => {
@@ -50,7 +62,14 @@ export default function Home() {
         ) : categories.length > 0 ? (
           categories.map((c) => (
             <button key={c} type="button" className="cat-chip" onClick={() => pickCategory(c)}>
-              {c}
+              <div className="cat-chip-content">
+                <img 
+                  src={categoryImages[c] || '/images/placeholder.png'} 
+                  alt={c} 
+                  className="cat-chip-image" 
+                />
+                <span className="cat-chip-text">{c}</span>
+              </div>
             </button>
           ))
         ) : (
