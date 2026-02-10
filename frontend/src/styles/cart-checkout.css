@@ -1,8 +1,11 @@
 /* Cart and Checkout Styles from teammate's branch */
 
+/* Cart page sizing fix: prevent horizontal scrollbar */
 .checkout-page {
   min-height: 100vh;
   background-color: #f8f6f3;
+  width: 100%; /* Prevent overflow */
+  overflow-x: hidden;
 }
 
 .checkout-header {
@@ -10,7 +13,7 @@
   color: #f8f6f3;
   padding: 2rem 0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  width: 100vw;
+  width: 100%; /* Prevent overflow */
   margin: 0;
   box-sizing: border-box;
   overflow-x: hidden;
