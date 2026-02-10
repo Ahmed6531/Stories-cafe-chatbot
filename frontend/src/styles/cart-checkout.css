@@ -1,41 +1,19 @@
+/* Cart and Checkout Styles from teammate's branch */
 
-
-
-
-/* Checkout Page Container */
-/* App Container Styles */
-.app {
-  width: 100%;
-  min-height: 100vh;
-  background-color: #ffffff;
-  font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-}
-
-/* Reset Default Styles */
-* {
-  box-sizing: border-box;
-}
-
-html, body {
-  margin: 0;
-  padding: 0;
-}
 .checkout-page {
   min-height: 100vh;
   background-color: #f8f6f3;
 }
 
-/* Header */
 .checkout-header {
   background-color: #1e5631;
   color: #f8f6f3;
   padding: 2rem 0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  width: 100vw;            
-  margin: 0;                           
-  box-sizing: border-box;  
-  overflow-x: hidden; 
-  
+  width: 100vw;
+  margin: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .header-content {
@@ -51,14 +29,12 @@ html, body {
   letter-spacing: 0.5px;
 }
 
-/* Main Container */
 .checkout-container {
   max-width: 1200px;
   margin: 0 auto;
   padding: 3rem 2rem;
 }
 
-/* Empty Cart State */
 .empty-cart {
   text-align: center;
   padding: 4rem 2rem;
@@ -70,7 +46,6 @@ html, body {
   margin-bottom: 2rem;
 }
 
-/* Cart Content Layout */
 .cart-content {
   display: grid;
   grid-template-columns: 1fr 400px;
@@ -84,7 +59,6 @@ html, body {
   }
 }
 
-/* Cart Items Section */
 .cart-items {
   background: white;
   border-radius: 12px;
@@ -100,6 +74,7 @@ html, body {
   padding: 1.5rem 0;
   border-bottom: 1px solid #e8e5e1;
   position: relative;
+  animation: fadeIn 0.3s ease;
 }
 
 .cart-item:last-child {
@@ -117,7 +92,6 @@ html, body {
   }
 }
 
-/* Item Image */
 .item-image {
   width: 100px;
   height: 100px;
@@ -139,7 +113,6 @@ html, body {
   }
 }
 
-/* Item Details */
 .item-details {
   display: flex;
   flex-direction: column;
@@ -165,7 +138,6 @@ html, body {
   }
 }
 
-/* Quantity Controls */
 .quantity-controls {
   display: flex;
   align-items: center;
@@ -214,7 +186,6 @@ html, body {
   }
 }
 
-/* Item Total */
 .item-total {
   font-weight: 600;
   font-size: 1.125rem;
@@ -231,7 +202,6 @@ html, body {
   }
 }
 
-/* Remove Button */
 .btn-remove {
   width: 36px;
   height: 36px;
@@ -261,7 +231,6 @@ html, body {
   }
 }
 
-/* Order Summary */
 .order-summary {
   background: white;
   border-radius: 12px;
@@ -300,7 +269,6 @@ html, body {
   margin: 1.5rem 0;
 }
 
-/* Buttons */
 .btn-primary,
 .btn-checkout,
 .btn-secondary {
@@ -366,7 +334,6 @@ html, body {
   text-decoration: none;
 }
 
-/* Responsive Design */
 @media (max-width: 768px) {
   .checkout-header h1 {
     font-size: 1.5rem;
@@ -385,7 +352,6 @@ html, body {
   }
 }
 
-/* Loading and Animations */
 @keyframes fadeIn {
   from {
     opacity: 0;
