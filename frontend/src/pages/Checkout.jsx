@@ -1,46 +1,36 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useCart } from '../state/useCart'
+
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 export default function Checkout() {
-  const { dispatch } = useCart()
-  const navigate = useNavigate()
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
     address: '',
     orderType: 'pickup',
     notes: '',
-  })
+  });
 
   const handleChange = (e) => {
-    const { name, value } = e.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
-  }
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-
+  const handleSubmit = (e) => {
+    e.preventDefault();
     if (!formData.name || !formData.phone) {
-      alert('Please fill in all required fields')
-      return
+      alert('Please fill in all required fields');
+      return;
     }
-
-    try {
-      // TODO: Make API call to create order
-      // TODO: Dispatch does nothing (static), revert by restoring cartReducer logic for CLEAR_CART
-      dispatch({ type: 'CLEAR_CART' }) // Static: does nothing
-      navigate('/success')
-    } catch (err) {
-      alert('Error creating order: ' + err.message)
-    }
-  }
+    // Simulate order placement
+    navigate('/success');
+  };
 
   return (
     <div className="page-wrap" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
       <div>
         <h1 className="menu-title">Checkout</h1>
-
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
             <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
@@ -62,7 +52,6 @@ export default function Checkout() {
               }}
             />
           </div>
-
           <div>
             <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
               Phone Number *
@@ -83,7 +72,6 @@ export default function Checkout() {
               }}
             />
           </div>
-
           <div>
             <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
               Order Type
@@ -105,7 +93,6 @@ export default function Checkout() {
               <option value="dine_in">Dine In</option>
             </select>
           </div>
-
           <div>
             <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
               Special Notes
@@ -125,13 +112,11 @@ export default function Checkout() {
               }}
             />
           </div>
-
           <button type="submit" className="primary-btn" style={{ marginTop: '12px' }}>
             Place Order
           </button>
         </form>
       </div>
-
       <div>
         <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '20px' }}>Order Summary</h2>
         <div
@@ -142,12 +127,9 @@ export default function Checkout() {
             backgroundColor: '#f5f5f5',
           }}
         >
-          {/* TODO: Restore order summary with dynamic items and total */}
-          {/* Missing: state.items.map for item list, total calculation */}
-          {/* Container kept empty as per requirements */}
+          {/* Order summary placeholder, dynamic items can be restored here */}
         </div>
       </div>
     </div>
-  )
+  );
 }
-
