@@ -1,0 +1,123 @@
+import { useMemo, useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import MenuList from '../components/MenuList'
+import { fetchMenu } from '../API/menuApi'
+import '../styles/menu.css'
+
+export default function Menu() {
+  const [params, setParams] = useSearchParams()
+  const category = params.get('category') // No default - falsy means show all
+  const [items, setItems] = useState([])
+  const [categories, setCategories] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  // Category image mapping
+  const categoryImages = {
+    'Coffee': '/images/coffee.png',
+    'Mixed Beverages': '/images/mixedbev.png',
+    'Pastries': '/images/pastries.png',
+    'Salad': '/images/salad.jpg',
+    'Sandwiches': '/images/sandwiches.png',
+    'Soft Drinks': '/images/soft-drinks.png',
+    'Tea': '/images/tea.png',
+    'Yogurts': '/images/yogurt.png'
+  }
+
+  // Handle category selection - clicking active category deselects it
+  const handleCategoryClick = (selectedCategory) => {
+    if (category === selectedCategory) {
+      // Clicking active category - show all items
+      setParams({})
+    } else {
+      // Clicking different category - filter by it
+      setParams({ category: selectedCategory })
+    }
+  }
+
+  // Fetch menu data on component mount
+  useEffect(() => {
+    const loadMenu = async () => {
+      try {
+        setLoading(true);
+        const data = await fetchMenu(category);
+        setItems(data.items);
+        setCategories(data.categories);
+        setError(null);
+      } catch (err) {
+        setError(err.message);
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadMenu();
+  }, [category]);
+
+  // Items are already filtered by backend
+  const filteredItems = useMemo(() => {
+    return items.filter((i) => i && i.id && i.name);
+  }, [items]);
+
+  if (error) {
+    return (
+      <div className="page-wrap" style={{ textAlign: 'center' }}>
+        <h1 className="menu-title">Menu</h1>
+        <p style={{ color: '#d32f2f' }}>Error: {error}</p>
+        <button
+          type="button"
+          className="primary-btn"
+          onClick={() => window.location.reload()}
+          style={{ marginTop: '20px' }}
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="page-wrap" style={{ textAlign: 'center' }}>
+        <h1 className="menu-title">Menu</h1>
+        <p>Loading menu...</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="page-wrap">
+      <div className="menu-header">
+        <h1 className="menu-title">Menu</h1>
+        <p className="menu-subtitle">Browse items by category</p>
+      </div>
+
+      <h2 className="section-title">CATEGORIES</h2>
+      <div className="catbar">
+        {categories.length > 0 ? (
+          categories.map((c) => (
+            <button 
+              key={c} 
+              type="button" 
+              className={`cat-chip ${category === c ? 'active' : ''}`}
+              onClick={() => handleCategoryClick(c)}
+            >
+              <div className="cat-chip-content">
+                <img 
+                  src={categoryImages[c] || '/images/placeholder.png'} 
+                  alt={c} 
+                  className="cat-chip-image" 
+                />
+                <span className="cat-chip-text">{c}</span>
+              </div>
+            </button>
+          ))
+        ) : (
+          <span>No categories found.</span>
+        )}
+      </div>
+
+      <MenuList items={filteredItems} />
+    </div>
+  )
+}

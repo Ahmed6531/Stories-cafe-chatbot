@@ -1,7 +1,22 @@
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useCart } from '../state/useCart'
 
+export default function Checkout() {
+  const { dispatch } = useCart()
+  const navigate = useNavigate()
+  const [formData, setFormData] = useState({
+    name: '',
+    phone: '',
+    address: '',
+    orderType: 'pickup',
+    notes: '',
+  })
 
-import { useState } from "react";
-import { Link } from "react-router-dom";
+  const handleChange = (e) => {
+    const { name, value } = e.target
+    setFormData((prev) => ({ ...prev, [name]: value }))
+  }
 
 function Checkout() {
   const [cartItems, setCartItems] = useState(() => {
@@ -14,156 +29,137 @@ function Checkout() {
     localStorage.setItem("cart", JSON.stringify(cartItems));
   }, [cartItems]);
 
+  const handleSubmit = async (e) => {
+    e.preventDefault()
 
-  // Update quantity functions
-  const increaseQty = (id) => {
-    setCartItems((items) =>
-      items.map((item) =>
-        item.id === id ? { ...item, quantity: item.quantity + 1 } : item
-      )
-    );
-  };
+    if (!formData.name || !formData.phone) {
+      alert('Please fill in all required fields')
+      return
+    }
 
-  const decreaseQty = (id) => {
-    setCartItems((items) =>
-      items
-        .map((item) =>
-          item.id === id ? { ...item, quantity: item.quantity - 1 } : item
-        )
-        .filter((item) => item.quantity > 0)
-    );
-  };
-
-  // Remove item function
-  const removeItem = (id) => {
-    setCartItems(cartItems.filter((item) => item.id !== id));
-  };
-
-  // Calculate total price
-  const totalPrice = cartItems.reduce(
-    (total, item) => total + item.price * item.quantity,
-    0
-  );
-
-  const handleCheckout = () => {
-    alert("Order has been placed");
-  };
-
-  // Placeholder image URL
-  const placeholderImg = "https://via.placeholder.com/100/8B7355/FFFFFF?text=Coffee";
+    try {
+      // TODO: Make API call to create order
+      // TODO: Dispatch does nothing (static), revert by restoring cartReducer logic for CLEAR_CART
+      dispatch({ type: 'CLEAR_CART' }) // Static: does nothing
+      navigate('/success')
+    } catch (err) {
+      alert('Error creating order: ' + err.message)
+    }
+  }
 
   return (
-    <div className="checkout-page">
-      {/* Header */}
-      <header className="checkout-header">
-        <div className="header-content">
-          <h1>Your Cart</h1>
+    <div className="page-wrap" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
+      <div>
+        <h1 className="menu-title">Checkout</h1>
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+              Full Name *
+            </label>
+            <input
+              type="text"
+              name="name"
+              value={formData.name}
+              onChange={handleChange}
+              required
+              style={{
+                width: '100%',
+                padding: '12px',
+                border: '1px solid #e0e0e0',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontFamily: 'inherit',
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+              Phone Number *
+            </label>
+            <input
+              type="tel"
+              name="phone"
+              value={formData.phone}
+              onChange={handleChange}
+              required
+              style={{
+                width: '100%',
+                padding: '12px',
+                border: '1px solid #e0e0e0',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontFamily: 'inherit',
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+              Order Type
+            </label>
+            <select
+              name="orderType"
+              value={formData.orderType}
+              onChange={handleChange}
+              style={{
+                width: '100%',
+                padding: '12px',
+                border: '1px solid #e0e0e0',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontFamily: 'inherit',
+              }}
+            >
+              <option value="pickup">Pickup</option>
+              <option value="dine_in">Dine In</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+              Special Notes
+            </label>
+            <textarea
+              name="notes"
+              value={formData.notes}
+              onChange={handleChange}
+              rows="4"
+              style={{
+                width: '100%',
+                padding: '12px',
+                border: '1px solid #e0e0e0',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontFamily: 'inherit',
+              }}
+            />
+          </div>
+
+          <button type="submit" className="primary-btn" style={{ marginTop: '12px' }}>
+            Place Order
+          </button>
+        </form>
+      </div>
+
+      <div>
+        <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '20px' }}>Order Summary</h2>
+        <div
+          style={{
+            padding: '20px',
+            border: '1px solid #e0e0e0',
+            borderRadius: '12px',
+            backgroundColor: '#f5f5f5',
+          }}
+        >
+          {/* TODO: Restore order summary with dynamic items and total */}
+          {/* Missing: state.items.map for item list, total calculation */}
+          {/* Container kept empty as per requirements */}
         </div>
-      </header>
-
-      {/* Main Content */}
-      <div className="checkout-container">
-        {cartItems.length === 0 ? (
-          <div className="empty-cart">
-            <p>Your cart is empty</p>
-            <Link to="/">
-              <button className="btn-primary">Continue Shopping</button>
-            </Link>
-          </div>
-        ) : (
-          <div className="cart-content">
-            {/* Cart Items */}
-            <div className="cart-items">
-              {cartItems.map((item) => (
-                <div key={item.id} className="cart-item">
-                  {/* Item Image */}
-                  <div className="item-image">
-                    <img
-                      src={item.image || placeholderImg}
-                      alt={item.name}
-                    />
-                  </div>
-
-                  {/* Item Details */}
-                  <div className="item-details">
-                    <h3>{item.name}</h3>
-                    <p className="item-price">${item.price.toFixed(2)}</p>
-                  </div>
-
-                  {/* Quantity Controls */}
-                  <div className="quantity-controls">
-                    <button
-                      className="qty-btn"
-                      onClick={() => decreaseQty(item.id)}
-                      aria-label="Decrease quantity"
-                    >
-                      −
-                    </button>
-                    <span className="quantity">{item.quantity}</span>
-                    <button
-                      className="qty-btn"
-                      onClick={() => increaseQty(item.id)}
-                      aria-label="Increase quantity"
-                    >
-                      +
-                    </button>
-                  </div>
-
-                  {/* Item Total */}
-                  <div className="item-total">
-                    ${(item.price * item.quantity).toFixed(2)}
-                  </div>
-
-                  {/* Remove Button */}
-                  <button
-                    className="btn-remove"
-                    onClick={() => removeItem(item.id)}
-                    aria-label="Remove item"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {/* Order Summary */}
-            <div className="order-summary">
-              <h2>Order Summary</h2>
-              
-              <div className="summary-row">
-                <span>Subtotal</span>
-                <span>${totalPrice.toFixed(2)}</span>
-              </div>
-              
-              <div className="summary-row">
-                <span>Tax (estimated)</span>
-                <span>${(totalPrice * 0.08).toFixed(2)}</span>
-              </div>
-              
-              <div className="summary-divider"></div>
-              
-              <div className="summary-row total">
-                <span>Total</span>
-                <span>${(totalPrice * 1.08).toFixed(2)}</span>
-              </div>
-
-              <button
-                className="btn-checkout"
-                disabled={cartItems.length === 0}
-                onClick={handleCheckout}
-              >
-                Proceed to Checkout
-              </button>
-
-              <Link to="/" className="continue-shopping">
-                <button className="btn-secondary">Continue Shopping</button>
-              </Link>
-            </div>
-          </div>
-        )}
       </div>
     </div>
-  );
+  )
 }
 
 export default Checkout;
