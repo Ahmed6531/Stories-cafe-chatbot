@@ -69,23 +69,17 @@ export async function getMenuItem(req, res) {
       .filter((group) => group !== null); // Remove any null groups (if reference is invalid)
 
     // Create the response object with resolved variants
-    const itemWithVariants = {
+    const itemResponse = {
       ...menuItem.toObject(),
-      variants: orderedVariantGroups,
+      variants: orderedVariantGroups, // optional: you can remove this later
     };
-
-    // Remove the variantGroups array since we're using the resolved variants
-    delete itemWithVariants.variantGroups;
-    if (itemWithVariants.variantGroupOrder) {
-      delete itemWithVariants.variantGroupOrder;
-    }
 
     console.log(
       `📤 Returning menu item "${menuItem.name}" with ${orderedVariantGroups.length} variant groups`,
     );
     res.status(200).json({
       success: true,
-      item: itemWithVariants,
+      item: itemResponse,
     });
   } catch (error) {
     console.error(
