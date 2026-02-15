@@ -7,7 +7,6 @@ import menuRoutes from "./routes/menu.routes.js";
 import ordersRoutes from "./routes/orders.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import 'dotenv/config'; 
-import { transporter } from "./utils/mailer.js";
 
 
 export function createApp() {

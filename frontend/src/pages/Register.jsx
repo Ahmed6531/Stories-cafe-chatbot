@@ -8,6 +8,7 @@ export default function Register() {
     password: '',
     confirmPassword: '',
   })
+  const [status, setStatus] = useState({ type: '', message: '' })
   const navigate = useNavigate()
 
   const handleChange = (e) => {
@@ -17,36 +18,36 @@ export default function Register() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    setStatus({ type: '', message: '' })
+
     if (formData.password !== formData.confirmPassword) {
-      alert('Passwords do not match')
+      setStatus({ type: 'error', message: 'Passwords do not match' })
       return
     }
-    // TODO: Implement actual registration logic
+
     try {
       const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: formData.name,
           email: formData.email,
           password: formData.password,
         }),
-      });
+      })
 
-      const data = await res.json();
+      const data = await res.json()
 
       if (res.ok) {
-        alert("Registration successful! Please login.");
-        navigate("/login");
+        setStatus({ type: 'success', message: 'Registration successful. Check your email to verify your account.' })
       } else {
-        alert(data.message || "Registration failed");
+        setStatus({ type: 'error', message: data.message || 'Registration failed' })
       }
     } catch (err) {
-      console.error(err);
-      alert("Server error, please try again");
+      console.error(err)
+      setStatus({ type: 'error', message: 'Server error, please try again' })
     }
-  };
-  
+  }
 
   return (
     <div className="page-wrap" style={{ maxWidth: '400px', margin: '0 auto' }}>
@@ -150,6 +151,21 @@ export default function Register() {
         <button type="submit" className="primary-btn" style={{ marginTop: '12px' }}>
           Register
         </button>
+
+        {status.message ? (
+          <p
+            role="status"
+            style={{
+              margin: '-6px 0 0 0',
+              color: status.type === 'error' ? '#d93025' : '#00704a',
+              fontStyle: 'italic',
+              fontWeight: 600,
+              fontSize: '12px',
+            }}
+          >
+            {status.message}
+          </p>
+        ) : null}
       </form>
 
       <p style={{ textAlign: 'center', marginTop: '16px' }}>
