@@ -170,7 +170,6 @@ export async function getMenuByCategory(req, res) {
     // Find all items in this category - only return essential fields
     const items = await MenuItem.find({
       category: { $regex: new RegExp(`^${category}$`, "i") },
-      isAvailable: true,
     })
       .select(
         "id name slug image category description basePrice isAvailable isFeatured",

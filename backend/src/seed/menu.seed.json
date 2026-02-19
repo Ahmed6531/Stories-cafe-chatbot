@@ -194,7 +194,7 @@
     "category": "Coffee",
     "description": "Smooth and creamy matcha sweetened just right and served with steamed milk. This favorite will transport your senses to pure green delight.",
     "basePrice": 330000,
-    "isAvailable": true,
+    "isAvailable": false,
     "isFeatured": false,
     "variantGroups": [
       "matcha-size",
@@ -538,7 +538,7 @@
     "category": "Mixed Beverages",
     "description": "This blend of sweetened premium matcha green tea, milk and ice, topped off with sweetened whipped cream, inspires a delicious boost and good green vibes.",
     "basePrice": 380000,
-    "isAvailable": true,
+    "isAvailable": false,
     "isFeatured": false,
     "variantGroups": [
       "coffee-size-standard",
@@ -674,7 +674,7 @@
     "category": "Mixed Beverages",
     "description": "Our signature drink combined with cocoa and ground chocolate, then topped with cold milk and served over iced, makes a perfect mocha companion day or night.",
     "basePrice": 330000,
-    "isAvailable": true,
+    "isAvailable": false,
     "isFeatured": false,
     "variantGroups": [
       "coffee-size-standard",

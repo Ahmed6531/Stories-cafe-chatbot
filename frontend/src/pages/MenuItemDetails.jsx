@@ -32,16 +32,18 @@ export default function MenuItemDetails() {
 
   if (loading) {
     return (
-      <div className="page-wrap">
-        <h1 className="menu-title">Loading...</h1>
+      <div className="page-wrap state-wrap">
+        <h1 className="state-title">Loading item...</h1>
+        <p className="state-text">Please wait a moment.</p>
       </div>
     )
   }
 
   if (!item) {
     return (
-      <div className="page-wrap">
-        <h1 className="menu-title">Item not found</h1>
+      <div className="page-wrap state-wrap">
+        <h1 className="state-title">Item not found</h1>
+        <p className="state-text">Try browsing the menu and selecting another item.</p>
       </div>
     )
   }

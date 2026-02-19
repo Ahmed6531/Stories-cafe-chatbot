@@ -32,13 +32,12 @@ export default function MenuItem({ item }) {
       <div className="menu-item-content compact">
         <h3 className="menu-item-name">{item.name}</h3>
         <p className="menu-item-description">{item.description}</p>
-        <div className="menu-item-price">{formatPrice(item.basePrice)}</div>
-      </div>
-
-      <div className="menu-item-footer">
-        <span className={`pill ${item.isAvailable ? 'ok' : 'off'}`}>
-          {item.isAvailable ? 'Available' : 'Out of stock'}
-        </span>
+        <div className="menu-item-bottom">
+          <span className={`pill menu-item-status ${item.isAvailable ? 'ok' : 'off'}`}>
+            {item.isAvailable ? 'Available' : 'Out of stock'}
+          </span>
+          <div className="menu-item-price">{formatPrice(item.basePrice)}</div>
+        </div>
       </div>
     </div>
   )

@@ -17,7 +17,7 @@ export default function Menu() {
     'Coffee': '/images/coffee.png',
     'Mixed Beverages': '/images/mixedbev.png',
     'Pastries': '/images/pastries.png',
-    'Salad': '/images/salad.jpg',
+    'Salad': '/images/salad.png',
     'Sandwiches': '/images/sandwiches.png',
     'Soft Drinks': '/images/soft-drinks.png',
     'Tea': '/images/tea.png',
@@ -61,9 +61,9 @@ export default function Menu() {
 
   if (error) {
     return (
-      <div className="page-wrap" style={{ textAlign: 'center' }}>
-        <h1 className="menu-title">Menu</h1>
-        <p style={{ color: '#d32f2f' }}>Error: {error}</p>
+      <div className="page-wrap state-wrap">
+        <h1 className="state-title">Unable to load menu</h1>
+        <p className="state-text error">Error: {error}</p>
         <button
           type="button"
           className="primary-btn"
@@ -78,21 +78,18 @@ export default function Menu() {
 
   if (loading) {
     return (
-      <div className="page-wrap" style={{ textAlign: 'center' }}>
-        <h1 className="menu-title">Menu</h1>
-        <p>Loading menu...</p>
+      <div className="page-wrap state-wrap">
+        <h1 className="state-title">Loading menu...</h1>
+        <p className="state-text">Fetching your items.</p>
       </div>
     )
   }
 
   return (
     <div className="page-wrap">
-      <div className="menu-header">
-        <h1 className="menu-title">Menu</h1>
-        <p className="menu-subtitle">Browse items by category</p>
+      <div className="section-heading">
+        <h2 className="section-title">Categories</h2>
       </div>
-
-      <h2 className="section-title">CATEGORIES</h2>
       <div className="catbar">
         {categories.length > 0 ? (
           categories.map((c) => (

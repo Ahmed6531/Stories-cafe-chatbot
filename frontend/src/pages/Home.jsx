@@ -16,7 +16,7 @@ export default function Home() {
     'Coffee': '/images/coffee.png',
     'Mixed Beverages': '/images/mixedbev.png',
     'Pastries': '/images/pastries.png',
-    'Salad': '/images/salad.jpg',
+    'Salad': '/images/salad.png',
     'Sandwiches': '/images/sandwiches.png',
     'Soft Drinks': '/images/soft-drinks.png',
     'Tea': '/images/tea.png',
@@ -53,12 +53,14 @@ export default function Home() {
 
   return (
     <div className="page-wrap">
-      <h2 className="section-title">CATEGORIES</h2>
+      <div className="section-heading">
+        <h2 className="section-title">Categories</h2>
+      </div>
       <div className="catbar">
         {loading ? (
-          <span>Loading categories...</span>
+          <span className="state-text">Loading categories...</span>
         ) : error ? (
-          <span className="error">{error}</span>
+          <span className="state-text error">{error}</span>
         ) : categories.length > 0 ? (
           categories.map((c) => (
             <button key={c} type="button" className="cat-chip" onClick={() => pickCategory(c)}>
@@ -77,11 +79,13 @@ export default function Home() {
         )}
       </div>
 
-      <h2 className="section-title">FEATURED ITEMS</h2>
+      <div className="section-heading">
+        <h2 className="section-title">Featured items</h2>
+      </div>
       {loading ? (
-        <p>Loading featured items...</p>
+        <p className="state-text">Loading featured items...</p>
       ) : error ? (
-        <p className="error">{error}</p>
+        <p className="state-text error">{error}</p>
       ) : featured.length > 0 ? (
         <FeaturedItems items={featured} />
       ) : (
