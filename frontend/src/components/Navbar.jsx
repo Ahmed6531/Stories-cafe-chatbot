@@ -145,6 +145,10 @@ export default function Navbar() {
                 Login
               </button>
             )}
+            
+            {isAuthed && ( <button className="top-pill auth" type="button" onClick={handleLogout}>
+               Logout 
+            </button> )}
             {/* TODO: Cart button is static (badge always 0), revert by restoring dynamic cartCount and state logic */}
             <button className="top-pill outline" type="button" onClick={() => navigate('/cart')}>
               Cart <span className="cart-badge">{cartCount}</span>
