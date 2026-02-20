@@ -8,6 +8,7 @@ import ordersRoutes from "./routes/orders.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import { sendEmail } from "./utils/mailer.js";
 import { welcomeTemplate } from "./utils/EmailTemplates.js";
+import categoryRoutes from "./routes/menu.routes.js";
 import 'dotenv/config'; 
 
 
@@ -24,6 +25,7 @@ export function createApp() {
   //routes
   app.use("/health", healthRoutes);
   app.use("/menu", authenticate, menuRoutes);
+  app.use("/categories",authenticate,categoryRoutes);
   app.use("/orders", ordersRoutes);
   app.use("/auth", authRoutes);
 

@@ -286,3 +286,41 @@ try{
     });
   }
 }
+//image uptdate and delete (admin only)
+export const updateImage = async (req, res) => {
+  const { image } = req.body;
+
+  if (!image) {
+    return res.status(400).json({ message: "Image required" });
+  }
+
+  try {
+    const item = await MenuItem.findByIdAndUpdate(
+      req.params.id,
+      { image },
+      { new: true }
+    );
+
+    if (!item) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+
+    res.json(item);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const deleteImage = async (req, res) => {
+  try {
+    const item = await MenuItem.findByIdAndUpdate(
+      req.params.id,
+      { $set: { image: "default.jpg" } },
+      { new: true }
+    );
+
+    res.json(item);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
