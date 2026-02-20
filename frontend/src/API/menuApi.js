@@ -71,4 +71,41 @@ export async function fetchMenuItemById(id) {
     throw new Error(error.response?.data?.error || 'Failed to load menu item')
   }
 }
+/**
+ * Admin-only: Create a new menu item
+ */
+export async function createMenuItem(data) {
+  try {
+    const response = await http.post("/menu", data); // JWT sent automatically via http
+    return transformMenuItem(response.data);
+  } catch (error) {
+    console.error("Failed to create menu item:", error);
+    throw new Error(error.response?.data?.error || "Failed to create menu item");
+  }
+}
 
+/**
+ * Admin-only: Update a menu item by ID
+ */
+export async function updateMenuItem(id, data) {
+  try {
+    const response = await http.put(`/menu/${id}`, data);
+    return transformMenuItem(response.data);
+  } catch (error) {
+    console.error(`Failed to update menu item ${id}:`, error);
+    throw new Error(error.response?.data?.error || "Failed to update menu item");
+  }
+}
+
+/**
+ * Admin-only: Delete a menu item by ID
+ */
+export async function deleteMenuItem(id) {
+  try {
+    const response = await http.delete(`/menu/${id}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Failed to delete menu item ${id}:`, error);
+    throw new Error(error.response?.data?.error || "Failed to delete menu item");
+  }
+}
