@@ -287,16 +287,20 @@
 .catbar {
   display: flex;
   gap: 16px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
   justify-content: center;
   align-items: center;
   margin-bottom: 8px;
-  padding: 0;
+  padding: 4px 0 8px;
   background: transparent;
   border: 0;
   border-radius: 0;
   box-shadow: none;
 }
+
+.catbar::-webkit-scrollbar { display: none; }
+.catbar { -ms-overflow-style: none; scrollbar-width: none; }
 
 .cat-chip {
   padding: 0;
@@ -315,6 +319,7 @@
   overflow: hidden;
   min-width: 120px;
   max-width: 140px;
+  flex-shrink: 0;
 }
 
 .cat-chip-content {
@@ -358,7 +363,7 @@
   background: #00704a;
   color: #ffffff;
   border-color: #00704a;
-  box-shadow: 0 6px 16px rgba(0, 112, 74, 0.24);
+  box-shadow: 0 6px 16px rgba(0, 112, 74, 0.18);
   transform: translateY(-1px);
 }
 
@@ -368,7 +373,7 @@
   background: #147d56;
   border-color: #147d56;
   transform: translateY(-2px);
-  box-shadow: 0 8px 18px rgba(0, 112, 74, 0.28);
+  box-shadow: 0 8px 18px rgba(0, 112, 74, 0.22);
 }
 
 .cat-chip-skeleton,
@@ -379,7 +384,7 @@
 .subcatbar {
   display: flex;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
   justify-content: center;
 }
@@ -387,19 +392,19 @@
 .subcat-chip {
   font-family: 'Montserrat', sans-serif;
   font-size: 13px;
-  font-weight: 600;
-  padding: 6px 16px;
+  font-weight: 500;
+  padding: 8px 16px;
   border-radius: 20px;
-  border: 1.5px solid #d1d5db;
-  background: transparent;
-  color: #555;
+  border: none;
+  background: #f5f5f5;
+  color: #444;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .subcat-chip:hover {
-  border-color: #00704a;
-  color: #00704a;
+  background: #ececec;
+  color: #444;
 }
 
 .subcat-chip.active {

@@ -15,7 +15,6 @@ import Box from '@mui/material/Box'
 import HomeIcon from '@mui/icons-material/Home'
 import MenuBookIcon from '@mui/icons-material/MenuBook'
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart'
-import '../styles/index.css'
 
 const DRAWER_OPEN_WIDTH = 240
 const DRAWER_CLOSED_WIDTH = 64
@@ -135,6 +134,8 @@ function useBreadcrumb() {
 export default function Navbar() {
   const [isAuthed] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(true)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatWidth, setChatWidth] = useState(380)
   const pageRef = useRef(null)
   const { cartCount } = useCart()
   const crumbs = useBreadcrumb()
@@ -152,6 +153,26 @@ export default function Navbar() {
       pageRef.current.scrollTop = 0
     }
   }, [location.pathname, location.search])
+
+  const handleResizeStart = (event) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = chatWidth
+
+    const handleMouseMove = (moveEvent) => {
+      const delta = startX - moveEvent.clientX
+      const nextWidth = Math.min(600, Math.max(280, startWidth + delta))
+      setChatWidth(nextWidth)
+    }
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+  }
 
   return (
     <div className="app-shell">
@@ -278,60 +299,122 @@ export default function Navbar() {
 
       </StyledDrawer>
 
-      <main className="main">
-        <header className="topbar">
-          <div className="topbar-left">
-            {!drawerOpen && (
-              <img
-                src="/stories-logo.png"
-                alt="Stories"
-                className="topbar-logo"
-                onError={(e) => { e.currentTarget.style.display = 'none' }}
-              />
-            )}
-            {location.pathname !== '/' && (
-              <div className="breadcrumb">
-                {crumbs.map((c, idx) => (
-                  <span key={c.to + idx} className="crumb">
-                    <Link to={c.to} className="crumb-link">{c.label}</Link>
-                    {idx < crumbs.length - 1 && <span className="crumb-sep">/</span>}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="topbar-actions">
-            {isAuthed ? (
-              <button className="top-pill auth" type="button" onClick={() => navigate(-1)}>
-                Back
-              </button>
-            ) : (
-              <button className="top-pill outline" type="button" onClick={() => navigate('/login')}>
+      <div className="content-shell">
+        <main className="main">
+          <header className="topbar">
+            <div className="topbar-left">
+              {!drawerOpen && (
+                <img
+                  src="/stories-logo.png"
+                  alt="Stories"
+                  className="topbar-logo"
+                  onError={(e) => { e.currentTarget.style.display = 'none' }}
+                />
+              )}
+              {location.pathname !== '/' && (
+                <div className="breadcrumb">
+                  {crumbs.map((c, idx) => (
+                    <span key={c.to + idx} className="crumb">
+                      <Link to={c.to} className="crumb-link">{c.label}</Link>
+                      {idx < crumbs.length - 1 && <span className="crumb-sep">/</span>}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="topbar-actions">
+              <button
+                className="chat-toggle-btn"
+                type="button"
+                aria-label={chatOpen ? 'Close chat panel' : 'Open chat panel'}
+                onClick={() => {
+                  setChatOpen((prev) => {
+                    const next = !prev
+                    if (next) setDrawerOpen(false)
+                    return next
+                  })
+                }}
+              >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="8" r="4" />
-                  <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+                  <path d="M21 15a4 4 0 0 1-4 4H8l-5 4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
                 </svg>
-                <span>Login</span>
               </button>
-            )}
-            <button className="top-pill outline" type="button" onClick={() => navigate('/cart')}>
-              <span aria-hidden="true" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="9" cy="21" r="1" />
-                  <circle cx="20" cy="21" r="1" />
-                  <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.95-1.57L23 6H6" />
-                </svg>
-              </span>
-              <span>Cart</span>
-              {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
-            </button>
-          </div>
-        </header>
+              {isAuthed ? (
+                <button className="top-pill auth" type="button" onClick={() => navigate(-1)}>
+                  Back
+                </button>
+              ) : (
+                <button className="top-pill outline" type="button" onClick={() => navigate('/login')}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="8" r="4" />
+                    <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+                  </svg>
+                  <span>Login</span>
+                </button>
+              )}
+              <button className="top-pill outline" type="button" onClick={() => navigate('/cart')}>
+                <span aria-hidden="true" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="9" cy="21" r="1" />
+                    <circle cx="20" cy="21" r="1" />
+                    <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.95-1.57L23 6H6" />
+                  </svg>
+                </span>
+                <span>Cart</span>
+                {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
+              </button>
+            </div>
+          </header>
 
-        <div ref={pageRef} className="page">
-          <Outlet />
-        </div>
-      </main>
+          <div ref={pageRef} className="page">
+            <Outlet />
+          </div>
+        </main>
+        {chatOpen && (
+          <div className="chat-unit" style={{ '--chat-panel-width': `${chatWidth}px` }}>
+            <div className="resize-handle" onMouseDown={handleResizeStart} />
+            <div className="chat-panel-shell">
+              <aside className="chat-panel">
+                <button className="chat-panel-close" type="button" aria-label="Close chat panel" onClick={() => setChatOpen(false)}>
+                  x
+                </button>
+
+                <section className="chat-conversation" aria-label="Conversation area">
+                  <div className="chat-idle">
+                    <button className="chat-idle-mic" type="button" aria-label="Tap to speak">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="9" y="3" width="6" height="11" rx="3" />
+                        <path d="M5 11a7 7 0 0 0 14 0" />
+                        <line x1="12" y1="18" x2="12" y2="21" />
+                        <line x1="8" y1="21" x2="16" y2="21" />
+                      </svg>
+                    </button>
+                    <p className="chat-idle-label">tap to speak</p>
+                    <div className="chat-suggestions" role="list" aria-label="Suggestions">
+                      <button className="chat-suggestion-chip" type="button">What&apos;s good today?</button>
+                      <button className="chat-suggestion-chip" type="button">Repeat my last order</button>
+                      <button className="chat-suggestion-chip" type="button">Surprise me</button>
+                    </div>
+                  </div>
+                </section>
+
+                <div className="chat-input-bar">
+                  <input className="chat-input" type="text" placeholder="Type your order..." />
+                  <button className="chat-input-mic" type="button" aria-label="Use microphone">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="9" y="3" width="6" height="11" rx="3" />
+                      <path d="M5 11a7 7 0 0 0 14 0" />
+                      <line x1="12" y1="18" x2="12" y2="21" />
+                      <line x1="8" y1="21" x2="16" y2="21" />
+                    </svg>
+                  </button>
+                </div>
+              </aside>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
+
