@@ -76,11 +76,22 @@ function useBreadcrumb() {
 }
 
 export default function Navbar() {
-  const [isAuthed] = useState(false) // demo toggle - whether user is logged in
+  const [isAuthed , setIsAuthed] = useState(false) 
   const { cartCount } = useCart() // TODO: cartCount is static (always 0), revert to dynamic if needed
   const crumbs = useBreadcrumb()
   const location = useLocation()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    setIsAuthed(!!token)
+  }, [location.pathname]) 
+
+  const handleLogout = () => {
+    localStorage.removeItem('token')
+    setIsAuthed(false)
+    navigate('/login')
+  }
 
   return (
     <div className="app-shell">
