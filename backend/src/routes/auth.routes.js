@@ -58,7 +58,14 @@ router.post("/login", async (req, res) => {
     }
 
     if (!user.isVerified) {
-      return res.status(403).json({ message: "Please verify your email before logging in" });
+  const actionLink = `${process.env.BACKEND_URL}/auth/verify-email?email=${email}`;
+   await sendEmail(
+    email,
+    "Verify Your Account",
+    accountVerifyTemplate,
+    { name: email.split("@")[0], actionLink }
+  );
+  return res.status(403).json({ message: "Please verify your email. A new verification email has been sent." });
     }
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
