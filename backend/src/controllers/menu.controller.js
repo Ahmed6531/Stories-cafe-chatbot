@@ -204,3 +204,85 @@ export async function getMenuByCategory(req, res) {
     });
   }
 }
+// POST /api/menu -create new menu items (admin only)
+export async function createMenuItem(req,res){
+  try {
+    console.log("📥 POST /menu request received");
+
+    const newItem = await MenuItem.create(req.body);
+
+    console.log(`✅ Created menu item: ${newItem.name}`);
+
+    res.status(201).json({
+      success: true,
+      item: newItem,
+    });
+  } catch (error) {
+    console.error("❌ Failed to create menu item:", error.message);
+
+    res.status(400).json({
+      success: false,
+      error: error.message,
+    });
+  }
+}
+//PATCH /api/menu/:id -update menu items (admin only)
+export async function updateMenuItem(req,res){
+  try{
+    const { id } = req.params;
+    console.log(`📥 PATCH /menu/${id} request received`);
+    
+    const updatedItem = await MenuItem.findOneAndUpdate(
+      { id: parseInt(id) },
+      req.body,
+      { new: true, runValidators: true }
+    );
+    if (!updatedItem) {
+      return res.status(404).json({
+        success: false,
+        error: "Menu item not found",
+      });
+    }
+    console.log(`✅ Updated menu item: ${updatedItem.name}`);
+    res.status(200).json({
+      success: true,
+      item: updatedItem,
+    });
+  } catch (error) {
+    console.error(`❌ Failed to update menu item ${req.params.id}:`, error.message);
+     res.status(400).json({
+      success: false,
+      error: error.message,
+    });
+
+  }
+}
+//DELETE /api/menu/:id -delete menu item (admin only)
+export async function deleteMenuItem( req,res){
+try{
+  const { id } = req.params;
+  console.log(`📥 DELETE /menu/${id} request received`);
+
+  const deletedItem = await MenuItem.findOneAndDelete(
+    {id: parseInt(id),}
+  );
+  if(!deletedItem){
+    return res.status(404).json(
+      {success: false,
+      error: "Menu item not found",}
+    );
+  }
+  console.log(`🗑 Deleted menu item: ${deletedItem.name}`);
+  res.status(200).json({
+      success: true,
+      message: "Menu item deleted successfully",
+    });
+  } catch (error) {
+    console.error(`❌ Failed to delete menu item ${req.params.id}:`, error.message);
+
+    res.status(500).json({
+      success: false,
+      error: "Failed to delete menu item",
+    });
+  }
+}
