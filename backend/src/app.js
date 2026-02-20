@@ -24,8 +24,8 @@ export function createApp() {
 
   //routes
   app.use("/health", healthRoutes);
-  app.use("/menu", authenticate, menuRoutes);
-  app.use("/categories",authenticate,categoryRoutes);
+  app.use("/menu", menuRoutes);
+  app.use("/categories" ,categoryRoutes);
   app.use("/orders", ordersRoutes);
   app.use("/auth", authRoutes);
 
