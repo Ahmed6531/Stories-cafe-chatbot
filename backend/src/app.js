@@ -23,7 +23,7 @@ export function createApp() {
 
   //routes
   app.use("/health", healthRoutes);
-  app.use("/menu", menuRoutes);
+  app.use("/menu", authenticate, menuRoutes);
   app.use("/orders", ordersRoutes);
   app.use("/auth", authRoutes);
 
