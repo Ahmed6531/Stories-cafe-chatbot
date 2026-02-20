@@ -25,7 +25,10 @@
     "basePrice": 500000,
     "isAvailable": true,
     "isFeatured": true,
-    "variantGroups": ["yogurt-size", "yogurt-flavors-standard"]
+    "variantGroups": [
+      "yogurt-size",
+      "yogurt-flavors-standard"
+    ]
   },
   {
     "id": 3,
@@ -37,7 +40,10 @@
     "basePrice": 750000,
     "isAvailable": true,
     "isFeatured": true,
-    "variantGroups": ["yogurt-size", "yogurt-flavors-pistachio"]
+    "variantGroups": [
+      "yogurt-size",
+      "yogurt-flavors-pistachio"
+    ]
   },
   {
     "id": 4,
@@ -49,7 +55,11 @@
     "basePrice": 270000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": ["coffee-espresso-options", "coffee-milk-options"]
+    "variantGroups": [
+      "coffee-espresso-options",
+      "coffee-milk-options"
+    ],
+    "subcategory": "Hot"
   },
   {
     "id": 5,
@@ -66,7 +76,8 @@
       "coffee-espresso-options",
       "coffee-milk-options-with-large",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Hot"
   },
   {
     "id": 6,
@@ -83,7 +94,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Hot"
   },
   {
     "id": 7,
@@ -100,7 +112,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Hot"
   },
   {
     "id": 8,
@@ -117,7 +130,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Hot"
   },
   {
     "id": 9,
@@ -133,7 +147,8 @@
       "coffee-size-standard",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Hot"
   },
   {
     "id": 10,
@@ -150,7 +165,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Hot"
   },
   {
     "id": 11,
@@ -167,7 +183,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Hot"
   },
   {
     "id": 12,
@@ -184,7 +201,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Hot"
   },
   {
     "id": 13,
@@ -201,7 +219,8 @@
       "coffee-espresso-options",
       "coffee-milk-options-with-large",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Hot"
   },
   {
     "id": 14,
@@ -213,7 +232,11 @@
     "basePrice": 340000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": ["coffee-espresso-options", "coffee-milk-options"]
+    "variantGroups": [
+      "coffee-espresso-options",
+      "coffee-milk-options"
+    ],
+    "subcategory": "Hot"
   },
   {
     "id": 15,
@@ -225,7 +248,11 @@
     "basePrice": 340000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": ["coffee-espresso-options", "coffee-milk-options"]
+    "variantGroups": [
+      "coffee-espresso-options",
+      "coffee-milk-options"
+    ],
+    "subcategory": "Black Coffee"
   },
   {
     "id": 16,
@@ -237,7 +264,11 @@
     "basePrice": 270000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": ["coffee-espresso-options", "coffee-milk-options"]
+    "variantGroups": [
+      "coffee-espresso-options",
+      "coffee-milk-options"
+    ],
+    "subcategory": "Hot"
   },
   {
     "id": 17,
@@ -249,7 +280,11 @@
     "basePrice": 270000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": ["coffee-size-with-large", "coffee-milk-options-americano"]
+    "variantGroups": [
+      "coffee-size-with-large",
+      "coffee-milk-options-americano"
+    ],
+    "subcategory": "Black Coffee"
   },
   {
     "id": 18,
@@ -265,7 +300,8 @@
       "coffee-size-with-large",
       "coffee-espresso-options",
       "coffee-milk-options-americano"
-    ]
+    ],
+    "subcategory": "Black Coffee"
   },
   {
     "id": 19,
@@ -277,7 +313,11 @@
     "basePrice": 250000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": ["tea-size-hot", "tea-extra-bag"]
+    "variantGroups": [
+      "tea-size-hot",
+      "tea-extra-bag"
+    ],
+    "subcategory": "Hot Tea"
   },
   {
     "id": 20,
@@ -289,7 +329,11 @@
     "basePrice": 250000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": ["tea-size-hot", "tea-extra-bag"]
+    "variantGroups": [
+      "tea-size-hot",
+      "tea-extra-bag"
+    ],
+    "subcategory": "Hot Tea"
   },
   {
     "id": 21,
@@ -301,7 +345,11 @@
     "basePrice": 250000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": ["tea-size-hot", "tea-extra-bag"]
+    "variantGroups": [
+      "tea-size-hot",
+      "tea-extra-bag"
+    ],
+    "subcategory": "Hot Tea"
   },
   {
     "id": 22,
@@ -313,7 +361,11 @@
     "basePrice": 250000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": ["tea-size-hot", "tea-extra-bag"]
+    "variantGroups": [
+      "tea-size-hot",
+      "tea-extra-bag"
+    ],
+    "subcategory": "Hot Tea"
   },
   {
     "id": 23,
@@ -330,7 +382,8 @@
       "tea-water-concentration",
       "tea-ice-options",
       "tea-peach-juice"
-    ]
+    ],
+    "subcategory": "Iced Tea"
   },
   {
     "id": 24,
@@ -342,7 +395,10 @@
     "basePrice": 300000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": ["pastry-warming-options"]
+    "variantGroups": [
+      "pastry-warming-options"
+    ],
+    "subcategory": "Croissants"
   },
   {
     "id": 25,
@@ -354,7 +410,10 @@
     "basePrice": 350000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": ["pastry-warming-options"]
+    "variantGroups": [
+      "pastry-warming-options"
+    ],
+    "subcategory": "Croissants"
   },
   {
     "id": 26,
@@ -366,7 +425,10 @@
     "basePrice": 350000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": ["pastry-warming-options"]
+    "variantGroups": [
+      "pastry-warming-options"
+    ],
+    "subcategory": "Croissants"
   },
   {
     "id": 27,
@@ -378,7 +440,10 @@
     "basePrice": 500000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": ["pastry-warming-options"]
+    "variantGroups": [
+      "pastry-warming-options"
+    ],
+    "subcategory": "Cookies"
   },
   {
     "id": 28,
@@ -390,7 +455,8 @@
     "basePrice": 500000,
     "isAvailable": true,
     "isFeatured": true,
-    "variantGroups": []
+    "variantGroups": [],
+    "subcategory": "Rolls"
   },
   {
     "id": 29,
@@ -402,7 +468,8 @@
     "basePrice": 550000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": []
+    "variantGroups": [],
+    "subcategory": "Cakes"
   },
   {
     "id": 30,
@@ -414,7 +481,8 @@
     "basePrice": 550000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": []
+    "variantGroups": [],
+    "subcategory": "Rolls"
   },
   {
     "id": 31,
@@ -426,7 +494,8 @@
     "basePrice": 330000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": []
+    "variantGroups": [],
+    "subcategory": "Cookies"
   },
   {
     "id": 32,
@@ -443,7 +512,8 @@
       "coffee-espresso-options",
       "coffee-milk-options-with-large",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Hot"
   },
   {
     "id": 33,
@@ -460,7 +530,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Iced"
   },
   {
     "id": 34,
@@ -477,7 +548,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Frap"
   },
   {
     "id": 35,
@@ -494,7 +566,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Frap"
   },
   {
     "id": 36,
@@ -511,7 +584,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Frap"
   },
   {
     "id": 37,
@@ -528,7 +602,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Frap"
   },
   {
     "id": 38,
@@ -545,7 +620,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Frap"
   },
   {
     "id": 39,
@@ -562,7 +638,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Frap"
   },
   {
     "id": 40,
@@ -579,7 +656,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Frap"
   },
   {
     "id": 41,
@@ -596,7 +674,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Frap"
   },
   {
     "id": 42,
@@ -613,7 +692,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Frap"
   },
   {
     "id": 43,
@@ -630,7 +710,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Frap"
   },
   {
     "id": 44,
@@ -647,7 +728,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Iced"
   },
   {
     "id": 45,
@@ -664,7 +746,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Iced"
   },
   {
     "id": 46,
@@ -681,7 +764,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Iced"
   },
   {
     "id": 47,
@@ -698,7 +782,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Iced"
   },
   {
     "id": 48,
@@ -714,7 +799,8 @@
       "coffee-espresso-options",
       "coffee-milk-options-with-large",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Iced"
   },
   {
     "id": 49,
@@ -731,7 +817,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Frap"
   },
   {
     "id": 50,
@@ -748,7 +835,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Frap"
   },
   {
     "id": 51,
@@ -765,7 +853,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Frap"
   },
   {
     "id": 52,
@@ -782,7 +871,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Iced"
   },
   {
     "id": 53,
@@ -799,7 +889,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Iced"
   },
   {
     "id": 54,
@@ -816,7 +907,8 @@
       "coffee-espresso-options",
       "coffee-milk-options",
       "coffee-add-ons"
-    ]
+    ],
+    "subcategory": "Iced"
   },
   {
     "id": 55,
@@ -876,7 +968,9 @@
     "basePrice": 120000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": ["water-temperature-options"]
+    "variantGroups": [
+      "water-temperature-options"
+    ]
   },
   {
     "id": 60,
@@ -888,7 +982,9 @@
     "basePrice": 70000,
     "isAvailable": true,
     "isFeatured": false,
-    "variantGroups": ["water-temperature-options"]
+    "variantGroups": [
+      "water-temperature-options"
+    ]
   },
   {
     "id": 61,

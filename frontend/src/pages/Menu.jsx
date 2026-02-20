@@ -9,6 +9,7 @@ import '../styles/menu.css'
 export default function Menu() {
   const [params, setParams] = useSearchParams()
   const category = params.get('category') // No default - falsy means show all
+  const [subcategory, setSubcategory] = useState(null)
   const [items, setItems] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
@@ -56,10 +57,26 @@ export default function Menu() {
     loadMenu();
   }, [category]);
 
-  // Items are already filtered by backend
+  useEffect(() => {
+    setSubcategory(null)
+  }, [category])
+
+  const subcategories = useMemo(() => {
+    if (!category) return []
+    const uniqueSubcategories = new Set(
+      items.map((item) => item.subcategory).filter(Boolean)
+    )
+    return Array.from(uniqueSubcategories).sort()
+  }, [items, category])
+
+  // Items are already filtered by backend category; this applies optional subcategory filtering
   const filteredItems = useMemo(() => {
-    return items.filter((i) => i && i.id && i.name);
-  }, [items]);
+    return items.filter((i) => {
+      if (!i || !i.id || !i.name) return false
+      if (!subcategory) return true
+      return i.subcategory === subcategory
+    })
+  }, [items, subcategory])
 
   if (error) {
     return (
@@ -118,6 +135,21 @@ export default function Menu() {
           <span>No categories found.</span>
         )}
       </div>
+
+      {subcategories.length > 0 && (
+        <div className="subcatbar">
+          {subcategories.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className={`subcat-chip ${subcategory === s ? 'active' : ''}`}
+              onClick={() => setSubcategory((prev) => (prev === s ? null : s))}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
 
       <MenuList items={filteredItems} />
     </div>

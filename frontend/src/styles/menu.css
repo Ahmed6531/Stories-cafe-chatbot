@@ -376,6 +376,38 @@
   transform: none;
 }
 
+.subcatbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.subcat-chip {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 16px;
+  border-radius: 20px;
+  border: 1.5px solid #d1d5db;
+  background: transparent;
+  color: #555;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.subcat-chip:hover {
+  border-color: #00704a;
+  color: #00704a;
+}
+
+.subcat-chip.active {
+  background: #00704a;
+  border-color: #00704a;
+  color: #fff;
+}
+
 /* Feature Tabs */
 .feature-tabs {
   display: flex;

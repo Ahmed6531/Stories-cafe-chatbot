@@ -1,5 +1,5 @@
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import { useCart } from '../state/useCart'
 import { fetchMenuItemById } from '../API/menuApi'
 import { styled } from '@mui/material/styles'
@@ -135,6 +135,7 @@ function useBreadcrumb() {
 export default function Navbar() {
   const [isAuthed] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(true)
+  const pageRef = useRef(null)
   const { cartCount } = useCart()
   const crumbs = useBreadcrumb()
   const location = useLocation()
@@ -145,6 +146,12 @@ export default function Navbar() {
     { label: 'Menu', to: '/menu', icon: <MenuBookIcon /> },
     { label: 'Cart', to: '/cart', icon: <ShoppingCartIcon /> },
   ]
+
+  useEffect(() => {
+    if (pageRef.current) {
+      pageRef.current.scrollTop = 0
+    }
+  }, [location.pathname, location.search])
 
   return (
     <div className="app-shell">
@@ -321,7 +328,7 @@ export default function Navbar() {
           </div>
         </header>
 
-        <div className="page">
+        <div ref={pageRef} className="page">
           <Outlet />
         </div>
       </main>
