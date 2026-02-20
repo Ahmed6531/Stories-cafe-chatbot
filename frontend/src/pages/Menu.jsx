@@ -1,6 +1,8 @@
 import { useMemo, useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import MenuList from '../components/MenuList'
+import MenuSkeleton from '../components/MenuSkeleton'
+import CategoryChipsSkeleton from '../components/CategoryChipsSkeleton'
 import { fetchMenu } from '../API/menuApi'
 import '../styles/menu.css'
 
@@ -78,9 +80,12 @@ export default function Menu() {
 
   if (loading) {
     return (
-      <div className="page-wrap state-wrap">
-        <h1 className="state-title">Loading menu...</h1>
-        <p className="state-text">Fetching your items.</p>
+      <div className="page-wrap">
+        <div className="section-heading">
+          <h2 className="section-title">Categories</h2>
+        </div>
+        <CategoryChipsSkeleton />
+        <MenuSkeleton />
       </div>
     )
   }

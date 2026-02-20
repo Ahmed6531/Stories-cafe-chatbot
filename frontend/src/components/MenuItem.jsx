@@ -3,7 +3,11 @@ import '../styles/menu-item.css'
 
 export default function MenuItem({ item }) {
   const navigate = useNavigate()
-  const formatPrice = (p) => `L.L ${Number(p).toLocaleString()}`
+  const formatPrice = (p) => (
+    <>
+      <span className="currency-prefix">LL</span> {Number(p).toLocaleString()}
+    </>
+  )
 
   const handleClick = () => {
     if (item.isAvailable) {

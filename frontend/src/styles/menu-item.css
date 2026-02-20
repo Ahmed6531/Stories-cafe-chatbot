@@ -164,10 +164,17 @@
   font-family: 'Montserrat', sans-serif;
   font-size: 17px;
   font-weight: 700;
-  color: #1a4a35;
+  color: #006241;
   margin-top: 0;
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+.currency-prefix {
+  font-size: 0.72em;
+  font-weight: 600;
+  opacity: 0.72;
+  letter-spacing: 0.02em;
 }
 
 .pill {

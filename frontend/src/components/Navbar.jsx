@@ -236,7 +236,7 @@ export default function Navbar() {
                     sx={{
                       minWidth: 0,
                       mr: drawerOpen ? 1.5 : 'auto',
-                      ml: drawerOpen ? -0.25 : 0,
+                      ml: drawerOpen ? -0.5 : 0,
                       justifyContent: 'center',
                       color: isActive ? '#fff' : '#555',
                     }}
@@ -273,14 +273,38 @@ export default function Navbar() {
 
       <main className="main">
         <header className="topbar">
+          <div className="topbar-left">
+            {!drawerOpen && (
+              <img
+                src="/stories-logo.png"
+                alt="Stories"
+                className="topbar-logo"
+                onError={(e) => { e.currentTarget.style.display = 'none' }}
+              />
+            )}
+            {location.pathname !== '/' && (
+              <div className="breadcrumb">
+                {crumbs.map((c, idx) => (
+                  <span key={c.to + idx} className="crumb">
+                    <Link to={c.to} className="crumb-link">{c.label}</Link>
+                    {idx < crumbs.length - 1 && <span className="crumb-sep">/</span>}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="topbar-actions">
             {isAuthed ? (
               <button className="top-pill auth" type="button" onClick={() => navigate(-1)}>
                 Back
               </button>
             ) : (
-              <button className="top-pill auth" type="button" onClick={() => navigate('/login')}>
-                Login
+              <button className="top-pill outline" type="button" onClick={() => navigate('/login')}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="8" r="4" />
+                  <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+                </svg>
+                <span>Login</span>
               </button>
             )}
             <button className="top-pill outline" type="button" onClick={() => navigate('/cart')}>
@@ -296,17 +320,6 @@ export default function Navbar() {
             </button>
           </div>
         </header>
-
-        {location.pathname !== '/' && (
-          <div className="breadcrumb">
-            {crumbs.map((c, idx) => (
-              <span key={c.to + idx} className="crumb">
-                <Link to={c.to} className="crumb-link">{c.label}</Link>
-                {idx < crumbs.length - 1 && <span className="crumb-sep">/</span>}
-              </span>
-            ))}
-          </div>
-        )}
 
         <div className="page">
           <Outlet />

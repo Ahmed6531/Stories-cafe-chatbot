@@ -1,6 +1,8 @@
 import { useMemo, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import FeaturedItems from '../components/FeaturedItems'
+import MenuSkeleton from '../components/MenuSkeleton'
+import CategoryChipsSkeleton from '../components/CategoryChipsSkeleton'
 import { fetchMenu } from '../API/menuApi'
 import '../styles/menu.css'
 
@@ -56,34 +58,34 @@ export default function Home() {
       <div className="section-heading">
         <h2 className="section-title">Categories</h2>
       </div>
-      <div className="catbar">
-        {loading ? (
-          <span className="state-text">Loading categories...</span>
-        ) : error ? (
-          <span className="state-text error">{error}</span>
-        ) : categories.length > 0 ? (
-          categories.map((c) => (
+      {loading ? (
+        <CategoryChipsSkeleton />
+      ) : error ? (
+        <span className="state-text error">{error}</span>
+      ) : categories.length > 0 ? (
+        <div className="catbar">
+          {categories.map((c) => (
             <button key={c} type="button" className="cat-chip" onClick={() => pickCategory(c)}>
               <div className="cat-chip-content">
-                <img 
-                  src={categoryImages[c] || '/images/placeholder.png'} 
-                  alt={c} 
-                  className="cat-chip-image" 
+                <img
+                  src={categoryImages[c] || '/images/placeholder.png'}
+                  alt={c}
+                  className="cat-chip-image"
                 />
                 <span className="cat-chip-text">{c}</span>
               </div>
             </button>
-          ))
-        ) : (
-          <span>No categories found.</span>
-        )}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <span>No categories found.</span>
+      )}
 
       <div className="section-heading">
         <h2 className="section-title">Featured items</h2>
       </div>
       {loading ? (
-        <p className="state-text">Loading featured items...</p>
+        <MenuSkeleton />
       ) : error ? (
         <p className="state-text error">{error}</p>
       ) : featured.length > 0 ? (
