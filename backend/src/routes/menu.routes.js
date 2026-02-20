@@ -9,6 +9,8 @@ import {
   createMenuItem,
   updateMenuItem,
   deleteMenuItem,
+  updateImage,
+  deleteImage
 } from "../controllers/menu.controller.js";
 
 const router = express.Router();
