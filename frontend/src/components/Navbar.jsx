@@ -104,6 +104,12 @@ export default function Navbar() {
             {/* TODO: Cart link is static navigation only, no state; revert by ensuring cart state logic if dynamic cart needed */}
             <NavLink to="/cart" className={({ isActive }) => `side-link ${isActive ? 'active' : ''}`}>Cart</NavLink>
 
+             {isAuthed && (
+            <NavLink to="/dashboard" className={({ isActive }) => `side-link ${isActive ? 'active' : ''}`}>
+               Dashboard
+            </NavLink>
+          )}
+
             {isAuthed && (
               <button className="side-link past-orders-btn" type="button" onClick={() => navigate('/orders')}>
                 📋 Past Orders
