@@ -869,6 +869,10 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
   color: #fff;
 }
 
+.chat-input-mic.listening-stop {
+  border-radius: 10px;
+}
+
 .chat-input-mic-wave {
   display: inline-flex;
   align-items: flex-end;

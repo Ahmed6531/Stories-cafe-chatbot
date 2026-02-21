@@ -161,6 +161,7 @@ export default function Navbar() {
 
   const pageRef = useRef(null)
   const msgsRef = useRef(null)
+  const pendingReplyTimeoutRef = useRef(null)
   const { cartCount } = useCart()
   const crumbs = useBreadcrumb()
   const location = useLocation()
@@ -184,6 +185,10 @@ export default function Navbar() {
   }, [location.pathname, location.search])
 
   const closeChat = () => {
+    if (pendingReplyTimeoutRef.current) {
+      window.clearTimeout(pendingReplyTimeoutRef.current)
+      pendingReplyTimeoutRef.current = null
+    }
     setChatClosing(true)
   }
 
@@ -192,6 +197,7 @@ export default function Navbar() {
       setChatClosing(false)
       setChatOpen(false)
       setMicMode('idle')
+      setTyping(false)
       setMessages([])
       setChipsVisible(true)
     }
@@ -203,6 +209,11 @@ export default function Navbar() {
         setChatClosing(false)
         setChatOpen(false)
         setMicMode('idle')
+        setTyping(false)
+        if (pendingReplyTimeoutRef.current) {
+          window.clearTimeout(pendingReplyTimeoutRef.current)
+          pendingReplyTimeoutRef.current = null
+        }
         setMessages([])
         setChipsVisible(true)
       }, 0)
@@ -234,10 +245,28 @@ export default function Navbar() {
     document.addEventListener('mouseup', handleMouseUp)
   }
 
-  const cycleMicMode = () =>
+  const stopPendingReply = () => {
+    if (pendingReplyTimeoutRef.current) {
+      window.clearTimeout(pendingReplyTimeoutRef.current)
+      pendingReplyTimeoutRef.current = null
+    }
+    setTyping(false)
+    setMicMode('listening')
+  }
+
+  const cycleMicMode = () => {
+    if (typing || micMode === 'thinking') {
+      stopPendingReply()
+      return
+    }
     setMicMode((m) => (m === 'idle' ? 'listening' : m === 'listening' ? 'thinking' : 'idle'))
+  }
 
   const handleInputMicClick = () => {
+    if (typing || micMode === 'thinking') {
+      stopPendingReply()
+      return
+    }
     if (micMode === 'idle') setMicMode('listening')
     else if (micMode === 'listening') setMicMode('thinking')
   }
@@ -253,9 +282,13 @@ export default function Navbar() {
 
     setMessages((m) => [...m, { id: Date.now(), role: 'user', text: trimmed, time: now }])
     setChatInput('')
+    setMicMode('thinking')
     setTyping(true)
 
-    setTimeout(() => {
+    if (pendingReplyTimeoutRef.current) {
+      window.clearTimeout(pendingReplyTimeoutRef.current)
+    }
+    pendingReplyTimeoutRef.current = window.setTimeout(() => {
       setTyping(false)
       setMessages((m) => [
         ...m,
@@ -266,6 +299,8 @@ export default function Navbar() {
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
       ])
+      setMicMode('idle')
+      pendingReplyTimeoutRef.current = null
     }, 1400)
   }
 
@@ -544,12 +579,16 @@ export default function Navbar() {
                     )}
                   </div>
                   <button
-                    className={`chat-input-mic ${micMode === 'listening' ? 'active' : ''}`}
+                    className={`chat-input-mic ${micMode === 'listening' ? 'active' : ''} ${micMode === 'thinking' ? 'active listening-stop' : ''}`}
                     type="button"
                     aria-label="Voice input"
                     onClick={handleInputMicClick}
                   >
-                    {micMode === 'listening' ? (
+                    {micMode === 'thinking' ? (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <rect x="5.5" y="5.5" width="13" height="13" rx="2.4" />
+                      </svg>
+                    ) : micMode === 'listening' ? (
                       <span className="chat-input-mic-wave" aria-hidden="true">
                         <span className="chat-input-mic-bar" />
                         <span className="chat-input-mic-bar" />
