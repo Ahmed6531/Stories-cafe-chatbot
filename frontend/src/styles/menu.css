@@ -208,7 +208,7 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 14px;
 }
 
 .state-wrap {
@@ -250,11 +250,11 @@
 }
 
 .section-heading {
-  margin-top: 24px;
+  margin-top: 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .section-overline {
@@ -284,23 +284,54 @@
   content: none;
 }
 
-.catbar {
-  display: flex;
-  gap: 16px;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  justify-content: center;
-  align-items: center;
-  margin-bottom: 8px;
-  padding: 4px 0 8px;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
+.catbar-wrap {
+  position: relative;
+  width: 100%;
 }
 
+.catbar-wrap::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 56px;
+  height: 100%;
+  background: linear-gradient(to right, transparent, #fff);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.catbar-wrap::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 56px;
+  height: 100%;
+  background: linear-gradient(to left, transparent, #fff);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.catbar {
+  width: 100%;
+  overflow-x: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  padding: 4px 0 8px;
+  overscroll-behavior-x: contain;
+}
 .catbar::-webkit-scrollbar { display: none; }
-.catbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+.catbar-inner {
+  display: flex;
+  gap: 12px;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  min-width: max-content;
+  padding: 0 24px;
+}
 
 .cat-chip {
   padding: 0;
@@ -385,9 +416,18 @@
   display: flex;
   gap: 8px;
   margin-bottom: 16px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
+  overflow-x: auto;
+  width: 100%;
+  min-width: 0;
+  padding: 0 8px 4px;
+  scroll-padding-inline: 8px;
+  overscroll-behavior-x: contain;
 }
+
+.subcatbar::-webkit-scrollbar { display: none; }
+.subcatbar { -ms-overflow-style: none; scrollbar-width: none; }
 
 .subcat-chip {
   font-family: 'Montserrat', sans-serif;

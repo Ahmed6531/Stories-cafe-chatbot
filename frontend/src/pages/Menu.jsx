@@ -112,28 +112,32 @@ export default function Menu() {
       <div className="section-heading">
         <h2 className="section-title">Categories</h2>
       </div>
-      <div className="catbar">
-        {categories.length > 0 ? (
-          categories.map((c) => (
-            <button 
-              key={c} 
-              type="button" 
-              className={`cat-chip ${category === c ? 'active' : ''}`}
-              onClick={() => handleCategoryClick(c)}
-            >
-              <div className="cat-chip-content">
-                <img 
-                  src={categoryImages[c] || '/images/placeholder.png'} 
-                  alt={c} 
-                  className="cat-chip-image" 
-                />
-                <span className="cat-chip-text">{c}</span>
-              </div>
-            </button>
-          ))
-        ) : (
-          <span>No categories found.</span>
-        )}
+      <div className="catbar-wrap">
+        <div className="catbar">
+          <div className="catbar-inner">
+            {categories.length > 0 ? (
+              categories.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className={`cat-chip ${category === c ? 'active' : ''}`}
+                  onClick={() => handleCategoryClick(c)}
+                >
+                  <div className="cat-chip-content">
+                    <img
+                      src={categoryImages[c] || '/images/placeholder.png'}
+                      alt={c}
+                      className="cat-chip-image"
+                    />
+                    <span className="cat-chip-text">{c === 'Mixed Beverages' ? 'Mixed Bev.' : c}</span>
+                  </div>
+                </button>
+              ))
+            ) : (
+              <span>No categories found.</span>
+            )}
+          </div>
+        </div>
       </div>
 
       {subcategories.length > 0 && (

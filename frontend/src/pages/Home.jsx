@@ -63,19 +63,23 @@ export default function Home() {
       ) : error ? (
         <span className="state-text error">{error}</span>
       ) : categories.length > 0 ? (
-        <div className="catbar">
-          {categories.map((c) => (
-            <button key={c} type="button" className="cat-chip" onClick={() => pickCategory(c)}>
-              <div className="cat-chip-content">
-                <img
-                  src={categoryImages[c] || '/images/placeholder.png'}
-                  alt={c}
-                  className="cat-chip-image"
-                />
-                <span className="cat-chip-text">{c}</span>
-              </div>
-            </button>
-          ))}
+        <div className="catbar-wrap">
+          <div className="catbar">
+            <div className="catbar-inner">
+              {categories.map((c) => (
+                <button key={c} type="button" className="cat-chip" onClick={() => pickCategory(c)}>
+                  <div className="cat-chip-content">
+                    <img
+                      src={categoryImages[c] || '/images/placeholder.png'}
+                      alt={c}
+                      className="cat-chip-image"
+                    />
+                    <span className="cat-chip-text">{c === 'Mixed Beverages' ? 'Mixed Bev.' : c}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       ) : (
         <span>No categories found.</span>
