@@ -9,8 +9,6 @@ import {
   createMenuItem,
   updateMenuItem,
   deleteMenuItem,
-  updateImage,
-  deleteImage
 } from "../controllers/menu.controller.js";
 
 const router = express.Router();
@@ -30,7 +28,5 @@ router.get("/:id", getMenuItem);
 router.post("/", protect, authorize("admin"), createMenuItem);
 router.patch("/:id",protect, authorize("admin"), updateMenuItem);
 router.delete("/:id",protect, authorize("admin"), deleteMenuItem);
-router.patch( "/:id/image",protect , authorize("admin"), updateImage);
-router.delete("/:id/image", protect, authorize("admin"), deleteImage);
 
 export default router;
