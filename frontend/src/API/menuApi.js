@@ -77,7 +77,7 @@ export async function fetchMenuItemById(id) {
 export async function createMenuItem(data) {
   try {
     const response = await http.post("/menu", data); // JWT sent automatically via http
-    return transformMenuItem(response.data.item);
+    return transformMenuItem(response.data.item || response.data);
   } catch (error) {
     console.error("Failed to create menu item:", error);
     throw new Error(error.response?.data?.error || "Failed to create menu item");
@@ -90,7 +90,7 @@ export async function createMenuItem(data) {
 export async function updateMenuItem(id, data) {
   try {
     const response = await http.patch(`/menu/${id}`, data);
-    return transformMenuItem(response.data.item);
+    return transformMenuItem(response.data.item || response.data);
   } catch (error) {
     console.error(`Failed to update menu item ${id}:`, error);
     throw new Error(error.response?.data?.error || "Failed to update menu item");
@@ -107,72 +107,5 @@ export async function deleteMenuItem(id) {
   } catch (error) {
     console.error(`Failed to delete menu item ${id}:`, error);
     throw new Error(error.response?.data?.error || "Failed to delete menu item");
-  }
-}
-/**
- * Admin-only: Rename a category
- */
-export async function renameCategory(oldName, newName) {
-  try {
-    const response = await http.patch("/categories", {
-      oldName,
-      newName,
-    });
-
-    return response.data;
-  } catch (error) {
-    console.error("Failed to rename category:", error);
-    throw new Error(
-      error.response?.data?.error || "Failed to rename category"
-    );
-  }
-}
-/**
- * Admin-only: Delete a category
- */
-export async function deleteCategory(categoryName) {
-  try {
-    const response = await http.delete(
-      `/categories/${encodeURIComponent(categoryName)}`
-    );
-
-    return response.data;
-  } catch (error) {
-    console.error("Failed to delete category:", error);
-    throw new Error(
-      error.response?.data?.error || "Failed to delete category"
-    );
-  }
-}
-/**
- * Admin-only: Update menu item image
- */
-export async function updateMenuItemImage(id, image) {
-  try {
-    const response = await http.patch(`/menu/${id}/image`, {
-      image,
-    });
-
-    return transformMenuItem(response.data);
-  } catch (error) {
-    console.error("Failed to update image:", error);
-    throw new Error(
-      error.response?.data?.error || "Failed to update image"
-    );
-  }
-}
-/**
- * Admin-only: Delete menu item image
- */
-export async function deleteMenuItemImage(id) {
-  try {
-    const response = await http.delete(`/menu/${id}/image`);
-
-    return transformMenuItem(response.data);
-  } catch (error) {
-    console.error("Failed to delete image:", error);
-    throw new Error(
-      error.response?.data?.error || "Failed to delete image"
-    );
   }
 }
