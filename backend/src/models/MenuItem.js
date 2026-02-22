@@ -53,6 +53,10 @@ const menuItemSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    subcategory: {
+      type: String,
+      default: null,
+    },
     description: {
       type: String,
       required: true,

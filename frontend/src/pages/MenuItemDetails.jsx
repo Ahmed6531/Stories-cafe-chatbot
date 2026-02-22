@@ -32,16 +32,18 @@ export default function MenuItemDetails() {
 
   if (loading) {
     return (
-      <div className="page-wrap">
-        <h1 className="menu-title">Loading...</h1>
+      <div className="page-wrap state-wrap">
+        <h1 className="state-title">Loading item...</h1>
+        <p className="state-text">Please wait a moment.</p>
       </div>
     )
   }
 
   if (!item) {
     return (
-      <div className="page-wrap">
-        <h1 className="menu-title">Item not found</h1>
+      <div className="page-wrap state-wrap">
+        <h1 className="state-title">Item not found</h1>
+        <p className="state-text">Try browsing the menu and selecting another item.</p>
       </div>
     )
   }
@@ -90,9 +92,11 @@ export default function MenuItemDetails() {
                     />
                     <span className="option-label">
                       {option.label}
-                      {option.priceDelta > 0 && (
-                        <span className="option-price"> +L.L {Number(option.priceDelta).toLocaleString()}</span>
-                      )}
+	                      {option.priceDelta > 0 && (
+	                        <span className="option-price">
+	                          +<span className="currency-prefix">LL</span> {Number(option.priceDelta).toLocaleString()}
+	                        </span>
+	                      )}
                     </span>
                   </label>
                 ))}
@@ -101,12 +105,12 @@ export default function MenuItemDetails() {
           )}
 
           {/* Price Display */}
-          <div className="details-price-section">
-            <div className="details-price">L.L {Number(finalPrice).toLocaleString()}</div>
-            {qty > 1 && (
-              <div className="total-price">Total: L.L {Number(totalPrice).toLocaleString()}</div>
-            )}
-          </div>
+	          <div className="details-price-section">
+	            <div className="details-price"><span className="currency-prefix">LL</span> {Number(finalPrice).toLocaleString()}</div>
+	            {qty > 1 && (
+	              <div className="total-price">Total: <span className="currency-prefix">LL</span> {Number(totalPrice).toLocaleString()}</div>
+	            )}
+	          </div>
 
           {/* Quantity Counter */}
           <div className="qty-counter">

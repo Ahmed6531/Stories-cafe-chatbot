@@ -9,7 +9,7 @@ export async function getMenu(req, res) {
     // Only return essential fields, exclude variantGroups from list view
     const items = await MenuItem.find({})
       .select(
-        "id name slug image category description basePrice isAvailable isFeatured",
+        "id name slug image category subcategory description basePrice isAvailable isFeatured",
       )
       .sort({ category: 1, name: 1 });
 
@@ -170,10 +170,9 @@ export async function getMenuByCategory(req, res) {
     // Find all items in this category - only return essential fields
     const items = await MenuItem.find({
       category: { $regex: new RegExp(`^${category}$`, "i") },
-      isAvailable: true,
     })
       .select(
-        "id name slug image category description basePrice isAvailable isFeatured",
+        "id name slug image category subcategory description basePrice isAvailable isFeatured",
       )
       .sort({ name: 1 });
 

@@ -13,6 +13,7 @@ function transformMenuItem(item) {
     price: item.price || item.basePrice || 0,
     basePrice: item.basePrice || item.price || 0,
     category: item.category,
+    subcategory: item.subcategory || null,
     image: item.image || `https://via.placeholder.com/260x260?text=${encodeURIComponent(item.name)}`,
     isAvailable: item.isAvailable !== undefined ? item.isAvailable : true,
     isFeatured: item.isFeatured || false,

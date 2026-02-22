@@ -23,6 +23,7 @@ function convertToNewSchema(oldItem) {
     description: oldItem.description || "No description available",
     basePrice: oldItem.basePrice || oldItem.price || 0,
     category: oldItem.category || "Uncategorized",
+    subcategory: oldItem.subcategory || null,
     image: oldItem.image || "/images/default.png",
     isAvailable: oldItem.isAvailable !== false,
     isFeatured: oldItem.isFeatured || false,
