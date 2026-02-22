@@ -4,10 +4,9 @@ import http from './http'
  * Transform backend menu item to frontend format
  */
 function transformMenuItem(item) {
-  // Skip items missing id or name (robustness for partial backend data)
-  if (!item.id || !item.name) return null;
+  if (!item || !item.id || !item.name) return null;
   return {
-    id: item.id,  // Use the numeric ID from the database
+    id: item.id,
     name: item.name,
     description: item.description,
     price: item.price || item.basePrice || 0,
@@ -18,6 +17,8 @@ function transformMenuItem(item) {
     isAvailable: item.isAvailable !== undefined ? item.isAvailable : true,
     isFeatured: item.isFeatured || false,
     options: item.options || [],
+    variants: item.variants || [],
+    mongoId: item._id,
   }
 }
 

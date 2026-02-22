@@ -21,7 +21,10 @@ import {
   TextField,
   Typography,
   Chip,
+  Grid,
+  IconButton as MuiIconButton
 } from '@mui/material'
+import { Add, Remove, ChevronLeft } from '@mui/icons-material'
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n))
@@ -36,7 +39,7 @@ export default function MenuItemDetails() {
   const [loading, setLoading] = useState(true)
   const [qty, setQty] = useState(1)
   const [instructions, setInstructions] = useState('')
-  const [selectedOption, setSelectedOption] = useState('')
+  const [selections, setSelections] = useState({}) // { groupId: optionName }
   const [snackOpen, setSnackOpen] = useState(false)
   const [showErrors, setShowErrors] = useState(false)
 
@@ -56,24 +59,60 @@ export default function MenuItemDetails() {
     load()
   }, [id])
 
+  // Handle selection change for a specific group
+  const handleSelectionChange = (groupId, optionName) => {
+    setSelections(prev => ({
+      ...prev,
+      [groupId]: optionName
+    }))
+  }
+
   const unitPrice = useMemo(() => {
     if (!item) return 0
-    const option = (item.options || []).find(o => o.label === selectedOption)
-    return item.basePrice + (option ? Number(option.priceDelta || 0) : 0)
-  }, [item, selectedOption])
+    let price = item.basePrice || 0
+
+    // Add delta from single-level options if they exist
+    if (item.options?.length > 0) {
+      const opt = item.options.find(o => o.label === selections['base'])
+      if (opt) price += (opt.priceDelta || 0)
+    }
+
+    // Add delta from variants if they exist
+    if (item.variants?.length > 0) {
+      item.variants.forEach(group => {
+        const selectedOptionName = selections[group.groupId]
+        const opt = group.options.find(o => o.name === selectedOptionName)
+        if (opt) price += (opt.additionalPrice || 0)
+      })
+    }
+
+    return price
+  }, [item, selections])
 
   const totalPrice = unitPrice * qty
 
   const handleSubmit = async () => {
-    if (item?.options?.length > 0 && !selectedOption) {
+    // Basic validation for required variants
+    if (item?.variants?.length > 0) {
+      const missingRequired = item.variants.some(g => g.isRequired && !selections[g.groupId])
+      if (missingRequired) {
+        setShowErrors(true)
+        return
+      }
+    }
+
+    // Validation for old-style options
+    if (item?.options?.length > 0 && !selections['base']) {
       setShowErrors(true)
       return
     }
 
+    const allSelectedOptions = Object.values(selections).filter(Boolean)
+
     const payload = {
-      menuItemId: item.mongoId,
+      menuItemId: item.mongoId || item.id,
       qty,
-      selectedOptions: selectedOption ? [selectedOption] : [],
+      selectedOptions: allSelectedOptions,
       instructions: instructions.trim(),
     }
 
@@ -91,26 +130,26 @@ export default function MenuItemDetails() {
 
   return (
     <Container sx={{ py: 3 }}>
-      <Button onClick={() => navigate('/menu')} sx={{ mb: 2 }}>← Back to Menu</Button>
+      <Button startIcon={<ChevronLeft />} onClick={() => navigate('/menu')} sx={{ mb: 2 }}>Back to Menu</Button>
 
       <Box sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', borderRadius: 2, p: { xs: 2, md: 4 }, mb: 3 }}>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={4} alignItems="center">
-          <Box sx={{ width: 200, height: 200, borderRadius: 4, bgcolor: 'background.paper', overflow: 'hidden', flexShrink: 0 }}>
-            <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <Box sx={{ width: 200, height: 200, borderRadius: 4, bgcolor: 'background.paper', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <img src={item.image} alt={item.name} style={{ width: '90%', height: '90%', objectFit: 'contain' }} />
           </Box>
           <Box sx={{ flex: 1 }}>
             <Typography variant="h4" fontWeight={900}>{item.name}</Typography>
             <Typography variant="h6" sx={{ opacity: 0.8, mb: 2 }}>{item.description}</Typography>
             <Typography variant="h4" fontWeight={900}>{formatLL(unitPrice)}</Typography>
           </Box>
-          <Stack direction="row" spacing={2} alignItems="center" sx={{ bgcolor: 'rgba(255,255,255,0.1)', p: 1, borderRadius: 3 }}>
-            <IconButton onClick={() => setQty(q => clamp(q - 1, 1, 99))} sx={{ color: 'white' }}>
-              <Typography variant="h4">−</Typography>
-            </IconButton>
+          <Stack direction="row" spacing={2} alignItems="center" sx={{ bgcolor: 'rgba(255,255,255,0.2)', p: 1, borderRadius: 3 }}>
+            <MuiIconButton size="large" onClick={() => setQty(q => clamp(q - 1, 1, 99))} sx={{ color: 'white' }}>
+              <Remove />
+            </MuiIconButton>
             <Typography variant="h5" fontWeight={900}>{qty}</Typography>
-            <IconButton onClick={() => setQty(q => clamp(q + 1, 1, 99))} sx={{ color: 'white' }}>
-              <Typography variant="h4">+</Typography>
-            </IconButton>
+            <MuiIconButton size="large" onClick={() => setQty(q => clamp(q + 1, 1, 99))} sx={{ color: 'white' }}>
+              <Add />
+            </MuiIconButton>
           </Stack>
         </Stack>
       </Box>
@@ -121,13 +160,14 @@ export default function MenuItemDetails() {
             <CardContent>
               <Typography variant="h6" fontWeight={800} gutterBottom>Customization</Typography>
               <Stack spacing={4} sx={{ mt: 2 }}>
+                {/* Old style options */}
                 {item.options?.length > 0 && (
-                  <FormControl fullWidth error={showErrors && !selectedOption}>
+                  <FormControl fullWidth error={showErrors && !selections['base']}>
                     <InputLabel>Select Option</InputLabel>
                     <Select
-                      value={selectedOption}
+                      value={selections['base'] || ''}
                       label="Select Option"
-                      onChange={(e) => setSelectedOption(e.target.value)}
+                      onChange={(e) => handleSelectionChange('base', e.target.value)}
                     >
                       {item.options.map((opt) => (
                         <MuiMenuItem key={opt.label} value={opt.label}>
@@ -135,9 +175,29 @@ export default function MenuItemDetails() {
                         </MuiMenuItem>
                       ))}
                     </Select>
-                    {showErrors && !selectedOption && <Alert severity="error" sx={{ mt: 1 }}>Please select an option</Alert>}
                   </FormControl>
                 )}
+
+                {/* New style multi-variant support */}
+                {item.variants?.map((group) => (
+                  <FormControl key={group.groupId} fullWidth error={showErrors && group.isRequired && !selections[group.groupId]}>
+                    <InputLabel>{group.name}</InputLabel>
+                    <Select
+                      value={selections[group.groupId] || ''}
+                      label={group.name}
+                      onChange={(e) => handleSelectionChange(group.groupId, e.target.value)}
+                    >
+                      {group.options.map((opt) => (
+                        <MuiMenuItem key={opt.name} value={opt.name}>
+                          {opt.name} {opt.additionalPrice > 0 ? ` (+${formatLL(opt.additionalPrice)})` : ''}
+                        </MuiMenuItem>
+                      ))}
+                    </Select>
+                    {showErrors && group.isRequired && !selections[group.groupId] && (
+                      <Typography variant="caption" color="error" sx={{ mt: 0.5 }}>This selection is required</Typography>
+                    )}
+                  </FormControl>
+                ))}
 
                 <TextField
                   label="Special instructions"
@@ -163,7 +223,7 @@ export default function MenuItemDetails() {
                 fullWidth
                 size="large"
                 onClick={handleSubmit}
-                sx={{ py: 2, borderRadius: 2, fontWeight: 800, fontSize: '1.2rem' }}
+                sx={{ py: 2, borderRadius: 2, fontWeight: 800, fontSize: '1.2rem', bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark' } }}
               >
                 Add to Cart
               </Button>
@@ -173,13 +233,8 @@ export default function MenuItemDetails() {
       </Grid>
 
       <Snackbar open={snackOpen} autoHideDuration={3000} onClose={() => setSnackOpen(false)}>
-        <Alert severity="success" sx={{ width: '100%' }}>Added to cart successfully!</Alert>
+        <Alert severity="success" variant="filled" sx={{ width: '100%' }}>Added to cart successfully!</Alert>
       </Snackbar>
     </Container>
   )
-}
-
-// Dummy IconButton for simplicity in migration
-function IconButton({ children, onClick, sx }) {
-  return <Box onClick={onClick} sx={{ cursor: 'pointer', display: 'flex', alignItems: 'center', ...sx }}>{children}</Box>
 }
