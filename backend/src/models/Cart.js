@@ -4,7 +4,8 @@ const CartItemSchema = new mongoose.Schema(
   {
     menuItemId: { type: mongoose.Schema.Types.ObjectId, ref: "MenuItem", required: true },
     qty: { type: Number, required: true, min: 1 },
-    selectedOptions: { type: [String], default: [] }
+    selectedOptions: { type: [String], default: [] },
+    instructions: { type: String, default: "" }
   },
   { _id: true }
 );

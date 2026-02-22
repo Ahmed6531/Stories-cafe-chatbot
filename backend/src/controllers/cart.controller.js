@@ -35,19 +35,30 @@ async function getOrCreateCart(req) {
 }
 
 async function buildCartResponse(cart) {
-  // Minimal response for add-to-cart UI (count + items)
   const ids = cart.items.map((x) => x.menuItemId);
   const menuItems = await MenuItem.find({ _id: { $in: ids } });
   const byId = new Map(menuItems.map((m) => [String(m._id), m]));
 
   const items = cart.items.map((line) => {
     const menuItem = byId.get(String(line.menuItemId));
+    let price = menuItem ? menuItem.basePrice : 0;
+
+    // Calculate options delta
+    if (menuItem && menuItem.options) {
+      line.selectedOptions.forEach(optLabel => {
+        const opt = menuItem.options.find(o => o.label === optLabel);
+        if (opt) price += opt.priceDelta;
+      });
+    }
+
     return {
       lineId: line._id,
       menuItemId: line.menuItemId,
       name: menuItem ? menuItem.name : "Unknown item",
       qty: line.qty,
+      price: price,
       selectedOptions: normalizeOptions(line.selectedOptions),
+      instructions: line.instructions || "",
       isAvailable: menuItem ? !!menuItem.isAvailable : false
     };
   });
@@ -72,7 +83,7 @@ export async function addToCart(req, res) {
   try {
     const { cart, cartId } = await getOrCreateCart(req);
 
-    const { menuItemId, qty = 1, selectedOptions = [] } = req.body || {};
+    const { menuItemId, qty = 1, selectedOptions = [], instructions = "" } = req.body || {};
     const nQty = Number(qty);
 
     if (!menuItemId || !Number.isFinite(nQty) || nQty < 1) {
@@ -85,13 +96,16 @@ export async function addToCart(req, res) {
     }
 
     const opts = normalizeOptions(selectedOptions);
+    const inst = (instructions || "").trim();
 
     const existing = cart.items.find(
-      (l) => String(l.menuItemId) === String(menuItemId) && sameOptions(l.selectedOptions, opts)
+      (l) => String(l.menuItemId) === String(menuItemId) &&
+        sameOptions(l.selectedOptions, opts) &&
+        (l.instructions || "").trim() === inst
     );
 
     if (existing) existing.qty += nQty;
-    else cart.items.push({ menuItemId, qty: nQty, selectedOptions: opts });
+    else cart.items.push({ menuItemId, qty: nQty, selectedOptions: opts, instructions: inst });
 
     await cart.save();
 
@@ -100,5 +114,58 @@ export async function addToCart(req, res) {
     res.status(201).json(payload);
   } catch {
     res.status(500).json({ error: "Failed to add to cart" });
+  }
+}
+export async function updateCartItem(req, res) {
+  try {
+    const { cart, cartId } = await getOrCreateCart(req);
+    const { lineId } = req.params;
+    const { qty } = req.body;
+
+    const item = cart.items.id(lineId);
+    if (!item) return res.status(404).json({ error: "Item not found in cart" });
+
+    if (qty <= 0) item.remove();
+    else item.qty = qty;
+
+    await cart.save();
+    const payload = await buildCartResponse(cart);
+    res.set("x-cart-id", cartId);
+    res.json(payload);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to update cart" });
+  }
+}
+
+export async function removeFromCart(req, res) {
+  try {
+    const { cart, cartId } = await getOrCreateCart(req);
+    const { lineId } = req.params;
+
+    const item = cart.items.id(lineId);
+    if (item) {
+      item.remove();
+      await cart.save();
+    }
+
+    const payload = await buildCartResponse(cart);
+    res.set("x-cart-id", cartId);
+    res.json(payload);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to remove from cart" });
+  }
+}
+
+export async function clearCart(req, res) {
+  try {
+    const { cart, cartId } = await getOrCreateCart(req);
+    cart.items = [];
+    await cart.save();
+
+    const payload = await buildCartResponse(cart);
+    res.set("x-cart-id", cartId);
+    res.json(payload);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to clear cart" });
   }
 }

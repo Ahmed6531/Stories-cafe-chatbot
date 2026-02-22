@@ -3,11 +3,11 @@
     "slug": "espresso",
     "name": "Espresso",
     "description": "Single shot espresso.",
-    "basePrice": 2.5,
+    "basePrice": 120000,
     "category": "coffee",
     "options": [
       { "label": "Single", "priceDelta": 0 },
-      { "label": "Double", "priceDelta": 1.0 }
+      { "label": "Double", "priceDelta": 50000 }
     ],
     "isFeatured": true,
     "isAvailable": true
@@ -16,13 +16,13 @@
     "slug": "caffe-latte",
     "name": "Caffè Latte",
     "description": "Espresso with steamed milk.",
-    "basePrice": 3.5,
+    "basePrice": 250000,
     "category": "coffee",
     "options": [
       { "label": "Small", "priceDelta": 0 },
-      { "label": "Medium", "priceDelta": 0.5 },
-      { "label": "Large", "priceDelta": 1.0 },
-      { "label": "Oat milk", "priceDelta": 0.75 }
+      { "label": "Medium", "priceDelta": 50000 },
+      { "label": "Large", "priceDelta": 100000 },
+      { "label": "Oat milk", "priceDelta": 75000 }
     ],
     "isFeatured": true,
     "isAvailable": true
@@ -31,11 +31,11 @@
     "slug": "iced-americano",
     "name": "Iced Americano",
     "description": "Cold espresso with water and ice.",
-    "basePrice": 3.0,
+    "basePrice": 180000,
     "category": "coffee",
     "options": [
       { "label": "Medium", "priceDelta": 0 },
-      { "label": "Large", "priceDelta": 0.5 }
+      { "label": "Large", "priceDelta": 50000 }
     ],
     "isFeatured": false,
     "isAvailable": true

@@ -15,10 +15,15 @@ async function seed() {
   const raw = fs.readFileSync(filePath, "utf-8");
   const items = JSON.parse(raw);
 
-  await MenuItem.deleteMany({});
-  await MenuItem.insertMany(items);
+  const itemsWithIds = items.map((item, index) => ({
+    ...item,
+    id: item.id || index + 1
+  }));
 
-  console.log(`✅ Seeded menu items: ${items.length}`);
+  await MenuItem.deleteMany({});
+  await MenuItem.insertMany(itemsWithIds);
+
+  console.log(`✅ Seeded menu items: ${itemsWithIds.length}`);
   process.exit(0);
 }
 
