@@ -45,9 +45,8 @@ export default function Checkout() {
     try {
       const response = await http.post('/orders', payload)
       if (response.data.orderNumber) {
-        // Clear local cart state (backend is cleared by orders controller)
-        // refreshCart() or clearCart()
-        localStorage.removeItem('cartId') // Remove cartId as requested: "order clears backend cart + removes localStorage.cartId"
+        localStorage.removeItem('cartId')
+        // We navigate to success, but the CartProvider will also refresh on next mount
         navigate('/success', { state: { orderNumber: response.data.orderNumber } })
       }
     } catch (err) {

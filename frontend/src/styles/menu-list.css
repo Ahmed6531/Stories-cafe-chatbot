@@ -12,9 +12,9 @@
 
 .menu-items-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(223px, 1fr));
-  gap: 20px;
-  padding: 20px 0;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 24px;
+  padding: 8px 0 14px;
 }
 
 .loading-message,
@@ -28,16 +28,11 @@
   font-weight: 500;
 }
 
-.empty-message {
-  font-size: 20px;
-  margin-top: 40px;
-  margin-bottom: 40px;
-}
-
 @keyframes fadeIn {
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -46,45 +41,39 @@
 /* Responsive Grid */
 @media (max-width: 1200px) {
   .menu-items-grid {
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 18px;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
   }
 }
 
 @media (max-width: 768px) {
   .menu-items-grid {
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 15px;
-    padding: 15px 0;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 16px;
+    padding: 16px 0;
   }
 }
 
 @media (max-width: 480px) {
   .menu-items-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 12px;
-    padding: 10px 0;
-  }
-
-  .loading-message,
-  .empty-message {
-    padding: 30px 15px;
-    font-size: 16px;
-  }
-
-  .empty-message {
-    font-size: 16px;
-    margin-top: 30px;
-    margin-bottom: 30px;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 16px 0;
   }
 }
 
-.menu-item-card.compact{grid-template-rows:168px 1fr 44px}
-.menu-item-footer{display:flex;align-items:center;justify-content:flex-start;padding:10px 12px;border-top:1px solid #eee}
-.pill{padding:6px 10px;border-radius:999px;font-weight:800;font-size:12px}
-.pill.ok{background:rgba(0,112,74,.10);color:#00704a}
-.pill.off{background:#fee;color:#d00}
-
 /* Unavailable items */
-.menu-item-card.unavailable{opacity:.7;cursor:default}
-.menu-item-card.unavailable:hover{transform:none}
+.menu-item-card.unavailable {
+  opacity: .7;
+  cursor: default
+}
+
+.menu-item-card.unavailable:hover {
+  transform: none
+}
+
+@media (max-width: 360px) {
+  .menu-items-grid {
+    grid-template-columns: 1fr;
+  }
+}

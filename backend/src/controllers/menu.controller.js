@@ -1,23 +1,143 @@
 import { MenuItem } from "../models/MenuItem.js";
+import { VariantGroup } from "../models/VariantGroup.js";
 
-// GET /menu
+// GET /menu - Returns all menu items with minimal data
 export async function getMenu(req, res) {
   try {
-    const items = await MenuItem.find({ isAvailable: true }).sort({ id: 1 });
-    res.json({ success: true, items });
+    console.log("📥 GET /menu request received");
+
+    // Only return essential fields, exclude variantGroups from list view
+    const items = await MenuItem.find({})
+      .select(
+        "id name slug image category subcategory description basePrice isAvailable isFeatured",
+      )
+      .sort({ category: 1, name: 1 });
+
+    console.log(`📤 Returning ${items.length} menu items (minimal data)`);
+    res.status(200).json({
+      success: true,
+      count: items.length,
+      items,
+    });
   } catch (error) {
-    res.status(500).json({ success: false, error: "Failed to fetch menu" });
+    console.error("❌ Failed to fetch menu:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to load menu. Please try again later.",
+    });
   }
 }
 
-// GET /menu/:id (numeric ID)
+// GET /menu/:id - Returns single menu item with full variant data
 export async function getMenuItem(req, res) {
   try {
     const { id } = req.params;
-    const item = await MenuItem.findOne({ id: Number(id) });
-    if (!item) return res.status(404).json({ success: false, error: "Item not found" });
-    res.json({ success: true, item });
+    console.log(`📥 GET /menu/${id} request received`);
+
+    // Find the menu item by numeric ID
+    const menuItem = await MenuItem.findOne({
+      id: parseInt(id)
+    });
+
+    if (!menuItem) {
+      return res.status(404).json({
+        success: false,
+        error: "Menu item not found",
+      });
+    }
+
+    // Resolve variantGroups if present
+    let itemWithVariants = menuItem.toObject();
+    if (menuItem.variantGroups && menuItem.variantGroups.length > 0) {
+      const variantGroups = await VariantGroup.find({
+        groupId: { $in: menuItem.variantGroups },
+      });
+
+      const orderedVariantGroups = menuItem.variantGroups
+        .map((groupId) => {
+          const group = variantGroups.find((g) => g.groupId === groupId);
+          return group ? group.toObject() : null;
+        })
+        .filter((group) => group !== null);
+
+      itemWithVariants.variants = orderedVariantGroups;
+      delete itemWithVariants.variantGroups;
+    }
+
+    res.status(200).json({
+      success: true,
+      item: itemWithVariants,
+    });
   } catch (error) {
-    res.status(500).json({ success: false, error: "Failed to fetch item" });
+    console.error(`❌ Failed to fetch menu item ${req.params.id}:`, error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to load menu item.",
+    });
+  }
+}
+
+// GET /menu/featured - Returns featured items with full data
+export async function getFeaturedMenu(req, res) {
+  try {
+    const featuredItems = await MenuItem.find({
+      isFeatured: true,
+      isAvailable: true,
+    });
+
+    const itemsWithVariants = await Promise.all(
+      featuredItems.map(async (item) => {
+        let itemObj = item.toObject();
+        if (item.variantGroups && item.variantGroups.length > 0) {
+          const variantGroups = await VariantGroup.find({
+            groupId: { $in: item.variantGroups },
+          });
+
+          const orderedVariantGroups = item.variantGroups
+            .map((groupId) => {
+              const group = variantGroups.find((g) => g.groupId === groupId);
+              return group ? group.toObject() : null;
+            })
+            .filter((group) => group !== null);
+
+          itemObj.variants = orderedVariantGroups;
+          delete itemObj.variantGroups;
+        }
+        return itemObj;
+      }),
+    );
+
+    res.status(200).json({
+      success: true,
+      count: itemsWithVariants.length,
+      items: itemsWithVariants,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: "Failed to load featured menu.",
+    });
+  }
+}
+
+// GET /menu/category/:category - Returns all menu items by category
+export async function getMenuByCategory(req, res) {
+  try {
+    const { category } = req.params;
+    const items = await MenuItem.find({
+      category: { $regex: new RegExp(`^${category}$`, "i") },
+    });
+
+    res.status(200).json({
+      success: true,
+      count: items.length,
+      category: category,
+      items: items,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: "Failed to load items by category.",
+    });
   }
 }

@@ -22,9 +22,14 @@ export default function Success() {
         <Typography variant="body1" sx={{ mb: 4 }} color="text.secondary">
           We'll notify you when your order is ready.
         </Typography>
-        <Button variant="contained" size="large" onClick={() => navigate('/menu')} sx={{ px: 6, py: 1.5, borderRadius: 2 }}>
-          Back to Menu
-        </Button>
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+          <Button variant="contained" size="large" onClick={() => navigate('/menu')} sx={{ px: 6, py: 1.5, borderRadius: 2 }}>
+            Back to Menu
+          </Button>
+          <Button variant="outlined" size="large" onClick={() => navigate('/')} sx={{ px: 6, py: 1.5, borderRadius: 2 }}>
+            Back to Home
+          </Button>
+        </div>
       </Paper>
     </Container>
   )

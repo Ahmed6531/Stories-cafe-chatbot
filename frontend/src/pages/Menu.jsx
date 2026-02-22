@@ -1,40 +1,66 @@
-import { useEffect, useState } from 'react'
-import { Container, Typography, Grid, Card, CardContent, CardMedia, CardActionArea, Box, Chip, Skeleton } from '@mui/material'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState, useMemo } from 'react'
+import { Container, Typography, Grid, Card, CardContent, CardMedia, CardActionArea, Box, Chip, Skeleton, Button, Stack } from '@mui/material'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { fetchMenu } from '../API/menuApi'
 import { formatLL } from '../data/variantCatalog'
+import MenuSkeleton from '../components/MenuSkeleton'
+import CategoryChipsSkeleton from '../components/CategoryChipsSkeleton'
 
 export default function Menu() {
   const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
+  const categoryParam = params.get('category')
+
   const [menu, setMenu] = useState({ items: [], categories: [] })
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
+    setLoading(true)
     fetchMenu()
       .then(setMenu)
+      .catch(() => setError('Failed to load menu'))
       .finally(() => setLoading(false))
   }, [])
+
+  const filteredCategories = useMemo(() => {
+    if (!categoryParam) return menu.categories
+    return menu.categories.filter(c => c.toLowerCase() === categoryParam.toLowerCase())
+  }, [menu.categories, categoryParam])
 
   if (loading) {
     return (
       <Container sx={{ py: 4 }}>
-        <Skeleton variant="text" width={200} height={60} sx={{ mb: 4 }} />
-        <Grid container spacing={3}>
-          {[1, 2, 3, 4].map(i => (
-            <Grid item xs={12} sm={6} md={4} key={i}>
-              <Skeleton variant="rectangular" height={200} sx={{ borderRadius: 2 }} />
-            </Grid>
-          ))}
-        </Grid>
+        <CategoryChipsSkeleton />
+        <MenuSkeleton />
       </Container>
     )
   }
 
   return (
     <Container sx={{ py: 4 }}>
-      <Typography variant="h3" fontWeight={900} gutterBottom>Our Menu</Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 4 }}>
+        <Typography variant="h3" fontWeight={900}>Our Menu</Typography>
+        {categoryParam && (
+          <Button variant="text" onClick={() => setParams({})}>Show All</Button>
+        )}
+      </Stack>
 
-      {menu.categories.map(cat => (
+      {/* Category Filter Chips */}
+      <Box sx={{ mb: 4, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        {menu.categories.map(cat => (
+          <Chip
+            key={cat}
+            label={cat}
+            clickable
+            color={categoryParam === cat ? 'primary' : 'default'}
+            onClick={() => setParams({ category: cat })}
+            sx={{ fontWeight: 700 }}
+          />
+        ))}
+      </Box>
+
+      {filteredCategories.map(cat => (
         <Box key={cat} sx={{ mb: 6 }}>
           <Typography variant="h5" fontWeight={800} gutterBottom sx={{ textTransform: 'capitalize', color: 'primary.main' }}>
             {cat}
