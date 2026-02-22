@@ -82,3 +82,8 @@
 /* Unavailable items */
 .menu-item-card.unavailable{opacity:.7;cursor:default}
 .menu-item-card.unavailable:hover{transform:none}
+@media (max-width: 360px) {
+  .menu-items-grid {
+    grid-template-columns: 1fr;
+  }
+}

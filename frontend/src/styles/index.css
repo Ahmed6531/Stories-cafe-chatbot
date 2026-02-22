@@ -203,6 +203,56 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
     opacity: 1;
   }
 }
+/* ===== Responsive layout: collapse sidebar on small screens ===== */
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  /* Mobile: sidebar becomes a horizontal nav bar */
+.sidebar {
+  display: block;
+  border-right: 0;
+  border-bottom: 1px solid #e9e9e9;
+  padding: 10px 12px;
+}
+
+.side-nav {
+  flex-direction: row;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.side-link {
+  padding: 8px 10px;
+  border-radius: 999px;
+}
+
+  .topbar {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .logo-box {
+    flex: 1 1 auto;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .page {
+    padding: 12px;
+  }
+}
+/* Prevent accidental horizontal scroll on small screens */
+html, body {
+  overflow-x: hidden;
+}
 
 @keyframes chatUnitPushOut {
   from {
