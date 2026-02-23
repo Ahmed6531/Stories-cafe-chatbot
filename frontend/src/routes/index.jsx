@@ -8,6 +8,9 @@ import Success from '../pages/Success.jsx'
 import Login from '../pages/Login.jsx'
 import Register from '../pages/Register.jsx'
 import MenuItemDetails from '../pages/MenuItemDetails.jsx'
+import AdminLayout from "../components/admin/AdminLayout"
+import AdminDashboard from "../pages/admin/AdminDashboard"
+import AdminItems from "../pages/admin/AdminItems"
 import Dashboard from '../pages/Dashboard.jsx'
 
 // Layout wrapper: Navbar contains sidebar + top header + breadcrumb
@@ -18,6 +21,14 @@ function Layout() {
 export default function AppRoutes() {
   return (
     <Routes>
+      {/* Admin routes (separate layout) */}
+      <Route path="/admin" element={<AdminLayout />}>
+        <Route index element={<AdminDashboard />} />
+        <Route path="items" element={<AdminItems />} />
+        <Route path="categories" element={<div>Admin Categories (later)</div>} />
+      </Route>
+
+      {/* Public / customer routes (Navbar layout) */}
       <Route element={<Layout />}>
         <Route path="/" element={<Home />} />
         <Route path="/menu" element={<Menu />} />
