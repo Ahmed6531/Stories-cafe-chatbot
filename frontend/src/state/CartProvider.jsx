@@ -39,11 +39,20 @@ export function CartProvider({ children }) {
   }
 
   const removeFromCart = async (lineId) => {
+    // Optimistically update UI before backend response
+    dispatch({
+      type: 'CART_LOADED',
+      payload: {
+        ...state,
+        items: state.items.filter(item => item.lineId !== lineId),
+        count: state.count - 1
+      }
+    });
     try {
-      const data = await removeFromCartApi(lineId)
-      dispatch({ type: 'CART_LOADED', payload: data })
+      const data = await removeFromCartApi(lineId);
+      dispatch({ type: 'CART_LOADED', payload: data });
     } catch (err) {
-      dispatch({ type: 'CART_ERROR', payload: err.message })
+      dispatch({ type: 'CART_ERROR', payload: err.message });
     }
   }
 
