@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { fetchMenu, createMenuItem, updateMenuItem, deleteMenuItem } from "../../API/menuApi"
+import { fetchMenu, createMenuItem, updateMenuItem, deleteMenuItem, uploadMenuItemImage } from "../../API/menuApi"
 
 export default function AdminItems() {
   const [items, setItems] = useState([])
@@ -7,6 +7,8 @@ export default function AdminItems() {
   const [error, setError] = useState(null)
   const [editingId, setEditingId] = useState(null) // null = creating, number = editing
   const [saving, setSaving] = useState(false)
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreview, setImagePreview] = useState("")
   const [form, setForm] = useState({
   name: "",
   category: "",
@@ -66,12 +68,20 @@ async function onCreateSubmit(e) {
   console.log("ABOUT TO POST", payload)
   setSaving(true)
 
-  try {
-      if (editingId) {
-    await updateMenuItem(editingId, payload)
-  } else {
-    await createMenuItem(payload)
-  }
+    try {
+    let savedId = editingId
+
+    if (editingId) {
+      await updateMenuItem(editingId, payload)
+    } else {
+      const res = await createMenuItem(payload)
+      savedId = res?.item?.id ?? res?.id ?? res?.itemId
+    }
+
+    if (imageFile && savedId != null) {
+      await uploadMenuItemImage(savedId, imageFile)
+    }
+
     const data = await fetchMenu()
     setItems(data.items)
 
@@ -82,17 +92,34 @@ async function onCreateSubmit(e) {
       description: "",
       isAvailable: true,
     })
-    
+
+    setImageFile(null)
+    setImagePreview("")
     setEditingId(null)
-
-
-    setFormError("")
-  } catch (err) {
+    setFormError("")} catch (err) {
     setFormError(err.message)
   }finally {
   setSaving(false)
   }
 }
+function onImageChange(e) {
+  const file = e.target.files?.[0]
+  if (!file) return
+
+  if (!file.type.startsWith("image/")) {
+    setFormError("Please select an image file")
+    return
+  }
+  if (file.size > 3 * 1024 * 1024) {
+    setFormError("Image must be <= 3MB")
+    return
+  }
+
+  setFormError("")
+  setImageFile(file)
+  setImagePreview(URL.createObjectURL(file))
+}
+
 async function handleDelete(id) {
   const ok = confirm("Are you sure you want to delete this item?")
   if (!ok) return
@@ -147,6 +174,24 @@ async function handleDelete(id) {
       onChange={onFormChange}
       rows={3}
     />
+    <div style={{ marginTop: 10 }}>
+        <label>Image</label><br />
+        <input type="file" accept="image/*" onChange={onImageChange} />
+    </div>
+
+    {imagePreview && (
+      <img
+        src={imagePreview}
+        alt="Preview"
+        style={{
+        width: 140,
+        height: 140,
+        objectFit: "cover",
+        borderRadius: 8,
+        marginTop: 10
+      }}
+    />
+    )}
 
     <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
       <input
@@ -178,6 +223,8 @@ async function handleDelete(id) {
           isAvailable: true,
         })
         setFormError("")
+        setImageFile(null)
+        setImagePreview("")
       }}
     >
       Cancel

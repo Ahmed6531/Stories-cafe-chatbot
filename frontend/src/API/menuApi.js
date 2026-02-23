@@ -104,3 +104,19 @@ export async function deleteMenuItem(id) {
   }
 }
 
+export async function uploadMenuItemImage(id, file) {
+  try {
+    const formData = new FormData()
+    formData.append("image", file) // if backend uses "file", we’ll change later
+
+    const response = await http.post(`/menu/${id}/image`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    })
+
+    return response.data // expected { imageUrl: "..." } or { url: "..." }
+  } catch (error) {
+    console.error(`Failed to upload image for item ${id}:`, error)
+    throw new Error(error.response?.data?.error || "Failed to upload image")
+  }
+}
+
