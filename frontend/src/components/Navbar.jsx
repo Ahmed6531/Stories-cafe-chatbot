@@ -16,6 +16,113 @@ import HomeIcon from '@mui/icons-material/Home'
 import MenuBookIcon from '@mui/icons-material/MenuBook'
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart'
 
+// migrated from main.css
+const brand = {
+  primary: '#00704a',
+  primaryHover: '#147d56',
+  primaryActive: '#004a34',
+  primaryDark: '#1e5631',
+  textPrimary: '#2b2b2b',
+  textSecondary: '#79747e',
+  border: '#e0e0e0',
+  borderLight: '#e9e9e9',
+  bgLight: '#f8f9f8',
+  shadowSm: '0 0 6px rgba(0,0,0,0.06)',
+  shadowHover: '0 4px 12px rgba(0,0,0,0.15)',
+  fontBase: "'Montserrat', sans-serif",
+  fontDisplay: "'DIN Alternate Bold', 'Montserrat', sans-serif",
+}
+
+const Topbar = styled('header')(() => ({
+  padding: '6px 14px',
+  minHeight: '52px',
+  display: 'flex',
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  borderBottom: `1px solid ${brand.borderLight}`,
+  alignItems: 'center',
+}))
+
+const TopbarLeft = styled(Box)(() => ({
+  display: 'flex',
+  flexDirection: 'row',
+  gap: '12px',
+  minWidth: 0,
+  flex: 1,
+  alignItems: 'center',
+}))
+
+const TopbarActions = styled(Box)(() => ({
+  display: 'flex',
+  flexDirection: 'row',
+  gap: '8px',
+  alignItems: 'center',
+}))
+
+const BreadcrumbNav = styled(Box)(() => ({
+  fontSize: '12px',
+  fontWeight: 500,
+  color: '#8b8f96',
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+}))
+
+const CrumbLink = styled(Link)(() => ({
+  color: '#8b8f96',
+  padding: '1px 3px',
+  borderRadius: '4px',
+  textDecoration: 'none',
+  transition: 'all 0.2s ease',
+  '&:hover': {
+    color: brand.primary,
+    textDecoration: 'underline',
+  },
+}))
+
+const CrumbSep = styled('span')(() => ({
+  margin: '0 6px',
+  opacity: 0.6,
+}))
+
+const TopPillBtn = styled('button', {
+  shouldForwardProp: (prop) => prop !== 'isAuth',
+})(({ isAuth }) => ({
+  backgroundColor: 'transparent',
+  border: `1.5px solid ${brand.primary}`,
+  color: brand.primary,
+  borderRadius: '20px',
+  height: '32px',
+  display: 'flex',
+  flexDirection: 'row',
+  alignItems: 'center',
+  padding: '0 14px',
+  gap: '6px',
+  fontSize: '13px',
+  fontFamily: brand.fontBase,
+  fontWeight: 600,
+  cursor: 'pointer',
+  transition: 'all 0.2s ease',
+  ...(isAuth && { marginLeft: 'auto' }),
+  '&:hover': {
+    transform: 'translateY(-1px)',
+    backgroundColor: 'rgba(0, 112, 74, 0.08)',
+  },
+}))
+
+const CartBadge = styled(Box)(() => ({
+  display: 'inline-grid',
+  placeItems: 'center',
+  width: '20px',
+  height: '20px',
+  backgroundColor: brand.primary,
+  color: '#ffffff',
+  borderRadius: '50%',
+  fontSize: '11px',
+  fontWeight: 700,
+  lineHeight: '20px',
+}))
+
 const DRAWER_OPEN_WIDTH = 240
 const DRAWER_CLOSED_WIDTH = 64
 
@@ -52,13 +159,13 @@ const StyledDrawer = styled(Drawer, { shouldForwardProp: (prop) => prop !== 'ope
     boxSizing: 'border-box',
     ...(open
       ? {
-          ...openedMixin(theme),
-          '& .MuiDrawer-paper': openedMixin(theme),
-        }
+        ...openedMixin(theme),
+        '& .MuiDrawer-paper': openedMixin(theme),
+      }
       : {
-          ...closedMixin(theme),
-          '& .MuiDrawer-paper': closedMixin(theme),
-        }),
+        ...closedMixin(theme),
+        '& .MuiDrawer-paper': closedMixin(theme),
+      }),
   })
 )
 
@@ -321,10 +428,11 @@ export default function Navbar() {
           }}
         >
           {drawerOpen ? (
-            <img
+            <Box
+              component="img"
               src="/stories-logo.png"
               alt="Stories"
-              className="drawer-logo"
+              sx={{ maxWidth: '118px', maxHeight: '28px', objectFit: 'contain', ml: '4px' }}
               onError={(e) => {
                 e.currentTarget.style.display = 'none'
               }}
@@ -421,54 +529,59 @@ export default function Navbar() {
 
       <div className="content-shell">
         <main className="main">
-          <header className="topbar">
-            <div className="topbar-left">
+          <Topbar>
+            <TopbarLeft>
               {!drawerOpen && (
-                <img
-                  src="/stories-logo.png"
-                  alt="Stories"
-                  className="topbar-logo"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none'
-                  }}
-                />
+                <>
+                  <Box
+                    component="img"
+                    src="/stories-logo.png"
+                    alt="Stories"
+                    className="topbar-logo"
+                    sx={{ maxWidth: '112px', maxHeight: '24px', objectFit: 'contain', width: 'auto' }}
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none'
+                    }}
+                  />
+                  {/* // TODO: move topbarLogoIn keyframe to styled() in Phase 3 */}
+                </>
               )}
               {location.pathname !== '/' && (
-                <div className="breadcrumb">
+                <BreadcrumbNav component="nav">
                   {crumbs.map((c, idx) => (
                     <span key={c.to + idx} className="crumb">
-                      <Link to={c.to} className="crumb-link">{c.label}</Link>
-                      {idx < crumbs.length - 1 && <span className="crumb-sep">/</span>}
+                      <CrumbLink to={c.to}>{c.label}</CrumbLink>
+                      {idx < crumbs.length - 1 && <CrumbSep>/</CrumbSep>}
                     </span>
                   ))}
-                </div>
+                </BreadcrumbNav>
               )}
-            </div>
-            <div className="topbar-actions">
+            </TopbarLeft>
+            <TopbarActions>
               {isAuthed ? (
-                <button className="top-pill auth" type="button" onClick={() => navigate(-1)}>Back</button>
+                <TopPillBtn isAuth type="button" onClick={() => navigate(-1)}>Back</TopPillBtn>
               ) : (
-                <button className="top-pill outline" type="button" onClick={() => navigate('/login')}>
+                <TopPillBtn type="button" onClick={() => navigate('/login')}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="8" r="4" />
                     <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
                   </svg>
                   <span>Login</span>
-                </button>
+                </TopPillBtn>
               )}
-              <button className="top-pill outline" type="button" onClick={() => navigate('/cart')}>
-                <span aria-hidden="true" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <TopPillBtn type="button" onClick={() => navigate('/cart')}>
+                <Box component="span" aria-hidden="true" sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <circle cx="9" cy="21" r="1" />
                     <circle cx="20" cy="21" r="1" />
                     <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.95-1.57L23 6H6" />
                   </svg>
-                </span>
+                </Box>
                 <span>Cart</span>
-                {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
-              </button>
-            </div>
-          </header>
+                {cartCount > 0 && <CartBadge>{cartCount}</CartBadge>}
+              </TopPillBtn>
+            </TopbarActions>
+          </Topbar>
 
           <div ref={pageRef} className="page">
             <Outlet />
@@ -485,6 +598,10 @@ export default function Navbar() {
             <div className="chat-panel-shell">
               <aside className="chat-panel">
                 <div className="cp-header">
+                  <div className="chat-assistant-meta">
+                    <span className="chat-assistant-title">Stories Assistant</span>
+                    <span className="chat-assistant-badge">NEW</span>
+                  </div>
                   <button
                     className="chat-panel-close"
                     type="button"
@@ -631,3 +748,6 @@ export default function Navbar() {
     </div>
   )
 }
+
+// Removed classes from main.css dependency:
+// .topbar, .topbar-left, .topbar-actions, .breadcrumb, .crumb-link, .crumb-sep, .top-pill, .cart-badge

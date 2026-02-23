@@ -6,6 +6,7 @@ import http from './http'
 function transformMenuItem(item) {
   // Skip items missing id or name (robustness for partial backend data)
   if (!item.id || !item.name) return null;
+  const hasImage = Boolean(item.image && String(item.image).trim());
   return {
     id: item.id,  // Use the numeric ID from the database
     name: item.name,
@@ -14,7 +15,8 @@ function transformMenuItem(item) {
     basePrice: item.basePrice || item.price || 0,
     category: item.category,
     subcategory: item.subcategory || null,
-    image: item.image || `https://via.placeholder.com/260x260?text=${encodeURIComponent(item.name)}`,
+    image: item.image || '/images/placeholder.png',
+    hasImage,
     isAvailable: item.isAvailable !== undefined ? item.isAvailable : true,
     isFeatured: item.isFeatured || false,
     options: item.options || [],

@@ -1,10 +1,200 @@
+// migrated from menu.css
 import { useMemo, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Box, Typography, styled } from '@mui/material'
 import FeaturedItems from '../components/FeaturedItems'
 import MenuSkeleton from '../components/MenuSkeleton'
 import CategoryChipsSkeleton from '../components/CategoryChipsSkeleton'
 import { fetchMenu } from '../API/menuApi'
-import '../styles/menu.css'
+
+const brand = {
+  primary: '#00704a',
+  primaryHover: '#147d56',
+  primaryActive: '#004a34',
+  primaryDark: '#1e5631',
+  textPrimary: '#2b2b2b',
+  textSecondary: '#79747e',
+  border: '#e0e0e0',
+  borderLight: '#e9e9e9',
+  bgLight: '#f8f9f8',
+  shadowSm: '0 0 6px rgba(0,0,0,0.06)',
+  shadowHover: '0 4px 12px rgba(0,0,0,0.15)',
+  fontBase: "'Montserrat', sans-serif",
+  fontDisplay: "'DIN Alternate Bold', 'Montserrat', sans-serif",
+}
+
+// .page-wrap
+const PageWrap = styled(Box)(() => ({
+  width: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '14px',
+}));
+
+// .section-heading
+const SectionHeading = styled(Box)(() => ({
+  marginTop: '10px',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  gap: '6px',
+}));
+
+// .section-title
+const SectionTitle = styled(Typography)(() => ({
+  fontFamily: brand.fontDisplay,
+  fontSize: '28px',
+  fontWeight: 700,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  color: brand.primary,
+  margin: 0,
+  textAlign: 'center',
+  position: 'relative',
+  paddingBottom: '8px',
+}));
+
+// .state-text
+const StatusText = styled(Typography, {
+  shouldForwardProp: (prop) => prop !== 'isError',
+})(({ isError }) => ({
+  fontFamily: brand.fontBase,
+  fontSize: '16px',
+  fontWeight: 500,
+  color: isError ? '#b91c1c' : brand.textSecondary,
+  margin: 0,
+}));
+
+// .catbar-wrap
+const CatbarWrap = styled(Box)(() => ({
+  position: 'relative',
+  width: '100%',
+  '&::after': {
+    content: '""',
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: '56px',
+    height: '100%',
+    background: 'linear-gradient(to right, transparent, #fff)',
+    pointerEvents: 'none',
+    zIndex: 1,
+  },
+  '&::before': {
+    content: '""',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '56px',
+    height: '100%',
+    background: 'linear-gradient(to left, transparent, #fff)',
+    pointerEvents: 'none',
+    zIndex: 1,
+  }
+}));
+
+// .catbar
+const Catbar = styled(Box)(() => ({
+  width: '100%',
+  overflowX: 'auto',
+  msOverflowStyle: 'none',
+  scrollbarWidth: 'none',
+  padding: '4px 0 8px',
+  overscrollBehaviorX: 'contain',
+  '&::-webkit-scrollbar': {
+    display: 'none',
+  }
+}));
+
+// .catbar-inner
+const CatbarInner = styled(Box)(() => ({
+  display: 'flex',
+  gap: '12px',
+  flexWrap: 'nowrap',
+  alignItems: 'center',
+  justifyContent: 'center',
+  minWidth: 'max-content',
+  padding: '0 24px',
+}));
+
+// .cat-chip
+const CatChip = styled('button', {
+  shouldForwardProp: (prop) => prop !== 'isActive',
+})(({ isActive }) => ({
+  padding: 0,
+  border: '1px solid #d6e4dd',
+  backgroundColor: '#ffffff',
+  color: '#1a4a35',
+  borderRadius: '20px',
+  fontFamily: brand.fontBase,
+  fontSize: '14px',
+  fontWeight: 600,
+  cursor: 'pointer',
+  transition: 'all 0.3s ease',
+  whiteSpace: 'nowrap',
+  userSelect: 'none',
+  boxShadow: brand.shadowSm,
+  overflow: 'hidden',
+  minWidth: '120px',
+  maxWidth: '140px',
+  flexShrink: 0,
+
+  ...(isActive ? {
+    background: brand.primary,
+    color: '#ffffff',
+    borderColor: brand.primary,
+    boxShadow: '0 6px 16px rgba(0, 112, 74, 0.18)',
+    transform: 'translateY(-1px)',
+    '& img': {
+      background: 'transparent',
+    },
+    '&:hover': {
+      background: brand.primaryHover,
+      borderColor: brand.primaryHover,
+      transform: 'translateY(-2px)',
+      boxShadow: '0 8px 18px rgba(0, 112, 74, 0.22)',
+    }
+  } : {
+    '&:hover': {
+      backgroundColor: '#f8fcfa',
+      borderColor: '#b7cec2',
+      color: '#1a4a35',
+      transform: 'translateY(-2px)',
+      boxShadow: '0 8px 18px rgba(17, 24, 39, 0.08)',
+      '& img': {
+        transform: 'scale(1.1)',
+      }
+    }
+  })
+}));
+
+// .cat-chip-content
+const CatChipContent = styled(Box)(() => ({
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  padding: '16px 12px',
+  gap: '8px',
+}));
+
+// .cat-chip-image
+const CatChipImage = styled('img')(() => ({
+  width: '56px',
+  height: '56px',
+  objectFit: 'cover',
+  borderRadius: '12px',
+  background: 'transparent',
+  transition: 'transform 0.3s ease',
+}));
+
+// .cat-chip-text
+const CatChipText = styled('span')(() => ({
+  fontSize: '13px',
+  fontWeight: 700,
+  textAlign: 'center',
+  lineHeight: 1.2,
+  display: 'block',
+}));
 
 export default function Home() {
   const navigate = useNavigate()
@@ -54,49 +244,56 @@ export default function Home() {
   }
 
   return (
-    <div className="page-wrap">
-      <div className="section-heading">
-        <h2 className="section-title">Categories</h2>
-      </div>
+    <PageWrap>
+      <SectionHeading>
+        <SectionTitle component="h2">Categories</SectionTitle>
+      </SectionHeading>
+
       {loading ? (
         <CategoryChipsSkeleton />
       ) : error ? (
-        <span className="state-text error">{error}</span>
+        <StatusText isError>{error}</StatusText>
       ) : categories.length > 0 ? (
-        <div className="catbar-wrap">
-          <div className="catbar">
-            <div className="catbar-inner">
+        <CatbarWrap>
+          <Catbar>
+            <CatbarInner>
               {categories.map((c) => (
-                <button key={c} type="button" className="cat-chip" onClick={() => pickCategory(c)}>
-                  <div className="cat-chip-content">
-                    <img
+                <CatChip key={c} type="button" onClick={() => pickCategory(c)}>
+                  <CatChipContent>
+                    <CatChipImage
                       src={categoryImages[c] || '/images/placeholder.png'}
                       alt={c}
-                      className="cat-chip-image"
+                      onError={(e) => { e.currentTarget.src = '/images/placeholder.png' }}
                     />
-                    <span className="cat-chip-text">{c === 'Mixed Beverages' ? 'Mixed Bev.' : c}</span>
-                  </div>
-                </button>
+                    <CatChipText>{c === 'Mixed Beverages' ? 'Mixed Bev.' : c}</CatChipText>
+                  </CatChipContent>
+                </CatChip>
               ))}
-            </div>
-          </div>
-        </div>
+            </CatbarInner>
+          </Catbar>
+        </CatbarWrap>
       ) : (
         <span>No categories found.</span>
       )}
 
-      <div className="section-heading">
-        <h2 className="section-title">Featured items</h2>
-      </div>
+      <SectionHeading>
+        <SectionTitle component="h2">Featured items</SectionTitle>
+      </SectionHeading>
+
       {loading ? (
         <MenuSkeleton />
       ) : error ? (
-        <p className="state-text error">{error}</p>
+        <StatusText isError>{error}</StatusText>
       ) : featured.length > 0 ? (
         <FeaturedItems items={featured} />
       ) : (
         <p>No featured items available.</p>
       )}
-    </div>
+    </PageWrap>
   )
 }
+
+// Removed classes from menu.css dependency:
+// .page-wrap, .section-heading, .section-title, .featured-section-heading
+// .state-text, .state-text.error, .catbar-wrap, .catbar, .catbar-inner
+// .cat-chip, .cat-chip-content, .cat-chip-image, .cat-chip-text

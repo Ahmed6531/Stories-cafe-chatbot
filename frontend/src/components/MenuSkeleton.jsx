@@ -1,11 +1,11 @@
 import Skeleton from '@mui/material/Skeleton'
-import '../styles/menu-list.css'
+import Box from '@mui/material/Box'
 
 const PLACEHOLDER_COUNT = 8
 
 export default function MenuSkeleton() {
   return (
-    <div className="menu-list-container">
+    <Box sx={{ width: '100%' }}>
       <div
         style={{
           display: 'grid',
@@ -28,7 +28,6 @@ export default function MenuSkeleton() {
             }}
           >
             <Skeleton animation="wave" variant="rectangular" width="100%" height={180} />
-
             <div
               style={{
                 display: 'flex',
@@ -41,7 +40,6 @@ export default function MenuSkeleton() {
             >
               <Skeleton animation="wave" variant="text" width="58%" height={24} />
               <Skeleton animation="wave" variant="text" width="72%" height={18} />
-
               <div
                 style={{
                   marginTop: 'auto',
@@ -58,6 +56,6 @@ export default function MenuSkeleton() {
           </div>
         ))}
       </div>
-    </div>
+    </Box>
   )
 }
