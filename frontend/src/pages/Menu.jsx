@@ -1,103 +1,161 @@
-import { useEffect, useState, useMemo } from 'react'
-import { Container, Typography, Grid, Card, CardContent, CardMedia, CardActionArea, Box, Chip, Skeleton, Button, Stack } from '@mui/material'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { fetchMenu } from '../API/menuApi'
-import { formatLL } from '../data/variantCatalog'
+import { useMemo, useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import MenuList from '../components/MenuList'
 import MenuSkeleton from '../components/MenuSkeleton'
 import CategoryChipsSkeleton from '../components/CategoryChipsSkeleton'
+import { fetchMenu } from '../API/menuApi'
+import '../styles/menu.css'
 
 export default function Menu() {
-  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const categoryParam = params.get('category')
-
-  const [menu, setMenu] = useState({ items: [], categories: [] })
+  const category = params.get('category') // No default - falsy means show all
+  const [subcategory, setSubcategory] = useState(null)
+  const [items, setItems] = useState([])
+  const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  useEffect(() => {
-    setLoading(true)
-    fetchMenu()
-      .then(setMenu)
-      .catch(() => setError('Failed to load menu'))
-      .finally(() => setLoading(false))
-  }, [])
+  // Category image mapping
+  const categoryImages = {
+    'Coffee': '/images/coffee.png',
+    'Mixed Beverages': '/images/mixedbev.png',
+    'Pastries': '/images/pastries.png',
+    'Salad': '/images/salad.png',
+    'Sandwiches': '/images/sandwiches.png',
+    'Soft Drinks': '/images/soft-drinks.png',
+    'Tea': '/images/tea.png',
+    'Yogurts': '/images/yogurt.png'
+  }
 
-  const filteredCategories = useMemo(() => {
-    if (!categoryParam) return menu.categories
-    return menu.categories.filter(c => c.toLowerCase() === categoryParam.toLowerCase())
-  }, [menu.categories, categoryParam])
+  // Handle category selection - clicking active category deselects it
+  const handleCategoryClick = (selectedCategory) => {
+    if (category === selectedCategory) {
+      // Clicking active category - show all items
+      setParams({})
+    } else {
+      // Clicking different category - filter by it
+      setParams({ category: selectedCategory })
+    }
+  }
+
+  // Fetch menu data on component mount
+  useEffect(() => {
+    const loadMenu = async () => {
+      try {
+        setLoading(true);
+        const data = await fetchMenu(category);
+        setItems(data.items);
+        setCategories(data.categories);
+        setError(null);
+      } catch (err) {
+        setError(err.message);
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadMenu();
+  }, [category]);
+
+  useEffect(() => {
+    setSubcategory(null)
+  }, [category])
+
+  const subcategories = useMemo(() => {
+    if (!category) return []
+    const uniqueSubcategories = new Set(
+      items.map((item) => item.subcategory).filter(Boolean)
+    )
+    return Array.from(uniqueSubcategories).sort()
+  }, [items, category])
+
+  // Items are already filtered by backend category; this applies optional subcategory filtering
+  const filteredItems = useMemo(() => {
+    return items.filter((i) => {
+      if (!i || !i.id || !i.name) return false
+      if (!subcategory) return true
+      return i.subcategory === subcategory
+    })
+  }, [items, subcategory])
+
+  if (error) {
+    return (
+      <div className="page-wrap state-wrap">
+        <h1 className="state-title">Unable to load menu</h1>
+        <p className="state-text error">Error: {error}</p>
+        <button
+          type="button"
+          className="primary-btn"
+          onClick={() => window.location.reload()}
+          style={{ marginTop: '20px' }}
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
 
   if (loading) {
     return (
-      <Container sx={{ py: 4 }}>
+      <div className="page-wrap">
+        <div className="section-heading">
+          <h2 className="section-title">Categories</h2>
+        </div>
         <CategoryChipsSkeleton />
         <MenuSkeleton />
-      </Container>
+      </div>
     )
   }
 
   return (
-    <Container sx={{ py: 4 }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 4 }}>
-        <Typography variant="h3" fontWeight={900}>Our Menu</Typography>
-        {categoryParam && (
-          <Button variant="text" onClick={() => setParams({})}>Show All</Button>
-        )}
-      </Stack>
-
-      {/* Category Filter Chips */}
-      <Box sx={{ mb: 4, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-        {menu.categories.map(cat => (
-          <Chip
-            key={cat}
-            label={cat}
-            clickable
-            color={categoryParam === cat ? 'primary' : 'default'}
-            onClick={() => setParams({ category: cat })}
-            sx={{ fontWeight: 700 }}
-          />
-        ))}
-      </Box>
-
-      {filteredCategories.map(cat => (
-        <Box key={cat} sx={{ mb: 6 }}>
-          <Typography variant="h5" fontWeight={800} gutterBottom sx={{ textTransform: 'capitalize', color: 'primary.main' }}>
-            {cat}
-          </Typography>
-          <Grid container spacing={3}>
-            {menu.items.filter(i => i.category === cat).map(item => (
-              <Grid item xs={12} sm={6} md={3} key={item.id}>
-                <Card variant="outlined" sx={{ borderRadius: 2, height: '100%' }}>
-                  <CardActionArea onClick={() => navigate(`/item/${item.id}`)} sx={{ height: '100%' }}>
-                    <CardMedia
-                      component="img"
-                      height="180"
-                      image={item.image}
-                      alt={item.name}
-                      sx={{ objectFit: 'cover' }}
+    <div className="page-wrap">
+      <div className="section-heading">
+        <h2 className="section-title">Categories</h2>
+      </div>
+      <div className="catbar-wrap">
+        <div className="catbar">
+          <div className="catbar-inner">
+            {categories.length > 0 ? (
+              categories.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className={`cat-chip ${category === c ? 'active' : ''}`}
+                  onClick={() => handleCategoryClick(c)}
+                >
+                  <div className="cat-chip-content">
+                    <img
+                      src={categoryImages[c] || '/images/placeholder.png'}
+                      alt={c}
+                      className="cat-chip-image"
                     />
-                    <CardContent>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 1 }}>
-                        <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.2 }}>{item.name}</Typography>
-                        <Chip label={formatLL(item.price)} size="small" color="primary" sx={{ fontWeight: 700 }} />
-                      </Box>
-                      <Typography variant="body2" color="text.secondary" sx={{
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrientation: 'vertical',
-                        overflow: 'hidden'
-                      }}>
-                        {item.description}
-                      </Typography>
-                    </CardContent>
-                  </CardActionArea>
-                </Card>
-              </Grid>
-            ))}
-          </Grid>
-        </Box>
-      ))}
-    </Container>
+                    <span className="cat-chip-text">{c === 'Mixed Beverages' ? 'Mixed Bev.' : c}</span>
+                  </div>
+                </button>
+              ))
+            ) : (
+              <span>No categories found.</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {subcategories.length > 0 && (
+        <div className="subcatbar">
+          {subcategories.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className={`subcat-chip ${subcategory === s ? 'active' : ''}`}
+              onClick={() => setSubcategory((prev) => (prev === s ? null : s))}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <MenuList items={filteredItems} />
+    </div>
   )
 }

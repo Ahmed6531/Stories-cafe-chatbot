@@ -1,105 +1,145 @@
-import { Container, Typography, Box, List, ListItem, ListItemText, Button, IconButton, Stack, Divider, Card, CardContent } from '@mui/material'
-import { Add, Remove, Delete, ShoppingCartCheckout } from '@mui/icons-material'
-import { useNavigate } from 'react-router-dom'
-import { useCart } from '../state/useCart'
-import { formatLL } from '../data/variantCatalog'
+import { Link, useNavigate } from "react-router-dom";
+import { useCart } from '../state/useCart';
+import { formatLL } from '../data/variantCatalog';
+import '../styles/cart-checkout.css';
 
-export default function Cart() {
-  const navigate = useNavigate()
-  const { state, updateQty, removeFromCart, cartCount } = useCart()
-  const { items, loading } = state
+function Cart() {
+  const navigate = useNavigate();
+  const { state, updateQty, removeFromCart } = useCart();
+  const { items, loading } = state;
 
-  const subtotal = items.reduce((sum, item) => sum + (item.price || 0) * item.qty, 0)
+  // Calculate total price using the new logic
+  const subtotal = items.reduce(
+    (total, item) => total + (item.price || 0) * item.qty,
+    0
+  );
 
-  if (loading) return <Container sx={{ py: 4 }}><Typography>Loading cart...</Typography></Container>
+  const handleCheckout = () => {
+    navigate('/checkout');
+  };
 
-  if (cartCount === 0) {
+  if (loading) {
     return (
-      <Container sx={{ py: 8, textAlign: 'center' }}>
-        <Typography variant="h5" gutterBottom>Your cart is empty</Typography>
-        <Button variant="contained" onClick={() => navigate('/menu')} sx={{ mt: 2 }}>Back to Menu</Button>
-      </Container>
-    )
+      <div className="checkout-page">
+        <div className="checkout-container">
+          <p className="state-text">Loading your cart...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <Container sx={{ py: 4 }}>
-      <Typography variant="h4" fontWeight={900} gutterBottom>Your Cart</Typography>
+    <div className="checkout-page">
+      {/* Header */}
+      <header className="checkout-header">
+        <div className="header-content">
+          <h1>Your Cart</h1>
+        </div>
+      </header>
 
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={4}>
-        <Box sx={{ flex: 2 }}>
-          <Card variant="outlined" sx={{ borderRadius: 2 }}>
-            <List disablePadding>
-              {items.map((item, idx) => (
-                <Box key={item.lineId}>
-                  <ListItem sx={{ py: 2 }}>
-                    <ListItemText
-                      primary={<Typography variant="h6" fontWeight={700}>{item.name}</Typography>}
-                      secondary={
-                        <Box>
-                          <Typography variant="body2" color="text.secondary">
-                            {item.selectedOptions?.join(', ')}
-                          </Typography>
-                          {item.instructions && (
-                            <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontStyle: 'italic', color: 'text.secondary' }}>
-                              Notes: {item.instructions}
-                            </Typography>
-                          )}
-                          <Typography variant="subtitle1" fontWeight={700} color="primary" sx={{ mt: 1 }}>
-                            {formatLL(item.price)}
-                          </Typography>
-                        </Box>
-                      }
+      {/* Main Content */}
+      <div className="checkout-container">
+        {items.length === 0 ? (
+          <div className="empty-cart">
+            <p>Your cart is empty</p>
+            <Link to="/menu">
+              <button className="btn-primary">Browse Menu</button>
+            </Link>
+          </div>
+        ) : (
+          <div className="cart-content">
+            {/* Cart Items */}
+            <div className="cart-items">
+              {items.map((item) => (
+                <div key={item.lineId} className="cart-item">
+                  {/* Item Image */}
+                  <div className="item-image">
+                    <img
+                      src={item.image}
+                      alt={item.name}
                     />
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <IconButton size="small" onClick={() => updateQty(item.lineId, item.qty - 1)} disabled={item.qty <= 1}>
-                        <Remove fontSize="small" />
-                      </IconButton>
-                      <Typography fontWeight={700}>{item.qty}</Typography>
-                      <IconButton size="small" onClick={() => updateQty(item.lineId, item.qty + 1)}>
-                        <Add fontSize="small" />
-                      </IconButton>
-                      <IconButton color="error" onClick={() => removeFromCart(item.lineId)}>
-                        <Delete />
-                      </IconButton>
-                    </Stack>
-                  </ListItem>
-                  {idx < items.length - 1 && <Divider />}
-                </Box>
-              ))}
-            </List>
-          </Card>
-        </Box>
+                  </div>
 
-        <Box sx={{ flex: 1 }}>
-          <Card variant="outlined" sx={{ borderRadius: 2, bgcolor: 'grey.50' }}>
-            <CardContent>
-              <Typography variant="h6" fontWeight={800} gutterBottom>Order Summary</Typography>
-              <Stack spacing={2} sx={{ mt: 2 }}>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography>Subtotal</Typography>
-                  <Typography fontWeight={700}>{formatLL(subtotal)}</Typography>
-                </Stack>
-                <Divider />
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="h6" fontWeight={800}>Total</Typography>
-                  <Typography variant="h6" fontWeight={800} color="primary">{formatLL(subtotal)}</Typography>
-                </Stack>
-                <Button
-                  variant="contained"
-                  fullWidth
-                  size="large"
-                  startIcon={<ShoppingCartCheckout />}
-                  onClick={() => navigate('/checkout')}
-                  sx={{ py: 1.5, borderRadius: 2, mt: 2 }}
-                >
-                  Checkout
-                </Button>
-              </Stack>
-            </CardContent>
-          </Card>
-        </Box>
-      </Stack>
-    </Container>
-  )
+                  {/* Item Details */}
+                  <div className="item-details">
+                    <h3>{item.name}</h3>
+                    {item.selectedOptions?.length > 0 && (
+                      <p className="item-variants">
+                        {item.selectedOptions.join(', ')}
+                      </p>
+                    )}
+                    <p className="item-price">{formatLL(item.price)}</p>
+                  </div>
+
+                  {/* Quantity Controls */}
+                  <div className="quantity-controls">
+                    <button
+                      className="qty-btn"
+                      onClick={() => updateQty(item.lineId, item.qty - 1)}
+                      disabled={item.qty <= 1}
+                      aria-label="Decrease quantity"
+                    >
+                      −
+                    </button>
+                    <span className="quantity">{item.qty}</span>
+                    <button
+                      className="qty-btn"
+                      onClick={() => updateQty(item.lineId, item.qty + 1)}
+                      aria-label="Increase quantity"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  {/* Item Total */}
+                  <div className="item-total">
+                    {formatLL(item.price * item.qty)}
+                  </div>
+
+                  {/* Remove Button */}
+                  <button
+                    className="btn-remove"
+                    onClick={() => removeFromCart(item.lineId)}
+                    aria-label="Remove item"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Order Summary */}
+            <div className="order-summary">
+              <h2>Order Summary</h2>
+
+              <div className="summary-row">
+                <span>Subtotal</span>
+                <span>{formatLL(subtotal)}</span>
+              </div>
+
+              <div className="summary-divider"></div>
+
+              <div className="summary-row total">
+                <span>Total</span>
+                <span className="total-price-val">{formatLL(subtotal)}</span>
+              </div>
+
+              <button
+                className="btn-checkout"
+                onClick={handleCheckout}
+              >
+                Proceed to Checkout
+              </button>
+
+              <Link to="/menu" className="continue-shopping">
+                <button className="btn-secondary">Continue Shopping</button>
+              </Link>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
+
+export default Cart;
