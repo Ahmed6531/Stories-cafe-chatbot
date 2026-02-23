@@ -10,7 +10,7 @@ import Register from '../pages/Register.jsx'
 import MenuItemDetails from '../pages/MenuItemDetails.jsx'
 import AdminLayout from "../components/admin/AdminLayout"
 import AdminDashboard from "../pages/admin/AdminDashboard"
-
+import AdminItems from "../pages/admin/AdminItems"
 
 // Layout wrapper: Navbar contains sidebar + top header + breadcrumb
 function Layout() {
@@ -23,8 +23,8 @@ export default function AppRoutes() {
       {/* Admin routes (separate layout) */}
       <Route path="/admin" element={<AdminLayout />}>
         <Route index element={<AdminDashboard />} />
-        <Route path="items" element={<div>Admin Items (next ticket)</div>} />
-        <Route path="categories" element={<div>Admin Categories (next ticket)</div>} />
+        <Route path="items" element={<AdminItems />} />
+        <Route path="categories" element={<div>Admin Categories (later)</div>} />
       </Route>
 
       {/* Public / customer routes (Navbar layout) */}

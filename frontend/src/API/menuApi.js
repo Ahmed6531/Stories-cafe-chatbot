@@ -72,3 +72,35 @@ export async function fetchMenuItemById(id) {
   }
 }
 
+export async function createMenuItem(payload) {
+  try {
+    const response = await http.post("/menu", payload)
+    return response.data
+  } catch (error) {
+    console.error("Failed to create menu item:", error)
+    throw new Error(
+      error.response?.data?.error || "Failed to create menu item"
+    )
+  }
+}
+
+export async function updateMenuItem(id, payload) {
+  try {
+    const response = await http.put(`/menu/${id}`, payload)
+    return response.data
+  } catch (error) {
+    console.error(`Failed to update menu item ${id}:`, error)
+    throw new Error(error.response?.data?.error || "Failed to update menu item")
+  }
+}
+
+export async function deleteMenuItem(id) {
+  try {
+    await http.delete(`/menu/${id}`)
+    return true
+  } catch (error) {
+    console.error(`Failed to delete menu item ${id}:`, error)
+    throw new Error(error.response?.data?.error || "Failed to delete menu item")
+  }
+}
+
