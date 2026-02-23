@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { fetchMenuItemById } from '../API/menuApi'
 import { useCart } from '../state/useCart'
 import { formatLL } from '../data/variantCatalog'
-import '../styles/menu_item.css'
+import '../styles/menu-item.css'
 
 export default function MenuItemDetails() {
   const { id } = useParams()
