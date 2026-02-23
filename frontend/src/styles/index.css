@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=DIN+Alternate:wght@700&display=swap');
 
 .app-shell{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
 .sidebar{border-right:1px solid #e9e9e9;padding:18px;display:flex;flex-direction:column;justify-content:space-between;background:#fff}
@@ -23,7 +24,6 @@
 .crumb-link:hover{color:#00704a;background:rgba(0,112,74,.08);text-decoration:underline}
 .crumb-sep{margin:0 8px;opacity:.7}
 .page{padding:18px}
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=DIN+Alternate:wght@700&display=swap');
 
 .auth-btn{width:100%;padding:12px 14px;border:0;border-radius:12px;background:#00704a;color:#fff;font-weight:900;cursor:pointer}
 .auth-btn:hover{background:#147d56}
