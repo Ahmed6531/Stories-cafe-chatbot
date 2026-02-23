@@ -81,6 +81,7 @@ export default function Navbar() {
   const crumbs = useBreadcrumb()
   const location = useLocation()
   const navigate = useNavigate()
+  const [mobileOpen, setMobileOpen] = useState(false)
 
   return (
     <div className="app-shell">
@@ -108,6 +109,12 @@ export default function Navbar() {
       <main className="main">
         {/* Top bar */}
         <header className="topbar">
+                  <button
+          className="hamburger-btn"
+          onClick={() => setMobileOpen(true)}
+        >
+          ☰
+        </button>
           <div className="logo-box">
             <img
               className="logo-img"
@@ -151,6 +158,28 @@ export default function Navbar() {
           <Outlet />
         </div>
       </main>
+      {/* Mobile Drawer */}
+      {mobileOpen && (
+        <>
+          <div
+            className="mobile-overlay"
+            onClick={() => setMobileOpen(false)}
+          />
+
+          <div className="mobile-drawer">
+            <div className="mobile-drawer-header">
+              <span>Menu</span>
+              <button onClick={() => setMobileOpen(false)}>✕</button>
+            </div>
+
+            <nav className="mobile-nav">
+              <NavLink to="/" onClick={() => setMobileOpen(false)}>Home</NavLink>
+              <NavLink to="/menu" onClick={() => setMobileOpen(false)}>Menu</NavLink>
+              <NavLink to="/cart" onClick={() => setMobileOpen(false)}>Cart</NavLink>
+            </nav>
+          </div>
+        </>
+      )}
     </div>
   )
 }
