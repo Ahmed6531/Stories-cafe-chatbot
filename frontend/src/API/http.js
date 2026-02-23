@@ -11,6 +11,15 @@ const http = axios.create({
     'Content-Type': 'application/json',
   },
 })
+http.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token')
+ console.log("Sending request to:", config.url, "with token:", token)
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+
+  return config
+})
 
 // Response interceptor for error handling
 http.interceptors.response.use(

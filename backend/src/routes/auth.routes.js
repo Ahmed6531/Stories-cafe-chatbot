@@ -68,9 +68,17 @@ router.post("/login", async (req, res) => {
   return res.status(403).json({ message: "Please verify your email. A new verification email has been sent." });
     }
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "1d",
-    });
+   const token = jwt.sign(
+      {
+        id: user._id,
+        role: user.role,    // ✅ MODIFIED
+        
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
+
+    console.log("Decoded JWT:", jwt.decode(token));
 
     res.json({ token });
   } catch (err) {

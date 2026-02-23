@@ -26,7 +26,7 @@ router.get("/category/:category", getMenuByCategory); // Add this line
 router.get("/:id", getMenuItem);
 
 router.post("/", protect, authorize("admin"), createMenuItem);
-router.patch("/:id",protect, authorize("admin"), updateMenuItem);
+router.patch("/:id",protect,authorize("admin"), updateMenuItem);
 router.delete("/:id",protect, authorize("admin"), deleteMenuItem);
 
 export default router;

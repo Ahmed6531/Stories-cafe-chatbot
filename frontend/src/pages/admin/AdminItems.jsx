@@ -13,6 +13,8 @@ export default function AdminItems() {
   price: "",
   description: "",
   isAvailable: true,
+  slug: "",       
+  image: "",
 })
 
 const [formError, setFormError] = useState("")
@@ -43,6 +45,8 @@ const [formError, setFormError] = useState("")
 function validateForm() {
   if (!form.name.trim()) return "Name is required"
   if (!form.category.trim()) return "Category is required"
+  if (!form.slug.trim()) return "Slug is required"         
+  if (!form.image.trim()) return "Image URL is required" 
   const priceNum = Number(form.price)
   if (Number.isNaN(priceNum) || priceNum < 0) return "Price must be a number >= 0"
   return ""
@@ -81,6 +85,8 @@ async function onCreateSubmit(e) {
       price: "",
       description: "",
       isAvailable: true,
+      slug: "",    
+      image: "", 
     })
     
     setEditingId(null)
@@ -132,6 +138,20 @@ async function handleDelete(id) {
     />
 
     <input
+            name="slug"         
+            placeholder="Slug (unique)"
+            value={form.slug}
+            onChange={onFormChange}
+          />
+
+   <input
+           name="image"         
+           placeholder="Image URL"
+            value={form.image}
+            onChange={onFormChange}
+          />
+
+    <input
       name="price"
       placeholder="Price"
       value={form.price}
@@ -176,6 +196,8 @@ async function handleDelete(id) {
           price: "",
           description: "",
           isAvailable: true,
+          slug: "",   
+          image: "", 
         })
         setFormError("")
       }}
@@ -192,6 +214,8 @@ async function handleDelete(id) {
           <tr>
             <th>Name</th>
             <th>Category</th>
+             <th>Slug</th>         
+            <th>Image</th>
             <th>Price</th>
             <th>Available</th>
             <th>Actions</th>
@@ -202,6 +226,10 @@ async function handleDelete(id) {
             <tr key={item.id}>
               <td>{item.name}</td>
               <td>{item.category}</td>
+               <td>{item.slug}</td>        {/* ✅ */}
+              <td>
+                {item.image ? <img src={item.image} alt={item.name} width={50} /> : "-"}
+              </td>    
               <td>${item.price}</td>
               <td>{item.isAvailable ? "Yes" : "No"}</td>
               <td>
@@ -213,6 +241,8 @@ async function handleDelete(id) {
                   price: item.price ?? "",
                   description: item.description || "",
                   isAvailable: item.isAvailable ?? true,
+                  slug: item.slug || "",    
+                  image: item.image || "", 
                 })
                 setFormError("")
               }}>

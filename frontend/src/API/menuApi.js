@@ -88,7 +88,9 @@ export async function createMenuItem(data) {
  * Admin-only: Update a menu item by ID
  */
 export async function updateMenuItem(id, data) {
+  console.log("→ Sending PATCH request for id:", id, "data:", data);
   try {
+
     const response = await http.patch(`/menu/${id}`, data);
     return transformMenuItem(response.data.item || response.data);
   } catch (error) {
