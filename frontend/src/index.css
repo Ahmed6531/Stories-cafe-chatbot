@@ -28,26 +28,26 @@ body {
 
 /* Global Scrollbar */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #fff;
+  background: #f1f1f1;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d1d1d1;
-  border-radius: 9999px;
+  background: #00704a;
+  border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #aaa;
+  background: #147d56;
 }
 
 /* Firefox Scrollbar */
 * {
-  scrollbar-color: #d1d1d1 #fff;
+  scrollbar-color: #00704a #f1f1f1;
   scrollbar-width: thin;
 }
 

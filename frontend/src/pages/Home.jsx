@@ -1,8 +1,6 @@
 import { useMemo, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import FeaturedItems from '../components/FeaturedItems'
-import MenuSkeleton from '../components/MenuSkeleton'
-import CategoryChipsSkeleton from '../components/CategoryChipsSkeleton'
 import { fetchMenu } from '../API/menuApi'
 import '../styles/menu.css'
 
@@ -18,7 +16,7 @@ export default function Home() {
     'Coffee': '/images/coffee.png',
     'Mixed Beverages': '/images/mixedbev.png',
     'Pastries': '/images/pastries.png',
-    'Salad': '/images/salad.png',
+    'Salad': '/images/salad.jpg',
     'Sandwiches': '/images/sandwiches.png',
     'Soft Drinks': '/images/soft-drinks.png',
     'Tea': '/images/tea.png',
@@ -55,43 +53,35 @@ export default function Home() {
 
   return (
     <div className="page-wrap">
-      <div className="section-heading">
-        <h2 className="section-title">Categories</h2>
+      <h2 className="section-title">CATEGORIES</h2>
+      <div className="catbar">
+        {loading ? (
+          <span>Loading categories...</span>
+        ) : error ? (
+          <span className="error">{error}</span>
+        ) : categories.length > 0 ? (
+          categories.map((c) => (
+            <button key={c} type="button" className="cat-chip" onClick={() => pickCategory(c)}>
+              <div className="cat-chip-content">
+                <img 
+                  src={categoryImages[c] || '/images/placeholder.png'} 
+                  alt={c} 
+                  className="cat-chip-image" 
+                />
+                <span className="cat-chip-text">{c}</span>
+              </div>
+            </button>
+          ))
+        ) : (
+          <span>No categories found.</span>
+        )}
       </div>
-      {loading ? (
-        <CategoryChipsSkeleton />
-      ) : error ? (
-        <span className="state-text error">{error}</span>
-      ) : categories.length > 0 ? (
-        <div className="catbar-wrap">
-          <div className="catbar">
-            <div className="catbar-inner">
-              {categories.map((c) => (
-                <button key={c} type="button" className="cat-chip" onClick={() => pickCategory(c)}>
-                  <div className="cat-chip-content">
-                    <img
-                      src={categoryImages[c] || '/images/placeholder.png'}
-                      alt={c}
-                      className="cat-chip-image"
-                    />
-                    <span className="cat-chip-text">{c === 'Mixed Beverages' ? 'Mixed Bev.' : c}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      ) : (
-        <span>No categories found.</span>
-      )}
 
-      <div className="section-heading">
-        <h2 className="section-title">Featured items</h2>
-      </div>
+      <h2 className="section-title">FEATURED ITEMS</h2>
       {loading ? (
-        <MenuSkeleton />
+        <p>Loading featured items...</p>
       ) : error ? (
-        <p className="state-text error">{error}</p>
+        <p className="error">{error}</p>
       ) : featured.length > 0 ? (
         <FeaturedItems items={featured} />
       ) : (

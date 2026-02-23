@@ -1,15 +1,15 @@
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useCart } from '../state/useCart';
-import { formatLL } from '../data/variantCatalog';
 import '../styles/cart-checkout.css';
 
 function Cart() {
   const navigate = useNavigate();
   const { state, updateQty, removeFromCart } = useCart();
-  const { items, loading } = state;
+  const { items: cartItems, loading } = state;
 
-  // Calculate total price using the new logic
-  const subtotal = items.reduce(
+  // Calculate total price
+  const totalPrice = cartItems.reduce(
     (total, item) => total + (item.price || 0) * item.qty,
     0
   );
@@ -18,11 +18,14 @@ function Cart() {
     navigate('/checkout');
   };
 
+  // Placeholder image URL
+  const placeholderImg = "https://via.placeholder.com/100/8B7355/FFFFFF?text=Coffee";
+
   if (loading) {
     return (
       <div className="checkout-page">
         <div className="checkout-container">
-          <p className="state-text">Loading your cart...</p>
+          <p>Loading your cart...</p>
         </div>
       </div>
     );
@@ -39,23 +42,23 @@ function Cart() {
 
       {/* Main Content */}
       <div className="checkout-container">
-        {items.length === 0 ? (
+        {cartItems.length === 0 ? (
           <div className="empty-cart">
             <p>Your cart is empty</p>
-            <Link to="/menu">
-              <button className="btn-primary">Browse Menu</button>
+            <Link to="/">
+              <button className="btn-primary">Continue Shopping</button>
             </Link>
           </div>
         ) : (
           <div className="cart-content">
             {/* Cart Items */}
             <div className="cart-items">
-              {items.map((item) => (
+              {cartItems.map((item) => (
                 <div key={item.lineId} className="cart-item">
                   {/* Item Image */}
                   <div className="item-image">
                     <img
-                      src={item.image}
+                      src={item.image || placeholderImg}
                       alt={item.name}
                     />
                   </div>
@@ -63,12 +66,7 @@ function Cart() {
                   {/* Item Details */}
                   <div className="item-details">
                     <h3>{item.name}</h3>
-                    {item.selectedOptions?.length > 0 && (
-                      <p className="item-variants">
-                        {item.selectedOptions.join(', ')}
-                      </p>
-                    )}
-                    <p className="item-price">{formatLL(item.price)}</p>
+                    <p className="item-price">L.L {Number(item.price).toLocaleString()}</p>
                   </div>
 
                   {/* Quantity Controls */}
@@ -93,7 +91,7 @@ function Cart() {
 
                   {/* Item Total */}
                   <div className="item-total">
-                    {formatLL(item.price * item.qty)}
+                    L.L {Number(item.price * item.qty).toLocaleString()}
                   </div>
 
                   {/* Remove Button */}
@@ -114,24 +112,30 @@ function Cart() {
 
               <div className="summary-row">
                 <span>Subtotal</span>
-                <span>{formatLL(subtotal)}</span>
+                <span>L.L {Number(totalPrice).toLocaleString()}</span>
+              </div>
+
+              <div className="summary-row">
+                <span>Tax (estimated)</span>
+                <span>L.L {Number(totalPrice * 0.08).toLocaleString()}</span>
               </div>
 
               <div className="summary-divider"></div>
 
               <div className="summary-row total">
                 <span>Total</span>
-                <span className="total-price-val">{formatLL(subtotal)}</span>
+                <span>L.L {Number(totalPrice * 1.08).toLocaleString()}</span>
               </div>
 
               <button
                 className="btn-checkout"
+                disabled={cartItems.length === 0}
                 onClick={handleCheckout}
               >
                 Proceed to Checkout
               </button>
 
-              <Link to="/menu" className="continue-shopping">
+              <Link to="/" className="continue-shopping">
                 <button className="btn-secondary">Continue Shopping</button>
               </Link>
             </div>

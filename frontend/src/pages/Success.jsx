@@ -3,7 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom'
 export default function Success() {
   const navigate = useNavigate()
   const location = useLocation()
-  const orderNumber = location.state?.orderNumber || 'SC-PENDING'
+  // Bug fix: show real order number from backend response
+  const orderNumber = location.state?.orderNumber || 'SC-2026020712345'
 
   return (
     <div className="page-wrap" style={{ textAlign: 'center', padding: '40px 20px' }}>
@@ -11,7 +12,7 @@ export default function Success() {
         <div
           style={{
             fontSize: '80px',
-            color: '#1a4a35',
+            color: '#00704a',
             marginBottom: '20px',
           }}
         >

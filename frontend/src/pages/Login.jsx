@@ -4,32 +4,12 @@ import { useNavigate } from 'react-router-dom'
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [status, setStatus] = useState({ type: '', message: '' })
   const navigate = useNavigate()
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault()
-    setStatus({ type: '', message: '' })
-
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-
-      const data = await res.json()
-
-      if (res.ok && data.token) {
-        localStorage.setItem('token', data.token)
-        navigate('/dashboard')
-      } else {
-        setStatus({ type: 'error', message: data.message || 'Login failed' })
-      }
-    } catch (err) {
-      console.error(err)
-      setStatus({ type: 'error', message: 'Server error, please try again' })
-    }
+    // TODO: Implement actual login logic
+    navigate('/')
   }
 
   return (
@@ -90,25 +70,10 @@ export default function Login() {
         <button type="submit" className="primary-btn" style={{ marginTop: '12px' }}>
           Login
         </button>
-
-        {status.message ? (
-          <p
-            role="status"
-            style={{
-              margin: '-6px 0 0 0',
-              color: status.type === 'error' ? '#d93025' : '#00704a',
-              fontStyle: 'italic',
-              fontWeight: 600,
-              fontSize: '12px',
-            }}
-          >
-            {status.message}
-          </p>
-        ) : null}
       </form>
 
       <p style={{ textAlign: 'center', marginTop: '16px' }}>
-        Don&apos;t have an account?{' '}
+        Don't have an account?{' '}
         <button
           type="button"
           style={{
@@ -126,4 +91,8 @@ export default function Login() {
       </p>
     </div>
   )
+
 }
+
+
+

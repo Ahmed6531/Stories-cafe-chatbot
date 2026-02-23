@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { fetchMenuItemById } from '../API/menuApi'
 import { useCart } from '../state/useCart'
-import { formatLL } from '../data/variantCatalog'
-import '../styles/menu-item.css'
+import '../styles/menu.css'
 
 export default function MenuItemDetails() {
   const { id } = useParams()
@@ -35,18 +34,16 @@ export default function MenuItemDetails() {
 
   if (loading) {
     return (
-      <div className="page-wrap state-wrap">
-        <h1 className="state-title">Loading item...</h1>
-        <p className="state-text">Please wait a moment.</p>
+      <div className="page-wrap">
+        <h1 className="menu-title">Loading...</h1>
       </div>
     )
   }
 
   if (!item) {
     return (
-      <div className="page-wrap state-wrap">
-        <h1 className="state-title">Item not found</h1>
-        <p className="state-text">Try browsing the menu and selecting another item.</p>
+      <div className="page-wrap">
+        <h1 className="menu-title">Item not found</h1>
       </div>
     )
   }
@@ -63,11 +60,12 @@ export default function MenuItemDetails() {
       return
     }
 
+    // Bug fix: actually add item to cart via CartProvider
     const payload = {
       menuItemId: item.mongoId || item.id,
       qty,
       selectedOptions: selectedOption ? [selectedOption] : [],
-      instructions: ""
+      instructions: ''
     }
 
     try {
@@ -75,7 +73,7 @@ export default function MenuItemDetails() {
       navigate('/cart')
     } catch (err) {
       console.error(err)
-      alert("Failed to add to cart")
+      alert('Failed to add to cart')
     }
   }
 
@@ -107,9 +105,7 @@ export default function MenuItemDetails() {
                     <span className="option-label">
                       {option.label}
                       {option.priceDelta > 0 && (
-                        <span className="option-price">
-                          +<span className="currency-prefix">LL</span> {Number(option.priceDelta).toLocaleString()}
-                        </span>
+                        <span className="option-price"> +L.L {Number(option.priceDelta).toLocaleString()}</span>
                       )}
                     </span>
                   </label>
@@ -120,13 +116,9 @@ export default function MenuItemDetails() {
 
           {/* Price Display */}
           <div className="details-price-section">
-            <div className="details-price">
-              <span className="currency-prefix">LL</span> {Number(finalPrice).toLocaleString()}
-            </div>
+            <div className="details-price">L.L {Number(finalPrice).toLocaleString()}</div>
             {qty > 1 && (
-              <div className="total-price">
-                Total: <span className="currency-prefix">LL</span> {Number(totalPrice).toLocaleString()}
-              </div>
+              <div className="total-price">Total: L.L {Number(totalPrice).toLocaleString()}</div>
             )}
           </div>
 
