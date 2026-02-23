@@ -36,11 +36,20 @@ async function getOrCreateCart(req) {
 
 async function buildCartResponse(cart) {
   const ids = cart.items.map((x) => x.menuItemId);
-  const menuItems = await MenuItem.find({ _id: { $in: ids } });
-  const byId = new Map(menuItems.map((m) => [String(m._id), m]));
+
+  // Lookup by both MongoDB _id and numeric id to handle potential mismatches/reseeding
+  const menuItems = await MenuItem.find({
+    $or: [
+      { _id: { $in: ids.filter(id => id && String(id).match(/^[0-9a-fA-F]{24}$/)) } },
+      { id: { $in: ids.filter(id => id && !isNaN(Number(id))).map(Number) } }
+    ]
+  });
+
+  const byMongoId = new Map(menuItems.map((m) => [String(m._id), m]));
+  const byNumericId = new Map(menuItems.map((m) => [String(m.id), m]));
 
   const items = cart.items.map((line) => {
-    const menuItem = byId.get(String(line.menuItemId));
+    const menuItem = byMongoId.get(String(line.menuItemId)) || byNumericId.get(String(line.menuItemId));
     let price = menuItem ? menuItem.basePrice : 0;
 
     // Calculate options delta
@@ -90,7 +99,11 @@ export async function addToCart(req, res) {
       return res.status(400).json({ error: "menuItemId and qty >= 1 are required" });
     }
 
-    const menuItem = await MenuItem.findById(menuItemId);
+    const isMongoId = String(menuItemId).match(/^[0-9a-fA-F]{24}$/);
+    const menuItem = isMongoId
+      ? await MenuItem.findById(menuItemId)
+      : await MenuItem.findOne({ id: Number(menuItemId) });
+
     if (!menuItem || !menuItem.isAvailable) {
       return res.status(400).json({ error: "Menu item not available" });
     }
