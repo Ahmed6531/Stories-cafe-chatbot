@@ -37,7 +37,7 @@ async function getOrCreateCart(req) {
 async function buildCartResponse(cart) {
   const ids = cart.items.map((x) => x.menuItemId);
 
-  // Lookup by both MongoDB _id and numeric id to handle potential mismatches/reseeding
+  // Lookup by both MongoDB _id and numeric id, robust to type mismatches
   const menuItems = await MenuItem.find({
     $or: [
       { _id: { $in: ids.filter(id => id && String(id).match(/^[0-9a-fA-F]{24}$/)) } },
@@ -45,11 +45,18 @@ async function buildCartResponse(cart) {
     ]
   });
 
+  // Build lookup maps for all possible id representations
   const byMongoId = new Map(menuItems.map((m) => [String(m._id), m]));
   const byNumericId = new Map(menuItems.map((m) => [String(m.id), m]));
+  // Also allow matching menuItemId as stringified number (for legacy carts)
+  const byStringId = new Map(menuItems.map((m) => [String(m.id), m]));
 
   const items = cart.items.map((line) => {
-    const menuItem = byMongoId.get(String(line.menuItemId)) || byNumericId.get(String(line.menuItemId));
+    // Try all possible id matches
+    let menuItem = byMongoId.get(String(line.menuItemId))
+      || byNumericId.get(Number(line.menuItemId))
+      || byStringId.get(String(line.menuItemId));
+
     let price = menuItem ? menuItem.basePrice : 0;
 
     // Calculate options delta
@@ -64,6 +71,7 @@ async function buildCartResponse(cart) {
       lineId: line._id,
       menuItemId: line.menuItemId,
       name: menuItem ? menuItem.name : "Unknown item",
+      image: menuItem ? menuItem.image : undefined,
       qty: line.qty,
       price: price,
       selectedOptions: normalizeOptions(line.selectedOptions),
