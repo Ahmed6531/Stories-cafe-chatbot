@@ -4,15 +4,15 @@ import http from './http'
  * Transform backend menu item to frontend format
  */
 function transformMenuItem(item) {
-  // Skip items missing id or name (robustness for partial backend data)
-  if (!item.id || !item.name) return null;
+  if (!item || !item.id || !item.name) return null;
   return {
-    id: item.id,  // Use the numeric ID from the database
+    id: item.id,
     name: item.name,
     description: item.description,
     price: item.price || item.basePrice || 0,
     basePrice: item.basePrice || item.price || 0,
     category: item.category,
+    subcategory: item.subcategory || null,
     image: item.image || `https://via.placeholder.com/260x260?text=${encodeURIComponent(item.name)}`,
     isAvailable: item.isAvailable !== undefined ? item.isAvailable : true,
     isFeatured: item.isFeatured || false,
@@ -22,6 +22,7 @@ function transformMenuItem(item) {
       ...v,
       id: v.groupId || v.id // Map groupId to id for frontend compatibility
     })).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)),
+    mongoId: item._id,
   }
 }
 
@@ -29,29 +30,34 @@ function transformMenuItem(item) {
  * Fetch menu items from backend API
  * @returns {Promise<Object>} Menu data with items and extracted categories
  */
-export async function fetchMenu() {
+export async function fetchMenu(category) {
   try {
-    console.log("👉 Calling GET /menu")
-    const response = await http.get('/menu')
-    console.log("✅ Menu response:", response.data)
-    const { items } = response.data
-
-    // Transform items to frontend format, filter out nulls (skipped items)
-    const transformedItems = items.map(transformMenuItem).filter(Boolean)
-
-    // Extract unique categories from items
+    let itemsUrl = '/menu';
+    if (category) {
+      itemsUrl = `/menu/category/${encodeURIComponent(category)}`;
+    }
+    // Always fetch all categories for the category bar
+    const categoriesResponse = await http.get('/menu');
+    const allItems = categoriesResponse.data.items || [];
     const categoriesSet = new Set(
-      transformedItems.map((item) => item.category).filter(Boolean)
-    )
-    const categories = Array.from(categoriesSet).sort()
+      allItems.map((item) => item.category).filter(Boolean)
+    );
+    const categories = Array.from(categoriesSet).sort();
 
+    // Fetch filtered items if category is selected, else use all
+    let items = allItems;
+    if (category) {
+      const filteredResponse = await http.get(itemsUrl);
+      items = filteredResponse.data.items || [];
+    }
+    const transformedItems = items.map(transformMenuItem).filter(Boolean);
     return {
       items: transformedItems,
       categories,
-    }
+    };
   } catch (error) {
-    console.error('Failed to fetch menu:', error)
-    throw new Error(error.response?.data?.error || 'Failed to load menu')
+    console.error('Failed to fetch menu:', error);
+    throw new Error(error.response?.data?.error || 'Failed to load menu');
   }
 }
 

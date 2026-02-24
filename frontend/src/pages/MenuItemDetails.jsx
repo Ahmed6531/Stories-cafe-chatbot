@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { fetchMenuItemById } from '../API/menuApi'
 import { formatLL } from '../data/variantCatalog'
+import { useCart } from '../state/useCart'
+import '../styles/menu.css'
 
 import {
   Alert,
@@ -21,10 +23,8 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Typography,
-  Autocomplete,
   Checkbox,
   List,
-  ListItem,
   ListItemText,
   Chip,
 } from '@mui/material'
@@ -39,10 +39,9 @@ const MenuProps = {
   PaperProps: {
     style: {
       maxHeight: ITEM_HEIGHT * 4.5 + ITEM_PADDING_TOP,
-      width: 250, // Constrain width closer to input (standardizing with Stories)
+      width: 250,
     },
   },
-  // Position menu under the input
   anchorOrigin: {
     vertical: 'bottom',
     horizontal: 'left',
@@ -73,19 +72,11 @@ function groupMetaText(group) {
 
 function getRenderableOptions(group) {
   const all = Array.isArray(group?.options) ? group.options : []
-  /* 
-     SEED DATA ISSUE: Many options (add-ons, milk) are marked isActive:false in the seed.
-     If we filter strictly, the list is empty. 
-     Fallback: if filtering removes everything, show all options.
-  */
   const active = all.filter((o) => o.isActive !== false)
   return active.length > 0 ? active : all
 }
 
-
-
 function optionPriceOf(group, selected) {
-  // selected is string OR { name, sub }
   const name = typeof selected === 'string' ? selected : selected?.name
   if (!name) return 0
 
@@ -135,6 +126,7 @@ function validate(groups, selections) {
 export default function MenuItemDetails() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { addToCart } = useCart()
 
   const [item, setItem] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -162,25 +154,12 @@ export default function MenuItemDetails() {
 
   const groups = useMemo(() => {
     if (!item?.variants || item.variants.length === 0) return []
-    // Ensure all variants have valid IDs and options
     return item.variants.map(v => ({
       ...v,
-      id: v.id || v.groupId, // Fallback if id missing
+      id: v.id || v.groupId,
       options: Array.isArray(v.options) ? v.options : []
     }))
   }, [item])
-
-  useEffect(() => {
-    if (!item) return
-    console.log('✅ ITEM loaded:', item.name)
-    console.log('📋 Variant Groups (Backend):', groups)
-    groups.forEach(g => {
-      if (!g.options || g.options.length === 0) {
-        console.warn(`⚠️ Group "${g.name}" (id: ${g.id}) has NO options. Check seed data or isActive flags.`)
-      }
-    })
-  }, [item, groups])
-
 
   const [selections, setSelections] = useState(() => initSelections([]))
   useEffect(() => {
@@ -199,7 +178,6 @@ export default function MenuItemDetails() {
 
   const totalPrice = unitPrice * qty
 
-  // helpers to pick groups by id patterns
   const getFirstGroupMatching = (pred) => groups.find(pred)
   const sizeGroup = getFirstGroupMatching((g) => g.id.includes('size') || g.name?.toLowerCase().includes('size'))
   const espressoGroup = getFirstGroupMatching((g) => g.id.includes('espresso') || g.name?.toLowerCase().includes('espresso'))
@@ -225,7 +203,6 @@ export default function MenuItemDetails() {
             {groupMetaText(group)}
           </Typography>
         )}
-
         <ToggleButtonGroup
           value={value}
           exclusive
@@ -237,19 +214,17 @@ export default function MenuItemDetails() {
           {getRenderableOptions(group)
             .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
             .map((opt) => (
-              <MuiMenuItem key={opt.name} value={opt.name}>
-                {opt.name}
-                {Number(opt.additionalPrice || 0) > 0 ? ` (+${formatLL(opt.additionalPrice)})` : ''}
-              </MuiMenuItem>
+              <ToggleButton key={opt.name} value={opt.name} sx={{ px: 2 }}>
+                <Box>
+                  <Typography variant="body2" fontWeight={700}>{opt.name}</Typography>
+                  {Number(opt.additionalPrice || 0) > 0 && (
+                    <Typography variant="caption" display="block">+{formatLL(opt.additionalPrice)}</Typography>
+                  )}
+                </Box>
+              </ToggleButton>
             ))}
-
         </ToggleButtonGroup>
-
-        {groupError ? (
-          <Alert severity="error" sx={{ mt: 1 }}>
-            {groupError}
-          </Alert>
-        ) : null}
+        {groupError && <Alert severity="error" sx={{ mt: 1 }}>{groupError}</Alert>}
       </Box>
     )
   }
@@ -292,12 +267,7 @@ export default function MenuItemDetails() {
               ))}
           </Select>
         </FormControl>
-
-        {groupError ? (
-          <Alert severity="error" sx={{ mt: 1 }}>
-            {groupError}
-          </Alert>
-        ) : null}
+        {groupError && <Alert severity="error" sx={{ mt: 1 }}>{groupError}</Alert>}
       </Box>
     )
   }
@@ -309,12 +279,8 @@ export default function MenuItemDetails() {
     const selectedStrings = selected.filter((v) => typeof v === 'string')
     const groupError = showErrors ? errors[group.id] : null
 
-    const options = group.options
-      // .filter((o) => o.isActive !== false) // Removed: Add-ons in seed are false by default but should be visible
-      .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
-
     const handleChange = (e) => {
-      const value = e.target.value // array of strings
+      const value = e.target.value
       const max = group.maxSelections
       const next = max != null && max > 0 ? value.slice(0, max) : value
       setSelections((prev) => ({ ...prev, [group.id]: { type: 'multi', values: next } }))
@@ -330,7 +296,6 @@ export default function MenuItemDetails() {
             {groupMetaText(group)}
           </Typography>
         )}
-
         <FormControl fullWidth size="small">
           <InputLabel id={`${group.id}-multi-label`}>{group.name}</InputLabel>
           <Select
@@ -348,7 +313,7 @@ export default function MenuItemDetails() {
               </Box>
             )}
           >
-            {options.map((opt) => (
+            {getRenderableOptions(group).map((opt) => (
               <MuiMenuItem key={opt.name} value={opt.name} dense>
                 <Checkbox checked={selectedStrings.includes(opt.name)} size="small" sx={{ p: 0.5, mr: 1 }} />
                 <ListItemText
@@ -362,53 +327,24 @@ export default function MenuItemDetails() {
             ))}
           </Select>
         </FormControl>
-
-        {groupError ? (
-          <Alert severity="error" sx={{ mt: 1 }}>
-            {groupError}
-          </Alert>
-        ) : null}
+        {groupError && <Alert severity="error" sx={{ mt: 1 }}>{groupError}</Alert>}
       </Box>
     )
-  }
-
-
-  const handleToggleTopping = (group, option) => {
-    setSelections((prev) => {
-      const current = prev[group.id] || { type: 'multi', values: [] }
-      const values = Array.isArray(current.values) ? [...current.values] : []
-      const hasSub = Array.isArray(option.suboptions) && option.suboptions.length > 0
-
-      const idx = values.findIndex((v) =>
-        typeof v === 'string' ? v === option.name : v?.name === option.name
-      )
-
-      if (idx >= 0) values.splice(idx, 1)
-      else values.push(hasSub ? { name: option.name, sub: option.suboptions[0]?.name || 'Regular' } : option.name)
-
-      return { ...prev, [group.id]: { type: 'multi', values } }
-    })
-  }
-
-  const handleSetToppingSub = (group, toppingName, subName) => {
-    setSelections((prev) => {
-      const current = prev[group.id]
-      if (!current || current.type !== 'multi') return prev
-      const values = current.values.map((v) =>
-        typeof v === 'object' && v?.name === toppingName ? { ...v, sub: subName } : v
-      )
-      return { ...prev, [group.id]: { type: 'multi', values } }
-    })
   }
 
   const renderToppingsChecklist = (group) => {
     if (!group) return null
     const current = selections[group.id]
     const values = current?.type === 'multi' ? current.values : []
+    const groupError = showErrors ? errors[group.id] : null
 
-    const isChecked = (name) =>
-      values.some((v) => (typeof v === 'string' ? v === name : v?.name === name))
-    const selectedObj = (name) => values.find((v) => typeof v === 'object' && v?.name === name)
+    const handleToggle = (optName) => {
+      const idx = values.indexOf(optName)
+      const next = [...values]
+      if (idx >= 0) next.splice(idx, 1)
+      else next.push(optName)
+      setSelections(prev => ({ ...prev, [group.id]: { type: 'multi', values: next } }))
+    }
 
     return (
       <Box>
@@ -420,133 +356,95 @@ export default function MenuItemDetails() {
             {groupMetaText(group)}
           </Typography>
         )}
-
         <Card variant="outlined" sx={{ borderRadius: 2 }}>
           <List disablePadding>
-            {getRenderableOptions(group)
-              .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
-              .map((opt) => (
-                <MuiMenuItem key={opt.name} value={opt.name}>
-                  {opt.name}
-                  {Number(opt.additionalPrice || 0) > 0 ? ` (+${formatLL(opt.additionalPrice)})` : ''}
-                </MuiMenuItem>
-              ))}
-
+            {getRenderableOptions(group).map((opt) => (
+              <MuiMenuItem key={opt.name} onClick={() => handleToggle(opt.name)} dense>
+                <Checkbox checked={values.includes(opt.name)} size="small" sx={{ p: 0.5, mr: 1 }} />
+                <ListItemText
+                  primary={opt.name}
+                  secondary={Number(opt.additionalPrice || 0) > 0 ? `+ ${formatLL(opt.additionalPrice)}` : ''}
+                  primaryTypographyProps={{ variant: 'body2' }}
+                />
+              </MuiMenuItem>
+            ))}
           </List>
         </Card>
+        {groupError && <Alert severity="error" sx={{ mt: 1 }}>{groupError}</Alert>}
       </Box>
     )
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const hasErrors = Object.keys(errors).length > 0
     if (hasErrors) {
       setShowErrors(true)
       return
     }
 
-    const configured = {
-      id: item.id,
-      name: item.name,
-      basePrice: item.basePrice,
-      unitPrice,
-      qty,
-      totalPrice,
-      selections,
-      instructions: instructions.trim(),
+    const selectedOptionsArray = []
+    for (const gid in selections) {
+      const s = selections[gid]
+      if (s.type === 'single') {
+        if (s.value) selectedOptionsArray.push(s.value)
+      } else if (s.type === 'multi' && Array.isArray(s.values)) {
+        s.values.forEach(v => {
+          if (typeof v === 'string') selectedOptionsArray.push(v)
+          else if (v && typeof v === 'object' && v.name) selectedOptionsArray.push(v.name)
+        })
+      }
     }
 
-    console.log('✅ configured item:', configured)
-    setSnackOpen(true)
+    const payload = {
+      menuItemId: item.mongoId || item.id,
+      qty,
+      selectedOptions: selectedOptionsArray,
+      instructions: instructions.trim()
+    }
 
-    // later: dispatch add-to-cart + navigate('/cart')
-    // navigate('/cart')
+    try {
+      console.log('🛒 Adding to cart:', payload)
+      await addToCart(payload)
+      setSnackOpen(true)
+      setTimeout(() => navigate('/cart'), 500)
+    } catch (err) {
+      console.error('Failed to add to cart:', err)
+      alert('Failed to add to cart. Please try again.')
+    }
   }
 
-  if (loading) {
-    return (
-      <Container sx={{ py: 3 }}>
-        <Typography variant="h5">Loading...</Typography>
-      </Container>
-    )
-  }
-
-  if (!item) {
-    return (
-      <Container sx={{ py: 3 }}>
-        <Typography variant="h5">Item not found</Typography>
-        <Button sx={{ mt: 2 }} onClick={() => navigate('/menu')}>
-          Back to Menu
-        </Button>
-      </Container>
-    )
-  }
+  if (loading) return <Container sx={{ py: 3 }}><Typography>Loading...</Typography></Container>
+  if (!item) return <Container sx={{ py: 3 }}><Typography>Item not found</Typography><Button onClick={() => navigate('/menu')}>Back</Button></Container>
 
   const isSandwich = item.category === 'Sandwiches'
 
   return (
     <Container sx={{ py: 3 }}>
-      <Button onClick={() => navigate('/menu')} sx={{ mb: 2 }}>
-        ← Back to Menu
-      </Button>
+      <Button onClick={() => navigate('/menu')} sx={{ mb: 2 }}>← Back to Menu</Button>
 
-      {/* HERO (like screenshots) */}
       <Box sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', borderRadius: 2, p: 2, mb: 3 }}>
         <Stack direction="row" spacing={2} alignItems="center">
-          <Box
-            sx={{
-              width: 92,
-              height: 92,
-              borderRadius: '50%',
-              bgcolor: 'background.paper',
-              display: 'grid',
-              placeItems: 'center',
-              overflow: 'hidden',
-              flexShrink: 0,
-            }}
-          >
+          <Box sx={{ width: 92, height: 92, borderRadius: '50%', bgcolor: 'background.paper', display: 'grid', placeItems: 'center', overflow: 'hidden', flexShrink: 0 }}>
             <img src={item.image} alt={item.name} style={{ width: '75%', height: '75%', objectFit: 'contain' }} />
           </Box>
-
           <Box sx={{ flex: 1 }}>
-            <Typography variant="h5" fontWeight={900}>
-              {item.name}
-            </Typography>
-            {item.description ? (
-              <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                {item.description}
-              </Typography>
-            ) : null}
-            <Typography variant="h6" fontWeight={900} sx={{ mt: 1 }}>
-              {formatLL(unitPrice)}
-            </Typography>
+            <Typography variant="h5" fontWeight={900}>{item.name}</Typography>
+            {item.description && <Typography variant="body2" sx={{ opacity: 0.9 }}>{item.description}</Typography>}
+            <Typography variant="h6" fontWeight={900} sx={{ mt: 1 }}>{formatLL(unitPrice)}</Typography>
           </Box>
-
           <Stack direction="row" spacing={1} alignItems="center">
-            <Button variant="contained" onClick={() => setQty((q) => clamp(q - 1, 1, 99))}>
-              −
-            </Button>
-            <Typography fontWeight={900} sx={{ minWidth: 24, textAlign: 'center' }}>
-              {qty}
-            </Typography>
-            <Button variant="contained" onClick={() => setQty((q) => clamp(q + 1, 1, 99))}>
-              +
-            </Button>
+            <Button variant="contained" onClick={() => setQty(q => clamp(q - 1, 1, 99))} sx={{ minWidth: 40 }}>−</Button>
+            <Typography fontWeight={900} sx={{ minWidth: 24, textAlign: 'center' }}>{qty}</Typography>
+            <Button variant="contained" onClick={() => setQty(q => clamp(q + 1, 1, 99))} sx={{ minWidth: 40 }}>+</Button>
           </Stack>
         </Stack>
       </Box>
 
-      {!item.isAvailable ? (
-        <Alert severity="warning" sx={{ mb: 2 }}>
-          Currently unavailable
-        </Alert>
-      ) : null}
+      {!item.isAvailable && <Alert severity="warning" sx={{ mb: 2 }}>Currently unavailable</Alert>}
 
-      {/* CUSTOMIZATION LAYOUT */}
       <Card sx={{ borderRadius: 2 }}>
         <CardContent>
           <Stack spacing={3}>
-            {/* Coffee-like layout */}
             {!isSandwich ? (
               <>
                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
@@ -554,18 +452,15 @@ export default function MenuItemDetails() {
                   <Box sx={{ flex: 1 }}>{renderSingleSelect(espressoGroup)}</Box>
                   <Box sx={{ flex: 1 }}>{renderSingleSelect(milkGroup)}</Box>
                 </Stack>
-
                 <Box sx={{ maxWidth: 520 }}>{renderMultiSelectDropdown(addonsGroup)}</Box>
               </>
             ) : (
-              /* Sandwich layout */
               <>
                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
                   <Box sx={{ flex: 1 }}>{renderSingleSelect(breadGroup)}</Box>
                   <Box sx={{ flex: 1 }}>{renderMultiSelectDropdown(ingredientsGroup)}</Box>
                   <Box sx={{ flex: 1 }}>{renderToppingsChecklist(toppingsGroup)}</Box>
                 </Stack>
-
                 <Box sx={{ maxWidth: 520 }}>{renderMultiSelectDropdown(extrasGroup)}</Box>
               </>
             )}
@@ -583,11 +478,7 @@ export default function MenuItemDetails() {
             />
 
             <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={2} alignItems={{ sm: 'center' }}>
-              <Typography variant="h6" fontWeight={900}>
-                Total: {formatLL(totalPrice)}
-              </Typography>
-
-
+              <Typography variant="h6" fontWeight={900}>Total: {formatLL(totalPrice)}</Typography>
               <Button
                 variant="contained"
                 size="large"
@@ -606,7 +497,7 @@ export default function MenuItemDetails() {
         open={snackOpen}
         autoHideDuration={2000}
         onClose={() => setSnackOpen(false)}
-        message="Saved configuration (cart hookup later)"
+        message="Item added to cart"
       />
     </Container>
   )

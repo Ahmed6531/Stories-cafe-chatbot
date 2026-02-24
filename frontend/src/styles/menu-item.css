@@ -31,6 +31,33 @@
   border: 1px solid transparent;
 }
 
+.menu-item-cta {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #2f7f5e;
+  border-radius: 12px;
+  background: #2a7a59;
+  color: #ffffff;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  transition: all 0.2s ease;
+}
+
+.menu-item-cta:hover:not(:disabled) {
+  transform: translateY(-2px);
+  background-color: #147d56;
+}
+
 .menu-item-card:hover {
   box-shadow: var(--shadow-hover);
   transform: translateY(-4px);
@@ -263,6 +290,7 @@
     opacity: 0;
     transform: translateY(-5px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);

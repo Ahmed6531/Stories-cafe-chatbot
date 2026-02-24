@@ -1,15 +1,19 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
+import React, { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
 import App from './App.jsx'
 import { ThemeProvider } from '@mui/material/styles'
 import CssBaseline from '@mui/material/CssBaseline'
 import { theme } from './theme/theme'
+import { CartProvider } from "./state/CartProvider.jsx";
+import "./index.css";
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <App />
+      <CartProvider>
+        <App />
+      </CartProvider>
     </ThemeProvider>
-  </React.StrictMode>
+  </StrictMode>
 )
