@@ -10,14 +10,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Function to convert old data to new schema
-function convertToNewSchema(oldItem) {
-  // If it's already in new format, return as-is
-  if (oldItem.slug && oldItem.name && oldItem.basePrice !== undefined) {
-    return oldItem;
-  }
-
-  // Otherwise convert from old format
+function convertToNewSchema(oldItem, index) {
   return {
+    id: oldItem.id || index + 1,
     slug: oldItem.slug || oldItem.name.toLowerCase().replace(/\s+/g, "-"),
     name: oldItem.name || "Unknown Item",
     description: oldItem.description || "No description available",
@@ -57,8 +52,8 @@ async function seed() {
   const raw = fs.readFileSync(menuItemsPath, "utf-8");
   const items = JSON.parse(raw);
 
-  // Convert to new schema
-  const convertedItems = items.map(convertToNewSchema);
+  // Convert to new schema and ensure IDs
+  const convertedItems = items.map((item, idx) => convertToNewSchema(item, idx));
 
   await MenuItem.deleteMany({});
   await MenuItem.insertMany(convertedItems);

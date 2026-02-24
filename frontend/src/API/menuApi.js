@@ -8,7 +8,7 @@ function transformMenuItem(item) {
   if (!item.id || !item.name) return null;
   const hasImage = Boolean(item.image && String(item.image).trim());
   return {
-    id: item.id,  // Use the numeric ID from the database
+    id: item.id,
     name: item.name,
     description: item.description,
     price: item.price || item.basePrice || 0,
@@ -20,6 +20,12 @@ function transformMenuItem(item) {
     isAvailable: item.isAvailable !== undefined ? item.isAvailable : true,
     isFeatured: item.isFeatured || false,
     options: item.options || [],
+    variantGroups: item.variantGroups || [],
+    variants: (item.variants || []).map(v => ({
+      ...v,
+      id: v.groupId || v.id // Map groupId to id for frontend compatibility
+    })).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)),
+    mongoId: item._id,
   }
 }
 

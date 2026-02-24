@@ -1,417 +1,663 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Box, Typography, styled } from '@mui/material'
 import { fetchMenuItemById } from '../API/menuApi'
+import { formatLL } from '../data/variantCatalog'
+import { useCart } from '../state/useCart'
 
-const brand = {
-  primary: '#00704a',
-  primaryHover: '#147d56',
-  primaryActive: '#004a34',
-  primaryDark: '#1e5631',
-  textPrimary: '#2b2b2b',
-  textSecondary: '#79747e',
-  border: '#e0e0e0',
-  borderLight: '#e9e9e9',
-  bgLight: '#f8f9f8',
-  shadowSm: '0 0 6px rgba(0,0,0,0.06)',
-  shadowHover: '0 4px 12px rgba(0,0,0,0.15)',
-  fontBase: "'Montserrat', sans-serif",
-  fontDisplay: "'DIN Alternate Bold', 'Montserrat', sans-serif",
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Checkbox,
+  Chip,
+  Container,
+  Divider,
+  FormControl,
+  InputLabel,
+  List,
+  ListItemText,
+  MenuItem as MuiMenuItem,
+  Select,
+  Snackbar,
+  Stack,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
+} from '@mui/material'
+
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n))
 }
 
-const PageWrap = styled(Box)(() => ({
-  width: '100%',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '14px',
-}));
-
-const StateTitle = styled(Typography)(() => ({
-  margin: 0,
-  fontFamily: brand.fontBase,
-  fontSize: '28px',
-  fontWeight: 600,
-  color: brand.primary,
-}));
-
-const StatusText = styled(Typography)(() => ({
-  fontFamily: brand.fontBase,
-  fontSize: '16px',
-  fontWeight: 500,
-  color: brand.textSecondary,
-  margin: 0,
-}));
-
-const DetailsCard = styled(Box)(({ theme }) => ({
-  display: 'grid',
-  gridTemplateColumns: '320px 1fr',
-  gap: '18px',
-  border: `1px solid ${brand.borderLight}`,
-  borderRadius: '18px',
-  background: '#fff',
-  padding: '18px',
-  [theme.breakpoints.down('md')]: {
-    gridTemplateColumns: '1fr',
+const ITEM_HEIGHT = 48
+const ITEM_PADDING_TOP = 8
+const MenuProps = {
+  PaperProps: {
+    style: {
+      maxHeight: ITEM_HEIGHT * 4.5 + ITEM_PADDING_TOP,
+      width: 250,
+    },
   },
-}))
-
-const DetailsImgContainer = styled(Box)(() => ({
-  position: 'relative',
-  background: '#fff',
-  borderRadius: '16px',
-  border: `1px solid ${brand.borderLight}`,
-  display: 'grid',
-  placeItems: 'center',
-  padding: '12px',
-  '& img': {
-    width: '100%',
-    height: 'auto',
-    objectFit: 'contain',
+  anchorOrigin: {
+    vertical: 'bottom',
+    horizontal: 'left',
   },
-}))
-
-const ImgPlaceholder = styled(Box)(() => ({
-  width: '100%',
-  height: '100%',
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: '6px',
-  minHeight: '220px',
-  backgroundColor: '#ffffff',
-  color: '#b0b8be',
-}))
-
-const DetailsInfo = styled(Box)(() => ({
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '16px',
-}))
-
-const DetailsPriceSection = styled(Box)(() => ({
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '8px',
-}))
-
-const DetailsPrice = styled(Typography)(() => ({
-  fontWeight: 900,
-  color: '#006241',
-  fontSize: '18px',
-  fontFamily: brand.fontBase,
-}))
-
-const TotalPrice = styled(Typography)(() => ({
-  fontSize: '14px',
-  color: brand.textSecondary,
-  fontWeight: 600,
-  fontFamily: brand.fontBase,
-}))
-
-const CurrencyPrefix = styled('span')(() => ({
-  fontSize: '0.72em',
-  fontWeight: 600,
-  opacity: 0.72,
-  letterSpacing: '0.02em',
-}))
-
-const OptionsSection = styled(Box)(() => ({
-  borderTop: `1px solid ${brand.borderLight}`,
-  paddingTop: '16px',
-}))
-
-const OptionsTitle = styled(Typography)(() => ({
-  fontSize: '14px',
-  fontWeight: 700,
-  color: brand.textPrimary,
-  margin: '0 0 12px 0',
-  textTransform: 'uppercase',
-  letterSpacing: '0.5px',
-  fontFamily: brand.fontBase,
-}))
-
-const OptionsList = styled(Box)(() => ({
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '10px',
-}))
-
-const OptionItem = styled('label')(() => ({
-  display: 'flex',
-  alignItems: 'center',
-  gap: '10px',
-  cursor: 'pointer',
-  padding: '10px',
-  borderRadius: '8px',
-  transition: 'all 0.2s ease',
-  border: '1px solid transparent',
-  '&:hover': {
-    backgroundColor: '#f5f5f5',
-    borderColor: brand.border,
+  transformOrigin: {
+    vertical: 'top',
+    horizontal: 'left',
   },
-  '& input[type="radio"]': {
-    cursor: 'pointer',
-    accentColor: brand.primary,
+}
+
+function initSelections(groups) {
+  const next = {}
+  for (const g of groups) {
+    const isSingle = g.maxSelections === 1
+    next[g.id] = isSingle ? { type: 'single', value: '' } : { type: 'multi', values: [] }
   }
-}))
+  return next
+}
 
-const OptionLabel = styled('span')(() => ({
-  fontSize: '14px',
-  color: brand.textPrimary,
-  fontWeight: 500,
-  display: 'flex',
-  justifyContent: 'space-between',
-  width: '100%',
-  fontFamily: brand.fontBase,
-}))
-
-const OptionPrice = styled('span')(() => ({
-  color: '#006241',
-  fontWeight: 700,
-  fontSize: '13px',
-}))
-
-const QtyCounter = styled(Box)(() => ({
-  display: 'flex',
-  alignItems: 'center',
-  gap: '12px',
-  padding: '12px',
-  backgroundColor: '#f5f5f5',
-  borderRadius: '8px',
-  width: 'fit-content',
-}))
-
-const QtyLabel = styled(Typography)(() => ({
-  fontSize: '14px',
-  fontWeight: 600,
-  color: brand.textPrimary,
-  fontFamily: brand.fontBase,
-}))
-
-const QtyBtn = styled('button')(() => ({
-  border: `2px solid ${brand.primary}`,
-  background: '#fff',
-  color: brand.primary,
-  width: '32px',
-  height: '32px',
-  padding: 0,
-  borderRadius: '6px',
-  fontWeight: 700,
-  fontSize: '18px',
-  cursor: 'pointer',
-  transition: 'all 0.2s ease',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  '&:hover': {
-    backgroundColor: brand.primary,
-    color: '#fff',
+function groupMetaText(group) {
+  const parts = []
+  if (group.isRequired) parts.push('Required')
+  if (group.maxSelections && group.maxSelections > 1) {
+    parts.push(`Choose up to ${group.maxSelections}`)
   }
-}))
+  return parts.join(' • ')
+}
 
-const QtyDisplay = styled('span')(() => ({
-  fontWeight: 700,
-  fontSize: '16px',
-  color: brand.textPrimary,
-  minWidth: '30px',
-  textAlign: 'center',
-  fontFamily: brand.fontBase,
-}))
+function getRenderableOptions(group) {
+  const all = Array.isArray(group?.options) ? group.options : []
+  const active = all.filter((o) => o.isActive !== false)
+  return active.length > 0 ? active : all
+}
 
-const PrimaryBtn = styled('button')(() => ({
-  border: 0,
-  background: brand.primary,
-  color: '#ffffff',
-  fontWeight: 900,
-  borderRadius: '12px',
-  padding: '12px 14px',
-  cursor: 'pointer',
-  width: '100%',
-  fontSize: '16px',
-  fontFamily: brand.fontBase,
-  transition: 'all 0.2s ease',
-  '&:hover': {
-    background: brand.primaryHover,
-  },
-  '&:disabled': {
-    background: '#ccc',
-    cursor: 'not-allowed',
+function optionPriceOf(group, selected) {
+  const name = typeof selected === 'string' ? selected : selected?.name
+  if (!name) return 0
+
+  const opt = (group.options || []).find((o) => o.name === name)
+  if (!opt) return 0
+
+  const base = Number(opt.additionalPrice || 0)
+
+  if (typeof selected === 'object' && opt.suboptions?.length) {
+    const sub = opt.suboptions.find((s) => s.name === selected.sub)
+    return base + Number(sub?.additionalPrice || 0)
   }
-}))
+
+  return base
+}
+
+function computeUnitPrice(basePrice, groups, selections) {
+  let extra = 0
+  for (const g of groups) {
+    const sel = selections[g.id]
+    if (!sel) continue
+
+    if (sel.type === 'single') {
+      extra += optionPriceOf(g, sel.value)
+    } else {
+      for (const v of sel.values) extra += optionPriceOf(g, v)
+    }
+  }
+  return Number(basePrice || 0) + extra
+}
+
+function validate(groups, selections) {
+  const errors = {}
+  for (const g of groups) {
+    const sel = selections[g.id]
+    const count =
+      sel?.type === 'single' ? (sel.value ? 1 : 0) : Array.isArray(sel?.values) ? sel.values.length : 0
+
+    if (g.isRequired && count === 0) errors[g.id] = 'Required'
+    if (g.maxSelections != null && g.maxSelections > 0 && count > g.maxSelections) {
+      errors[g.id] = `Select up to ${g.maxSelections}`
+    }
+  }
+  return errors
+}
 
 export default function MenuItemDetails() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { addToCart } = useCart()
 
   const [item, setItem] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [qty, setQty] = useState(1)
-  const [selectedOption, setSelectedOption] = useState(null)
   const [imageError, setImageError] = useState(false)
 
-  // Fetch item from API on mount
+  const [qty, setQty] = useState(1)
+  const [instructions, setInstructions] = useState('')
+  const [snackOpen, setSnackOpen] = useState(false)
+  const [showErrors, setShowErrors] = useState(false)
+
   useEffect(() => {
-    const loadItem = async () => {
+    const load = async () => {
       try {
         setLoading(true)
         const data = await fetchMenuItemById(id)
         setItem(data)
-      } catch (err) {
-        console.error('Failed to fetch item:', err)
+      } catch (e) {
+        console.error(e)
         setItem(null)
       } finally {
         setLoading(false)
       }
     }
-
-    loadItem()
+    load()
   }, [id])
 
+  // Reset image error when item changes
   useEffect(() => {
     setImageError(false)
   }, [item?.id])
 
-  if (loading) {
+  const groups = useMemo(() => {
+    if (!item?.variants || item.variants.length === 0) return []
+    return item.variants.map((v) => ({
+      ...v,
+      id: v.id || v.groupId,
+      options: Array.isArray(v.options) ? v.options : [],
+    }))
+  }, [item])
+
+  const [selections, setSelections] = useState(() => initSelections([]))
+  useEffect(() => {
+    setSelections(initSelections(groups))
+    setQty(1)
+    setInstructions('')
+    setShowErrors(false)
+  }, [id, groups])
+
+  const errors = useMemo(() => validate(groups, selections), [groups, selections])
+
+  const unitPrice = useMemo(() => {
+    if (!item) return 0
+    return computeUnitPrice(item.basePrice, groups, selections)
+  }, [item, groups, selections])
+
+  const totalPrice = unitPrice * qty
+
+  const getFirstGroupMatching = (pred) => groups.find(pred)
+  const sizeGroup = getFirstGroupMatching(
+    (g) => g.id.includes('size') || g.name?.toLowerCase().includes('size')
+  )
+  const espressoGroup = getFirstGroupMatching(
+    (g) => g.id.includes('espresso') || g.name?.toLowerCase().includes('espresso')
+  )
+  const milkGroup = getFirstGroupMatching(
+    (g) => g.id.includes('milk') || g.name?.toLowerCase().includes('milk')
+  )
+  const addonsGroup = getFirstGroupMatching(
+    (g) => g.id.includes('add-ons') || g.name?.toLowerCase().includes('add-ons')
+  )
+  const breadGroup = getFirstGroupMatching(
+    (g) => g.id.includes('bread') || g.name?.toLowerCase().includes('bread')
+  )
+  const ingredientsGroup = getFirstGroupMatching(
+    (g) => g.id.includes('ingredients') || g.name?.toLowerCase().includes('ingredients')
+  )
+  const toppingsGroup = getFirstGroupMatching(
+    (g) => g.id.includes('toppings') || g.name?.toLowerCase().includes('toppings')
+  )
+  const extrasGroup = getFirstGroupMatching(
+    (g) => g.id.includes('extras') || g.name?.toLowerCase().includes('extras')
+  )
+
+  const renderSizePills = (group) => {
+    if (!group) return null
+    const value = selections[group.id]?.value || ''
+    const groupError = showErrors ? errors[group.id] : null
+
     return (
-      <PageWrap>
-        <Box sx={{ minHeight: '220px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', textAlign: 'center' }}>
-          <StateTitle component="h1">Loading item...</StateTitle>
-          <StatusText>Please wait a moment.</StatusText>
-        </Box>
-      </PageWrap>
+      <Box>
+        <Typography variant="h6" fontWeight={800} sx={{ mb: 1 }}>
+          {group.name}
+        </Typography>
+        {groupMetaText(group) && (
+          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+            {groupMetaText(group)}
+          </Typography>
+        )}
+        <ToggleButtonGroup
+          value={value}
+          exclusive
+          onChange={(_, v) => {
+            if (!v) return
+            setSelections((prev) => ({ ...prev, [group.id]: { type: 'single', value: v } }))
+          }}
+        >
+          {getRenderableOptions(group)
+            .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+            .map((opt) => (
+              <ToggleButton key={opt.name} value={opt.name} sx={{ px: 2 }}>
+                <Box>
+                  <Typography variant="body2" fontWeight={700}>
+                    {opt.name}
+                  </Typography>
+                  {Number(opt.additionalPrice || 0) > 0 && (
+                    <Typography variant="caption" display="block">
+                      +{formatLL(opt.additionalPrice)}
+                    </Typography>
+                  )}
+                </Box>
+              </ToggleButton>
+            ))}
+        </ToggleButtonGroup>
+        {groupError && (
+          <Alert severity="error" sx={{ mt: 1 }}>
+            {groupError}
+          </Alert>
+        )}
+      </Box>
     )
   }
 
-  if (!item) {
+  const renderSingleSelect = (group) => {
+    if (!group) return null
+    const value = selections[group.id]?.value || ''
+    const groupError = showErrors ? errors[group.id] : null
+
     return (
-      <PageWrap>
-        <Box sx={{ minHeight: '220px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', textAlign: 'center' }}>
-          <StateTitle component="h1">Item not found</StateTitle>
-          <StatusText>Try browsing the menu and selecting another item.</StatusText>
-        </Box>
-      </PageWrap>
+      <Box>
+        <Typography variant="h6" fontWeight={800} sx={{ mb: 1 }}>
+          {group.name}
+        </Typography>
+        {groupMetaText(group) && (
+          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+            {groupMetaText(group)}
+          </Typography>
+        )}
+        <FormControl fullWidth size="small">
+          <InputLabel id={`${group.id}-label`}>{group.name}</InputLabel>
+          <Select
+            labelId={`${group.id}-label`}
+            label={group.name}
+            value={value}
+            onChange={(e) =>
+              setSelections((prev) => ({
+                ...prev,
+                [group.id]: { type: 'single', value: e.target.value },
+              }))
+            }
+          >
+            <MuiMenuItem value="" disabled={group.isRequired}>
+              <em>None</em>
+            </MuiMenuItem>
+            {getRenderableOptions(group)
+              .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+              .map((opt) => (
+                <MuiMenuItem key={opt.name} value={opt.name}>
+                  {opt.name}
+                  {Number(opt.additionalPrice || 0) > 0
+                    ? ` (+${formatLL(opt.additionalPrice)})`
+                    : ''}
+                </MuiMenuItem>
+              ))}
+          </Select>
+        </FormControl>
+        {groupError && (
+          <Alert severity="error" sx={{ mt: 1 }}>
+            {groupError}
+          </Alert>
+        )}
+      </Box>
     )
   }
 
-  // Calculate price with selected option
-  const optionPriceDelta = selectedOption ? item.options.find(opt => opt.label === selectedOption)?.priceDelta || 0 : 0
-  const finalPrice = item.basePrice + optionPriceDelta
-  const totalPrice = finalPrice * qty
-  const showPlaceholder = !item.hasImage || imageError
+  const renderMultiSelectDropdown = (group) => {
+    if (!group) return null
+    const current = selections[group.id]
+    const selected = current?.type === 'multi' ? current.values : []
+    const selectedStrings = selected.filter((v) => typeof v === 'string')
+    const groupError = showErrors ? errors[group.id] : null
 
-  const handleAddToCart = () => {
-    // Validate that an option is selected if options exist
-    if (item.options && item.options.length > 0 && !selectedOption) {
-      alert('Please select an option')
+    const handleChange = (e) => {
+      const value = e.target.value
+      const max = group.maxSelections
+      const next = max != null && max > 0 ? value.slice(0, max) : value
+      setSelections((prev) => ({ ...prev, [group.id]: { type: 'multi', values: next } }))
+    }
+
+    return (
+      <Box>
+        <Typography variant="h6" fontWeight={800} sx={{ mb: 1 }}>
+          {group.name}
+        </Typography>
+        {groupMetaText(group) && (
+          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+            {groupMetaText(group)}
+          </Typography>
+        )}
+        <FormControl fullWidth size="small">
+          <InputLabel id={`${group.id}-multi-label`}>{group.name}</InputLabel>
+          <Select
+            labelId={`${group.id}-multi-label`}
+            multiple
+            value={selectedStrings}
+            label={group.name}
+            onChange={handleChange}
+            MenuProps={MenuProps}
+            renderValue={(selectedArr) => (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                {selectedArr.map((v) => (
+                  <Chip key={v} label={v} size="small" />
+                ))}
+              </Box>
+            )}
+          >
+            {getRenderableOptions(group).map((opt) => (
+              <MuiMenuItem key={opt.name} value={opt.name} dense>
+                <Checkbox
+                  checked={selectedStrings.includes(opt.name)}
+                  size="small"
+                  sx={{ p: 0.5, mr: 1 }}
+                />
+                <ListItemText
+                  primary={opt.name}
+                  secondary={
+                    Number(opt.additionalPrice || 0) > 0
+                      ? `+ ${formatLL(opt.additionalPrice)}`
+                      : ''
+                  }
+                  primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
+                  secondaryTypographyProps={{ variant: 'caption' }}
+                  sx={{ m: 0 }}
+                />
+              </MuiMenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        {groupError && (
+          <Alert severity="error" sx={{ mt: 1 }}>
+            {groupError}
+          </Alert>
+        )}
+      </Box>
+    )
+  }
+
+  const renderToppingsChecklist = (group) => {
+    if (!group) return null
+    const current = selections[group.id]
+    const values = current?.type === 'multi' ? current.values : []
+    const groupError = showErrors ? errors[group.id] : null
+
+    const handleToggle = (optName) => {
+      const idx = values.indexOf(optName)
+      const next = [...values]
+      if (idx >= 0) next.splice(idx, 1)
+      else next.push(optName)
+      setSelections((prev) => ({ ...prev, [group.id]: { type: 'multi', values: next } }))
+    }
+
+    return (
+      <Box>
+        <Typography variant="h6" fontWeight={800} sx={{ mb: 1 }}>
+          {group.name}
+        </Typography>
+        {groupMetaText(group) && (
+          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+            {groupMetaText(group)}
+          </Typography>
+        )}
+        <Card variant="outlined" sx={{ borderRadius: 2 }}>
+          <List disablePadding>
+            {getRenderableOptions(group).map((opt) => (
+              <MuiMenuItem key={opt.name} onClick={() => handleToggle(opt.name)} dense>
+                <Checkbox
+                  checked={values.includes(opt.name)}
+                  size="small"
+                  sx={{ p: 0.5, mr: 1 }}
+                />
+                <ListItemText
+                  primary={opt.name}
+                  secondary={
+                    Number(opt.additionalPrice || 0) > 0
+                      ? `+ ${formatLL(opt.additionalPrice)}`
+                      : ''
+                  }
+                  primaryTypographyProps={{ variant: 'body2' }}
+                />
+              </MuiMenuItem>
+            ))}
+          </List>
+        </Card>
+        {groupError && (
+          <Alert severity="error" sx={{ mt: 1 }}>
+            {groupError}
+          </Alert>
+        )}
+      </Box>
+    )
+  }
+
+  const handleSubmit = async () => {
+    const hasErrors = Object.keys(errors).length > 0
+    if (hasErrors) {
+      setShowErrors(true)
       return
     }
 
-    // TODO: Implement add to cart logic
-    // Missing: dispatch({ type: 'ADD_TO_CART', payload: { ... } }) to add item to state
-    navigate('/cart')
+    const selectedOptionsArray = []
+    for (const gid in selections) {
+      const s = selections[gid]
+      if (s.type === 'single') {
+        if (s.value) selectedOptionsArray.push(s.value)
+      } else if (s.type === 'multi' && Array.isArray(s.values)) {
+        s.values.forEach((v) => {
+          if (typeof v === 'string') selectedOptionsArray.push(v)
+          else if (v && typeof v === 'object' && v.name) selectedOptionsArray.push(v.name)
+        })
+      }
+    }
+
+    const payload = {
+      menuItemId: item.mongoId || item.id,
+      qty,
+      selectedOptions: selectedOptionsArray,
+      instructions: instructions.trim(),
+    }
+
+    try {
+      console.log('🛒 Adding to cart:', payload)
+      await addToCart(payload)
+      setSnackOpen(true)
+      setTimeout(() => navigate('/cart'), 500)
+    } catch (err) {
+      console.error('Failed to add to cart:', err)
+      alert('Failed to add to cart. Please try again.')
+    }
   }
 
+  if (loading)
+    return (
+      <Container sx={{ py: 3 }}>
+        <Typography>Loading...</Typography>
+      </Container>
+    )
+
+  if (!item)
+    return (
+      <Container sx={{ py: 3 }}>
+        <Typography>Item not found</Typography>
+        <Button onClick={() => navigate('/menu')}>Back</Button>
+      </Container>
+    )
+
+  const isSandwich = item.category === 'Sandwiches'
+  const showPlaceholder = !item.image || imageError
+
   return (
-    <PageWrap>
-      <DetailsCard>
-        <DetailsImgContainer>
-          {showPlaceholder ? (
-            <ImgPlaceholder>
-              <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <circle cx="8.5" cy="8.5" r="1.5" />
-                <path d="m21 15-5-5L5 21" />
-              </svg>
-              <Box component="span" sx={{ fontSize: '12px', fontWeight: 600, fontFamily: brand.fontBase }}>
-                Image coming soon
+    <Container sx={{ py: 3 }}>
+      <Button onClick={() => navigate('/menu')} sx={{ mb: 2 }}>
+        ← Back to Menu
+      </Button>
+
+      <Box
+        sx={{
+          bgcolor: 'primary.main',
+          color: 'primary.contrastText',
+          borderRadius: 2,
+          p: 2,
+          mb: 3,
+        }}
+      >
+        <Stack direction="row" spacing={2} alignItems="center">
+          <Box
+            sx={{
+              width: 92,
+              height: 92,
+              borderRadius: '50%',
+              bgcolor: 'background.paper',
+              display: 'grid',
+              placeItems: 'center',
+              overflow: 'hidden',
+              flexShrink: 0,
+            }}
+          >
+            {showPlaceholder ? (
+              <Box
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#b0b8be',
+                }}
+              >
+                <svg
+                  width="32"
+                  height="32"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                >
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <path d="m21 15-5-5L5 21" />
+                </svg>
               </Box>
-            </ImgPlaceholder>
-          ) : (
-            <img
-              src={item.image}
-              alt={item.name}
-              onError={() => setImageError(true)}
-            />
-          )}
-        </DetailsImgContainer>
-
-        <DetailsInfo>
-          <Typography component="h1" sx={{ fontFamily: brand.fontDisplay, fontSize: '40px', fontWeight: 700, color: brand.primary, m: 0, letterSpacing: '-0.5px' }}>
-            {item.name}
-          </Typography>
-          <Typography sx={{ fontFamily: brand.fontBase, fontSize: '16px', color: brand.textSecondary, m: 0, fontWeight: 400 }}>
-            {item.description}
-          </Typography>
-
-          {/* Options Section */}
-          {item.options && item.options.length > 0 && (
-            <OptionsSection>
-              <OptionsTitle component="h3">Select Size/Type</OptionsTitle>
-              <OptionsList>
-                {item.options.map((option) => (
-                  <OptionItem key={option.label}>
-                    <input
-                      type="radio"
-                      name="item-option"
-                      value={option.label}
-                      checked={selectedOption === option.label}
-                      onChange={(e) => setSelectedOption(e.target.value)}
-                    />
-                    <OptionLabel>
-                      {option.label}
-                      {option.priceDelta > 0 && (
-                        <OptionPrice>
-                          +<CurrencyPrefix>LL</CurrencyPrefix> {Number(option.priceDelta).toLocaleString()}
-                        </OptionPrice>
-                      )}
-                    </OptionLabel>
-                  </OptionItem>
-                ))}
-              </OptionsList>
-            </OptionsSection>
-          )}
-
-          {/* Price Display */}
-          <DetailsPriceSection>
-            <DetailsPrice>
-              <CurrencyPrefix>LL</CurrencyPrefix> {Number(finalPrice).toLocaleString()}
-            </DetailsPrice>
-            {qty > 1 && (
-              <TotalPrice>
-                Total: <CurrencyPrefix>LL</CurrencyPrefix> {Number(totalPrice).toLocaleString()}
-              </TotalPrice>
+            ) : (
+              <img
+                src={item.image}
+                alt={item.name}
+                style={{ width: '75%', height: '75%', objectFit: 'contain' }}
+                onError={() => setImageError(true)}
+              />
             )}
-          </DetailsPriceSection>
-
-          {/* Quantity Counter */}
-          <QtyCounter>
-            <QtyLabel component="span">Quantity:</QtyLabel>
-            <QtyBtn
-              type="button"
-              onClick={() => setQty(Math.max(1, qty - 1))}
+          </Box>
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="h5" fontWeight={900}>
+              {item.name}
+            </Typography>
+            {item.description && (
+              <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                {item.description}
+              </Typography>
+            )}
+            <Typography variant="h6" fontWeight={900} sx={{ mt: 1 }}>
+              {formatLL(unitPrice)}
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Button
+              variant="contained"
+              onClick={() => setQty((q) => clamp(q - 1, 1, 99))}
+              sx={{ minWidth: 40 }}
             >
               −
-            </QtyBtn>
-            <QtyDisplay>{qty}</QtyDisplay>
-            <QtyBtn
-              type="button"
-              onClick={() => setQty(qty + 1)}
+            </Button>
+            <Typography fontWeight={900} sx={{ minWidth: 24, textAlign: 'center' }}>
+              {qty}
+            </Typography>
+            <Button
+              variant="contained"
+              onClick={() => setQty((q) => clamp(q + 1, 1, 99))}
+              sx={{ minWidth: 40 }}
             >
               +
-            </QtyBtn>
-          </QtyCounter>
+            </Button>
+          </Stack>
+        </Stack>
+      </Box>
 
-          {/* Add to Cart Button */}
-          <PrimaryBtn
-            type="button"
-            onClick={handleAddToCart}
-            disabled={!item.isAvailable}
-          >
-            Add to Cart
-          </PrimaryBtn>
-        </DetailsInfo>
-      </DetailsCard>
-    </PageWrap>
+      {!item.isAvailable && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Currently unavailable
+        </Alert>
+      )}
+
+      <Card sx={{ borderRadius: 2 }}>
+        <CardContent>
+          <Stack spacing={3}>
+            {!isSandwich ? (
+              <>
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
+                  <Box sx={{ flex: 1 }}>{renderSizePills(sizeGroup)}</Box>
+                  <Box sx={{ flex: 1 }}>{renderSingleSelect(espressoGroup)}</Box>
+                  <Box sx={{ flex: 1 }}>{renderSingleSelect(milkGroup)}</Box>
+                </Stack>
+                <Box sx={{ maxWidth: 520 }}>{renderMultiSelectDropdown(addonsGroup)}</Box>
+              </>
+            ) : (
+              <>
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
+                  <Box sx={{ flex: 1 }}>{renderSingleSelect(breadGroup)}</Box>
+                  <Box sx={{ flex: 1 }}>{renderMultiSelectDropdown(ingredientsGroup)}</Box>
+                  <Box sx={{ flex: 1 }}>{renderToppingsChecklist(toppingsGroup)}</Box>
+                </Stack>
+                <Box sx={{ maxWidth: 520 }}>{renderMultiSelectDropdown(extrasGroup)}</Box>
+              </>
+            )}
+
+            <Divider />
+
+            <TextField
+              label="Special instructions"
+              placeholder="e.g., no sugar, extra hot..."
+              multiline
+              minRows={3}
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value.slice(0, 250))}
+              helperText={`${instructions.length}/250`}
+            />
+
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              justifyContent="space-between"
+              spacing={2}
+              alignItems={{ sm: 'center' }}
+            >
+              <Typography variant="h6" fontWeight={900}>
+                Total: {formatLL(totalPrice)}
+              </Typography>
+              <Button
+                variant="contained"
+                size="large"
+                onClick={handleSubmit}
+                disabled={!item.isAvailable}
+                sx={{ borderRadius: 2, px: 4 }}
+              >
+                ADD TO CART
+              </Button>
+            </Stack>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Snackbar
+        open={snackOpen}
+        autoHideDuration={2000}
+        onClose={() => setSnackOpen(false)}
+        message="Item added to cart"
+      />
+    </Container>
   )
 }

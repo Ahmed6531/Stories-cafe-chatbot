@@ -1,3 +1,4 @@
+// Navbar.jsx (resolved: keep MUI drawer + chat from incoming, keep current's prevCategory tracking logic)
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { useCart } from '../state/useCart'
@@ -15,6 +16,7 @@ import Box from '@mui/material/Box'
 import HomeIcon from '@mui/icons-material/Home'
 import MenuBookIcon from '@mui/icons-material/MenuBook'
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart'
+import '../styles/index.css'
 
 // migrated from main.css
 const brand = {
@@ -159,27 +161,29 @@ const StyledDrawer = styled(Drawer, { shouldForwardProp: (prop) => prop !== 'ope
     boxSizing: 'border-box',
     ...(open
       ? {
-        ...openedMixin(theme),
-        '& .MuiDrawer-paper': openedMixin(theme),
-      }
+          ...openedMixin(theme),
+          '& .MuiDrawer-paper': openedMixin(theme),
+        }
       : {
-        ...closedMixin(theme),
-        '& .MuiDrawer-paper': closedMixin(theme),
-      }),
+          ...closedMixin(theme),
+          '& .MuiDrawer-paper': closedMixin(theme),
+        }),
   })
 )
 
 function useBreadcrumb() {
   const location = useLocation()
   const [item, setItem] = useState(null)
+  const [prevCategory, setPrevCategory] = useState(null)
 
-  const prevCategory = useMemo(() => {
+  // keep current behavior: remember last selected menu category while on /menu
+  useEffect(() => {
     if (location.pathname === '/menu') {
       const params = new URLSearchParams(location.search)
       const category = params.get('category')
-      return category && category !== 'All' ? category : null
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPrevCategory(category && category !== 'All' ? category : null)
     }
-    return null
   }, [location.pathname, location.search])
 
   useEffect(() => {
@@ -269,6 +273,7 @@ export default function Navbar() {
   const pageRef = useRef(null)
   const msgsRef = useRef(null)
   const pendingReplyTimeoutRef = useRef(null)
+
   const { cartCount } = useCart()
   const crumbs = useBreadcrumb()
   const location = useLocation()
@@ -383,18 +388,14 @@ export default function Navbar() {
     if (!trimmed) return
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
-    if (messages.length === 0) {
-      setChipsVisible(false)
-    }
+    if (messages.length === 0) setChipsVisible(false)
 
     setMessages((m) => [...m, { id: Date.now(), role: 'user', text: trimmed, time: now }])
     setChatInput('')
     setMicMode('thinking')
     setTyping(true)
 
-    if (pendingReplyTimeoutRef.current) {
-      window.clearTimeout(pendingReplyTimeoutRef.current)
-    }
+    if (pendingReplyTimeoutRef.current) window.clearTimeout(pendingReplyTimeoutRef.current)
     pendingReplyTimeoutRef.current = window.setTimeout(() => {
       setTyping(false)
       setMessages((m) => [
@@ -532,19 +533,16 @@ export default function Navbar() {
           <Topbar>
             <TopbarLeft>
               {!drawerOpen && (
-                <>
-                  <Box
-                    component="img"
-                    src="/stories-logo.png"
-                    alt="Stories"
-                    className="topbar-logo"
-                    sx={{ maxWidth: '112px', maxHeight: '24px', objectFit: 'contain', width: 'auto' }}
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none'
-                    }}
-                  />
-                  {/* // TODO: move topbarLogoIn keyframe to styled() in Phase 3 */}
-                </>
+                <Box
+                  component="img"
+                  src="/stories-logo.png"
+                  alt="Stories"
+                  className="topbar-logo"
+                  sx={{ maxWidth: '112px', maxHeight: '24px', objectFit: 'contain', width: 'auto' }}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none'
+                  }}
+                />
               )}
               {location.pathname !== '/' && (
                 <BreadcrumbNav component="nav">
@@ -557,6 +555,7 @@ export default function Navbar() {
                 </BreadcrumbNav>
               )}
             </TopbarLeft>
+
             <TopbarActions>
               {isAuthed ? (
                 <TopPillBtn isAuth type="button" onClick={() => navigate(-1)}>Back</TopPillBtn>
@@ -569,6 +568,7 @@ export default function Navbar() {
                   <span>Login</span>
                 </TopPillBtn>
               )}
+
               <TopPillBtn type="button" onClick={() => navigate('/cart')}>
                 <Box component="span" aria-hidden="true" sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -602,12 +602,7 @@ export default function Navbar() {
                     <span className="chat-assistant-title">Stories Assistant</span>
                     <span className="chat-assistant-badge">NEW</span>
                   </div>
-                  <button
-                    className="chat-panel-close"
-                    type="button"
-                    aria-label="Close"
-                    onClick={closeChat}
-                  >
+                  <button className="chat-panel-close" type="button" aria-label="Close" onClick={closeChat}>
                     <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
                       <line x1="1" y1="1" x2="13" y2="13" />
                       <line x1="13" y1="1" x2="1" y2="13" />
@@ -748,6 +743,3 @@ export default function Navbar() {
     </div>
   )
 }
-
-// Removed classes from main.css dependency:
-// .topbar, .topbar-left, .topbar-actions, .breadcrumb, .crumb-link, .crumb-sep, .top-pill, .cart-badge

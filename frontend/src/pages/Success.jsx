@@ -3,6 +3,9 @@ import Box from '@mui/material/Box'
 
 export default function Success() {
   const navigate = useNavigate()
+  const location = useLocation()
+  // Bug fix: show real order number from backend response
+  const orderNumber = location.state?.orderNumber || 'SC-2026020712345'
 
   return (
     <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '14px', textAlign: 'center', padding: '40px 20px' }}>
@@ -20,7 +23,7 @@ export default function Success() {
 
       <div style={{ marginBottom: '30px' }}>
         <p style={{ fontSize: '14px', color: '#79747e', marginBottom: '10px' }}>
-          Order Number: <strong>#SC-2026020712345</strong>
+          Order Number: <strong>#{orderNumber}</strong>
         </p>
         <p style={{ fontSize: '14px', color: '#79747e', margin: 0 }}>
           You will be notified when your order is ready.

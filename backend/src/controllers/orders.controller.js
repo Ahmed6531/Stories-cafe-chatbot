@@ -1,9 +1,11 @@
 import { Order } from "../models/Order.js";
 import { MenuItem } from "../models/MenuItem.js";
+import { Cart } from "../models/Cart.js";
 import { generateOrderNumber } from "../utils/orderNumber.js";
 
 export async function createOrder(req, res) {
   const { orderType, customer, items, notesToBarista } = req.body || {};
+  const cartId = req.get("x-cart-id") || req.body.cartId;
 
   if (!orderType || !["pickup", "dine_in", "delivery"].includes(orderType)) {
     return res.status(400).json({ error: "Invalid orderType" });
@@ -22,13 +24,19 @@ export async function createOrder(req, res) {
   let subtotal = 0;
 
   for (const line of items) {
-    const { menuItemId, qty, selectedOptions = [] } = line || {};
+    const { menuItemId, qty, selectedOptions = [], instructions = "" } = line || {};
     if (!menuItemId || !qty || qty < 1) {
       return res.status(400).json({ error: "Each item must include menuItemId and qty >= 1" });
     }
 
     const menuItem = await MenuItem.findById(menuItemId);
-    if (!menuItem || !menuItem.isAvailable) {
+    if (!menuItem) {
+      if (!isNaN(menuItemId)) {
+        return res.status(400).json({ error: `Invalid menuItemId: ${menuItemId}. Backend expects Mongo _id (ObjectId), not numeric id.` });
+      }
+      return res.status(400).json({ error: "Menu item not found" });
+    }
+    if (!menuItem.isAvailable) {
       return res.status(400).json({ error: "Menu item not available" });
     }
 
@@ -48,6 +56,7 @@ export async function createOrder(req, res) {
       qty,
       unitPrice,
       selectedOptions,
+      instructions: instructions || "",
       lineTotal
     });
   }
@@ -74,6 +83,10 @@ export async function createOrder(req, res) {
     subtotal,
     total
   });
+
+  if (cartId) {
+    await Cart.findOneAndDelete({ cartId });
+  }
 
   res.status(201).json({
     orderId: order._id,

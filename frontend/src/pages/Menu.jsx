@@ -57,11 +57,10 @@ const SectionTitle = styled(Typography)(({ theme }) => ({
     fontSize: '20px',
     letterSpacing: '0.04em',
     paddingBottom: '4px',
-  }
+  },
 }));
 
 // .state-wrap
-// TODO: Phase 4 consolidate into shared file
 const StateWrap = styled(Box)(() => ({
   minHeight: '220px',
   display: 'flex',
@@ -70,17 +69,16 @@ const StateWrap = styled(Box)(() => ({
   justifyContent: 'center',
   gap: '8px',
   textAlign: 'center',
-}))
+}));
 
 // .state-title
-// TODO: Phase 4 consolidate into shared file
 const StateTitle = styled(Typography)(() => ({
   margin: 0,
   fontFamily: brand.fontBase,
   fontSize: '28px',
   fontWeight: 600,
   color: brand.primary,
-}))
+}));
 
 // .state-text
 const StatusText = styled(Typography, {
@@ -118,7 +116,7 @@ const CatbarWrap = styled(Box)(() => ({
     background: 'linear-gradient(to left, transparent, #fff)',
     pointerEvents: 'none',
     zIndex: 1,
-  }
+  },
 }));
 
 // .catbar
@@ -131,7 +129,7 @@ const Catbar = styled(Box)(() => ({
   overscrollBehaviorX: 'contain',
   '&::-webkit-scrollbar': {
     display: 'none',
-  }
+  },
 }));
 
 // .catbar-inner
@@ -167,33 +165,35 @@ const CatChip = styled('button', {
   maxWidth: '140px',
   flexShrink: 0,
 
-  ...(isActive ? {
-    background: brand.primary,
-    color: '#ffffff',
-    borderColor: brand.primary,
-    boxShadow: '0 6px 16px rgba(0, 112, 74, 0.18)',
-    transform: 'translateY(-1px)',
-    '& img': {
-      background: 'transparent',
-    },
-    '&:hover': {
-      background: brand.primaryHover,
-      borderColor: brand.primaryHover,
-      transform: 'translateY(-2px)',
-      boxShadow: '0 8px 18px rgba(0, 112, 74, 0.22)',
-    }
-  } : {
-    '&:hover': {
-      backgroundColor: '#f8fcfa',
-      borderColor: '#b7cec2',
-      color: '#1a4a35',
-      transform: 'translateY(-2px)',
-      boxShadow: '0 8px 18px rgba(17, 24, 39, 0.08)',
-      '& img': {
-        transform: 'scale(1.1)',
+  ...(isActive
+    ? {
+        background: brand.primary,
+        color: '#ffffff',
+        borderColor: brand.primary,
+        boxShadow: '0 6px 16px rgba(0, 112, 74, 0.18)',
+        transform: 'translateY(-1px)',
+        '& img': {
+          background: 'transparent',
+        },
+        '&:hover': {
+          background: brand.primaryHover,
+          borderColor: brand.primaryHover,
+          transform: 'translateY(-2px)',
+          boxShadow: '0 8px 18px rgba(0, 112, 74, 0.22)',
+        },
       }
-    }
-  })
+    : {
+        '&:hover': {
+          backgroundColor: '#f8fcfa',
+          borderColor: '#b7cec2',
+          color: '#1a4a35',
+          transform: 'translateY(-2px)',
+          boxShadow: '0 8px 18px rgba(17, 24, 39, 0.08)',
+          '& img': {
+            transform: 'scale(1.1)',
+          },
+        },
+      }),
 }));
 
 // .cat-chip-content
@@ -239,7 +239,7 @@ const SubcatBar = styled(Box)(() => ({
   msOverflowStyle: 'none',
   scrollbarWidth: 'none',
   '&::-webkit-scrollbar': { display: 'none' },
-}))
+}));
 
 // .subcat-chip
 const SubcatChip = styled('button', {
@@ -259,7 +259,7 @@ const SubcatChip = styled('button', {
   '&:hover': {
     background: isActive ? brand.primaryHover : '#ececec',
   },
-}))
+}));
 
 // .primary-btn (RetryBtn)
 const RetryBtn = styled('button')(() => ({
@@ -274,7 +274,7 @@ const RetryBtn = styled('button')(() => ({
   fontSize: '16px',
   fontFamily: brand.fontBase,
   '&:hover': { background: brand.primaryHover },
-}))
+}));
 
 export default function Menu() {
   const [params, setParams] = useSearchParams()
@@ -294,16 +294,14 @@ export default function Menu() {
     'Sandwiches': '/images/sandwiches.png',
     'Soft Drinks': '/images/soft-drinks.png',
     'Tea': '/images/tea.png',
-    'Yogurts': '/images/yogurt.png'
+    'Yogurts': '/images/yogurt.png',
   }
 
   // Handle category selection - clicking active category deselects it
   const handleCategoryClick = (selectedCategory) => {
     if (category === selectedCategory) {
-      // Clicking active category - show all items
       setParams({})
     } else {
-      // Clicking different category - filter by it
       setParams({ category: selectedCategory })
     }
   }
@@ -327,6 +325,7 @@ export default function Menu() {
     loadMenu();
   }, [category]);
 
+  // Reset subcategory when main category changes
   useEffect(() => {
     setSubcategory(null)
   }, [category])
@@ -379,6 +378,7 @@ export default function Menu() {
       <SectionHeading>
         <SectionTitle component="h2">Categories</SectionTitle>
       </SectionHeading>
+
       <CatbarWrap>
         <Catbar>
           <CatbarInner>
@@ -394,9 +394,13 @@ export default function Menu() {
                     <CatChipImage
                       src={categoryImages[c] || '/images/placeholder.png'}
                       alt={c}
-                      onError={(e) => { e.currentTarget.src = '/images/placeholder.png' }}
+                      onError={(e) => {
+                        e.currentTarget.src = '/images/placeholder.png'
+                      }}
                     />
-                    <CatChipText>{c === 'Mixed Beverages' ? 'Mixed Bev.' : c}</CatChipText>
+                    <CatChipText>
+                      {c === 'Mixed Beverages' ? 'Mixed Bev.' : c}
+                    </CatChipText>
                   </CatChipContent>
                 </CatChip>
               ))
@@ -414,7 +418,9 @@ export default function Menu() {
               key={s}
               type="button"
               isActive={subcategory === s}
-              onClick={() => setSubcategory((prev) => (prev === s ? null : s))}
+              onClick={() =>
+                setSubcategory((prev) => (prev === s ? null : s))
+              }
             >
               {s}
             </SubcatChip>
@@ -426,9 +432,3 @@ export default function Menu() {
     </PageWrap>
   )
 }
-
-// Removed classes from menu.css dependency:
-// .page-wrap, .section-heading, .section-title, .featured-section-heading
-// .state-text, .state-text.error, .catbar-wrap, .catbar, .catbar-inner
-// .cat-chip, .cat-chip-content, .cat-chip-image, .cat-chip-text
-// .subcatbar, .subcat-chip, .state-wrap, .state-title, .primary-btn

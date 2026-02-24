@@ -3,8 +3,6 @@ import { useMemo, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Box, Typography, styled } from '@mui/material'
 import FeaturedItems from '../components/FeaturedItems'
-import MenuSkeleton from '../components/MenuSkeleton'
-import CategoryChipsSkeleton from '../components/CategoryChipsSkeleton'
 import { fetchMenu } from '../API/menuApi'
 
 const brand = {
@@ -208,7 +206,7 @@ export default function Home() {
     'Coffee': '/images/coffee.png',
     'Mixed Beverages': '/images/mixedbev.png',
     'Pastries': '/images/pastries.png',
-    'Salad': '/images/salad.png',
+    'Salad': '/images/salad.jpg',
     'Sandwiches': '/images/sandwiches.png',
     'Soft Drinks': '/images/soft-drinks.png',
     'Tea': '/images/tea.png',
@@ -281,7 +279,7 @@ export default function Home() {
       </SectionHeading>
 
       {loading ? (
-        <MenuSkeleton />
+        <p>Loading featured items...</p>
       ) : error ? (
         <StatusText isError>{error}</StatusText>
       ) : featured.length > 0 ? (

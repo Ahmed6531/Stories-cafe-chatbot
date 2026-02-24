@@ -1,23 +1,23 @@
-import express from "express";
+import { Router } from "express";
 import {
   getMenu,
   getMenuItem,
   getFeaturedMenu,
-  getMenuByCategory, // Add this import
+  getMenuByCategory,
 } from "../controllers/menu.controller.js";
 
-const router = express.Router();
+const router = Router();
 
-// GET /api/menu - All menu items (minimal data)
+// GET /menu - All menu items (minimal data)
 router.get("/", getMenu);
 
-// GET /api/menu/featured - Featured items with full variant data
+// GET /menu/featured - Featured items
 router.get("/featured", getFeaturedMenu);
 
-// GET /api/menu/category/:category - Items by category with full variant data
-router.get("/category/:category", getMenuByCategory); // Add this line
+// GET /menu/category/:category - Items by category
+router.get("/category/:category", getMenuByCategory);
 
-// GET /api/menu/:id - Single item with full variant data
+// GET /menu/:id - Single item by numeric ID
 router.get("/:id", getMenuItem);
 
 export default router;

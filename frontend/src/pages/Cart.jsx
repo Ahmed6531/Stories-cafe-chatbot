@@ -1,6 +1,7 @@
 // migrated from cart-checkout.css
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useCart } from '../state/useCart';
 import { Box, Typography, styled, keyframes } from '@mui/material';
 
 const brand = {
@@ -17,7 +18,7 @@ const brand = {
   shadowHover: '0 4px 12px rgba(0,0,0,0.15)',
   fontBase: "'Montserrat', sans-serif",
   fontDisplay: "'DIN Alternate Bold', 'Montserrat', sans-serif",
-}
+};
 
 // --- Styled Components ---
 
@@ -63,8 +64,8 @@ const HeaderContent = styled(Box)(({ theme }) => ({
 
     [theme.breakpoints.down('md')]: {
       fontSize: '1.5rem',
-    }
-  }
+    },
+  },
 }));
 
 const CheckoutContainer = styled(Box)(({ theme }) => ({
@@ -74,7 +75,7 @@ const CheckoutContainer = styled(Box)(({ theme }) => ({
 
   [theme.breakpoints.down('md')]: {
     padding: '2rem 1rem',
-  }
+  },
 }));
 
 const EmptyCart = styled(Box)(() => ({
@@ -85,7 +86,7 @@ const EmptyCart = styled(Box)(() => ({
     fontSize: '1.5rem',
     color: '#6b6b6b',
     marginBottom: '2rem',
-  }
+  },
 }));
 
 const CartContent = styled(Box)(({ theme }) => ({
@@ -96,7 +97,7 @@ const CartContent = styled(Box)(({ theme }) => ({
 
   [theme.breakpoints.down('lg')]: {
     gridTemplateColumns: '1fr',
-  }
+  },
 }));
 
 const CartItems = styled(Box)(({ theme }) => ({
@@ -107,7 +108,7 @@ const CartItems = styled(Box)(({ theme }) => ({
 
   [theme.breakpoints.down('md')]: {
     padding: '1.5rem',
-  }
+  },
 }));
 
 const CartItemRow = styled(Box)(({ theme }) => ({
@@ -131,7 +132,7 @@ const CartItemRow = styled(Box)(({ theme }) => ({
   [theme.breakpoints.down('md')]: {
     gridTemplateColumns: '80px 1fr',
     gap: '1rem',
-  }
+  },
 }));
 
 const ItemImage = styled(Box)(({ theme }) => ({
@@ -150,7 +151,7 @@ const ItemImage = styled(Box)(({ theme }) => ({
   [theme.breakpoints.down('md')]: {
     width: '80px',
     height: '80px',
-  }
+  },
 }));
 
 const ItemDetails = styled(Box)(({ theme }) => ({
@@ -167,7 +168,7 @@ const ItemDetails = styled(Box)(({ theme }) => ({
 
   [theme.breakpoints.down('md')]: {
     gridColumn: '1 / -1',
-  }
+  },
 }));
 
 const ItemPrice = styled('p')(() => ({
@@ -187,7 +188,7 @@ const QuantityControls = styled(Box)(({ theme }) => ({
   [theme.breakpoints.down('md')]: {
     gridColumn: '1 / -1',
     justifySelf: 'start',
-  }
+  },
 }));
 
 const QuantityText = styled('span')(() => ({
@@ -219,7 +220,13 @@ const QtyBtn = styled('button')(() => ({
 
   '&:active': {
     transform: 'scale(0.95)',
-  }
+  },
+
+  '&:disabled': {
+    opacity: 0.4,
+    cursor: 'not-allowed',
+    transform: 'none',
+  },
 }));
 
 const ItemTotal = styled(Box)(({ theme }) => ({
@@ -233,7 +240,7 @@ const ItemTotal = styled(Box)(({ theme }) => ({
     position: 'absolute',
     top: '1.5rem',
     right: '3rem',
-  }
+  },
 }));
 
 const RemoveBtn = styled('button')(({ theme }) => ({
@@ -260,7 +267,7 @@ const RemoveBtn = styled('button')(({ theme }) => ({
     position: 'absolute',
     top: '1.5rem',
     right: 0,
-  }
+  },
 }));
 
 const OrderSummary = styled(Box)(({ theme }) => ({
@@ -280,7 +287,7 @@ const OrderSummary = styled(Box)(({ theme }) => ({
 
   [theme.breakpoints.down('md')]: {
     position: 'static',
-  }
+  },
 }));
 
 const SummaryRow = styled(Box, {
@@ -298,7 +305,7 @@ const SummaryRow = styled(Box, {
     fontWeight: 700,
     color: brand.textPrimary,
     marginTop: '1rem',
-  })
+  }),
 }));
 
 const SummaryDivider = styled(Box)(() => ({
@@ -327,10 +334,10 @@ const PrimaryBtn = styled(BaseBtn)(() => ({
   '&:hover': {
     backgroundColor: brand.primaryDark,
     transform: 'translateY(-2px)',
-  }
+  },
 }));
 
-const CheckoutBtn = styled(BaseBtn)(() => ({
+const CheckoutBtnStyled = styled(BaseBtn)(() => ({
   backgroundColor: brand.primaryDark,
   color: 'white',
   marginTop: '1.5rem',
@@ -352,7 +359,7 @@ const CheckoutBtn = styled(BaseBtn)(() => ({
     cursor: 'not-allowed',
     transform: 'none',
     boxShadow: 'none',
-  }
+  },
 }));
 
 const SecondaryBtn = styled(BaseBtn)(() => ({
@@ -363,59 +370,38 @@ const SecondaryBtn = styled(BaseBtn)(() => ({
   '&:hover': {
     backgroundColor: brand.primaryDark,
     color: 'white',
-  }
+  },
 }));
-
 
 // --- Component Definition ---
 
 function Cart() {
-  const [cartItems, setCartItems] = useState(() => {
-    const savedCart = localStorage.getItem("cart");
-    return savedCart ? JSON.parse(savedCart) : [];
-  });
-
-  // Sync cart to localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem("cart", JSON.stringify(cartItems));
-  }, [cartItems]);
-
-  // Update quantity functions
-  const increaseQty = (id) => {
-    setCartItems((items) =>
-      items.map((item) =>
-        item.id === id ? { ...item, quantity: item.quantity + 1 } : item
-      )
-    );
-  };
-
-  const decreaseQty = (id) => {
-    setCartItems((items) =>
-      items
-        .map((item) =>
-          item.id === id ? { ...item, quantity: item.quantity - 1 } : item
-        )
-        .filter((item) => item.quantity > 0)
-    );
-  };
-
-  // Remove item function
-  const removeItem = (id) => {
-    setCartItems(cartItems.filter((item) => item.id !== id));
-  };
+  const navigate = useNavigate();
+  const { state, updateQty, removeFromCart } = useCart();
+  const { items: cartItems, loading } = state;
 
   // Calculate total price
   const totalPrice = cartItems.reduce(
-    (total, item) => total + item.price * item.quantity,
+    (total, item) => total + (item.price || 0) * item.qty,
     0
   );
 
   const handleCheckout = () => {
-    alert("Order has been placed");
+    navigate('/checkout');
   };
 
   // Placeholder image URL
-  const placeholderImg = "/images/placeholder.png";
+  const placeholderImg = "https://via.placeholder.com/100/8B7355/FFFFFF?text=Coffee";
+
+  if (loading) {
+    return (
+      <CheckoutPage>
+        <CheckoutContainer>
+          <Typography>Loading your cart...</Typography>
+        </CheckoutContainer>
+      </CheckoutPage>
+    );
+  }
 
   return (
     <CheckoutPage>
@@ -440,33 +426,34 @@ function Cart() {
             {/* Cart Items */}
             <CartItems>
               {cartItems.map((item) => (
-                <CartItemRow key={item.id}>
+                <CartItemRow key={item.lineId}>
                   {/* Item Image */}
                   <ItemImage>
                     <img
                       src={item.image || placeholderImg}
                       alt={item.name}
-                      onError={(e) => { e.currentTarget.src = '/images/placeholder.png' }}
+                      onError={(e) => { e.currentTarget.src = placeholderImg; }}
                     />
                   </ItemImage>
 
                   {/* Item Details */}
                   <ItemDetails>
                     <h3>{item.name}</h3>
-                    <ItemPrice>${item.price.toFixed(2)}</ItemPrice>
+                    <ItemPrice>L.L {Number(item.price).toLocaleString()}</ItemPrice>
                   </ItemDetails>
 
                   {/* Quantity Controls */}
                   <QuantityControls>
                     <QtyBtn
-                      onClick={() => decreaseQty(item.id)}
+                      onClick={() => updateQty(item.lineId, item.qty - 1)}
+                      disabled={item.qty <= 1}
                       aria-label="Decrease quantity"
                     >
-                      -
+                      −
                     </QtyBtn>
-                    <QuantityText>{item.quantity}</QuantityText>
+                    <QuantityText>{item.qty}</QuantityText>
                     <QtyBtn
-                      onClick={() => increaseQty(item.id)}
+                      onClick={() => updateQty(item.lineId, item.qty + 1)}
                       aria-label="Increase quantity"
                     >
                       +
@@ -475,15 +462,15 @@ function Cart() {
 
                   {/* Item Total */}
                   <ItemTotal>
-                    ${(item.price * item.quantity).toFixed(2)}
+                    L.L {Number(item.price * item.qty).toLocaleString()}
                   </ItemTotal>
 
                   {/* Remove Button */}
                   <RemoveBtn
-                    onClick={() => removeItem(item.id)}
+                    onClick={() => removeFromCart(item.lineId)}
                     aria-label="Remove item"
                   >
-                    x
+                    ×
                   </RemoveBtn>
                 </CartItemRow>
               ))}
@@ -495,27 +482,27 @@ function Cart() {
 
               <SummaryRow>
                 <span>Subtotal</span>
-                <span>${totalPrice.toFixed(2)}</span>
+                <span>L.L {Number(totalPrice).toLocaleString()}</span>
               </SummaryRow>
 
               <SummaryRow>
                 <span>Tax (estimated)</span>
-                <span>${(totalPrice * 0.08).toFixed(2)}</span>
+                <span>L.L {Number(totalPrice * 0.08).toLocaleString()}</span>
               </SummaryRow>
 
               <SummaryDivider />
 
               <SummaryRow isTotal>
                 <span>Total</span>
-                <span>${(totalPrice * 1.08).toFixed(2)}</span>
+                <span>L.L {Number(totalPrice * 1.08).toLocaleString()}</span>
               </SummaryRow>
 
-              <CheckoutBtn
+              <CheckoutBtnStyled
                 disabled={cartItems.length === 0}
                 onClick={handleCheckout}
               >
                 Proceed to Checkout
-              </CheckoutBtn>
+              </CheckoutBtnStyled>
 
               <Box component={Link} to="/" sx={{ textDecoration: 'none', display: 'block' }}>
                 <SecondaryBtn>Continue Shopping</SecondaryBtn>
