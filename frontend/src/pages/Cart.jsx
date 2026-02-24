@@ -1,5 +1,4 @@
 // migrated from cart-checkout.css
-import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useCart } from '../state/useCart';
 import { Box, Typography, styled, keyframes } from '@mui/material';
@@ -35,37 +34,9 @@ const fadeIn = keyframes`
 
 const CheckoutPage = styled(Box)(() => ({
   minHeight: '100vh',
-  backgroundColor: '#f8f6f3',
+  backgroundColor: '#ffffff',
   width: '100%',
   overflowX: 'hidden',
-}));
-
-const CheckoutHeader = styled('header')(() => ({
-  backgroundColor: brand.primaryDark,
-  color: '#f8f6f3',
-  padding: '2rem 0',
-  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
-  width: '100%',
-  margin: 0,
-  boxSizing: 'border-box',
-  overflowX: 'hidden',
-}));
-
-const HeaderContent = styled(Box)(({ theme }) => ({
-  maxWidth: '1200px',
-  margin: '0 auto',
-  padding: '0 2rem',
-
-  '& h1': {
-    margin: 0,
-    fontSize: '2rem',
-    fontWeight: 600,
-    letterSpacing: '0.5px',
-
-    [theme.breakpoints.down('md')]: {
-      fontSize: '1.5rem',
-    },
-  },
 }));
 
 const CheckoutContainer = styled(Box)(({ theme }) => ({
@@ -104,7 +75,9 @@ const CartItems = styled(Box)(({ theme }) => ({
   background: 'white',
   borderRadius: '12px',
   padding: '2rem',
-  boxShadow: brand.shadowMd,
+  boxShadow: '0 2px 16px rgba(0,0,0,0.07)',
+  border: '1px solid #e8e5e1',
+  borderTop: '3px solid #00704a',
 
   [theme.breakpoints.down('md')]: {
     padding: '1.5rem',
@@ -120,6 +93,7 @@ const CartItemRow = styled(Box)(({ theme }) => ({
   borderBottom: '1px solid #e8e5e1',
   position: 'relative',
   animation: `${fadeIn} 0.3s ease`,
+  borderRadius: '8px',
 
   '&:last-child': {
     borderBottom: 'none',
@@ -175,6 +149,18 @@ const ItemPrice = styled('p')(() => ({
   margin: 0,
   fontSize: '0.95rem',
   color: brand.textSecondary,
+}));
+
+const ItemVariants = styled('p')(() => ({
+  margin: 0,
+  fontSize: '0.85rem',
+  color: '#00704a',
+  fontStyle: 'italic',
+  fontWeight: 400,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  maxWidth: '100%',
 }));
 
 const QuantityControls = styled(Box)(({ theme }) => ({
@@ -249,7 +235,7 @@ const RemoveBtn = styled('button')(({ theme }) => ({
   border: 'none',
   backgroundColor: 'transparent',
   color: '#9b9b9b',
-  fontSize: '2rem',
+  fontSize: '1.4rem',          // slightly smaller so it fits the circle better
   cursor: 'pointer',
   transition: 'all 0.2s ease',
   display: 'flex',
@@ -257,6 +243,7 @@ const RemoveBtn = styled('button')(({ theme }) => ({
   justifyContent: 'center',
   borderRadius: '50%',
   lineHeight: 1,
+  padding: '0 0 2px 0',       // nudge the × up by 2px
 
   '&:hover': {
     backgroundColor: '#ffe5e5',
@@ -274,7 +261,9 @@ const OrderSummary = styled(Box)(({ theme }) => ({
   background: 'white',
   borderRadius: '12px',
   padding: '2rem',
-  boxShadow: brand.shadowMd,
+  boxShadow: '0 2px 16px rgba(0,0,0,0.07)',
+  border: '1px solid #e8e5e1',
+  borderTop: '3px solid #00704a',
   position: 'sticky',
   top: '2rem',
 
@@ -405,15 +394,10 @@ function Cart() {
 
   return (
     <CheckoutPage>
-      {/* Header */}
-      <CheckoutHeader>
-        <HeaderContent>
-          <h1>Your Cart</h1>
-        </HeaderContent>
-      </CheckoutHeader>
-
-      {/* Main Content */}
       <CheckoutContainer>
+        <Typography sx={{ fontFamily: brand.fontDisplay, fontSize: '28px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: brand.primary, mb: 3 }}>
+          Your Cart
+        </Typography>
         {cartItems.length === 0 ? (
           <EmptyCart>
             <p>Your cart is empty</p>
@@ -440,6 +424,15 @@ function Cart() {
                   <ItemDetails>
                     <h3>{item.name}</h3>
                     <ItemPrice>L.L {Number(item.price).toLocaleString()}</ItemPrice>
+                    {(() => {
+                      if (Array.isArray(item.variants) && item.variants.length > 0)
+                        return <ItemVariants>{item.variants.join(', ')}</ItemVariants>
+                      if (item.options && typeof item.options === 'object') {
+                        const vals = Object.values(item.options).filter(Boolean)
+                        if (vals.length > 0) return <ItemVariants>{vals.join(', ')}</ItemVariants>
+                      }
+                      return null
+                    })()}
                   </ItemDetails>
 
                   {/* Quantity Controls */}
@@ -478,7 +471,14 @@ function Cart() {
 
             {/* Order Summary */}
             <OrderSummary>
-              <h2>Order Summary</h2>
+              <h2>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', verticalAlign: 'middle' }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00704a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>
+                  </svg>
+                  Order Summary
+                </span>
+              </h2>
 
               <SummaryRow>
                 <span>Subtotal</span>

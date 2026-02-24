@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom'
 import { Box, Typography, styled } from '@mui/material'
 import FeaturedItems from '../components/FeaturedItems'
 import { fetchMenu } from '../API/menuApi'
+import CategoryChipsSkeleton from '../components/CategoryChipsSkeleton'
+import MenuSkeleton from '../components/MenuSkeleton'
 
 const brand = {
   primary: '#00704a',
@@ -279,7 +281,7 @@ export default function Home() {
       </SectionHeading>
 
       {loading ? (
-        <p>Loading featured items...</p>
+        <MenuSkeleton />
       ) : error ? (
         <StatusText isError>{error}</StatusText>
       ) : featured.length > 0 ? (
