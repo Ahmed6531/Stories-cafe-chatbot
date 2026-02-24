@@ -39,11 +39,28 @@ export function CartProvider({ children }) {
   }
 
   const removeFromCart = async (lineId) => {
+    // Get the item being removed to calculate how much to reduce count
+    const itemToRemove = state.items.find(item => item.lineId === lineId);
+    const qtyToRemove = itemToRemove ? itemToRemove.qty : 0;
+    
+    // Optimistically update UI
+    dispatch({
+      type: 'CART_LOADED',
+      payload: {
+        ...state,
+        items: state.items.filter(item => item.lineId !== lineId),
+        count: Math.max(0, state.count - qtyToRemove)
+      }
+    });
+    
+    // Then sync with backend and use its response as source of truth
     try {
       const data = await removeFromCartApi(lineId);
       dispatch({ type: 'CART_LOADED', payload: data });
     } catch (err) {
+      // On error, reload from backend to restore correct state
       dispatch({ type: 'CART_ERROR', payload: err.message });
+      loadCart(); // Re-fetch cart to ensure consistency
     }
   }
 
