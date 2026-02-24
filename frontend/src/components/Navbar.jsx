@@ -219,6 +219,15 @@ function useBreadcrumb() {
     }
 
     if (location.pathname.startsWith('/cart')) crumbs.push({ label: 'Cart', to: '/cart' })
+    if (location.pathname.startsWith('/checkout')) {
+      crumbs.push({ label: 'Cart', to: '/cart' })
+      crumbs.push({ label: 'Checkout', to: '/checkout' })
+    }
+    if (location.pathname.startsWith('/success')) {
+      crumbs.push({ label: 'Cart', to: '/cart' })
+      crumbs.push({ label: 'Checkout', to: '/checkout' })
+      crumbs.push({ label: 'Order Confirmed', to: '/success' })
+    }
     if (location.pathname.startsWith('/login')) crumbs.push({ label: 'Login', to: '/login' })
     if (location.pathname.startsWith('/register')) crumbs.push({ label: 'Register', to: '/register' })
 

@@ -42,21 +42,44 @@ const CheckoutPage = styled(Box)(() => ({
 const CheckoutContainer = styled(Box)(({ theme }) => ({
   maxWidth: '1200px',
   margin: '0 auto',
-  padding: '3rem 2rem',
+  padding: '1.25rem 2rem 3rem',
 
   [theme.breakpoints.down('md')]: {
-    padding: '2rem 1rem',
+    padding: '1rem 1rem 2rem',
   },
 }));
 
 const EmptyCart = styled(Box)(() => ({
   textAlign: 'center',
-  padding: '4rem 2rem',
+  padding: '5rem 2rem',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  gap: '1rem',
+
+  '& .empty-icon': {
+    width: '80px',
+    height: '80px',
+    borderRadius: '50%',
+    backgroundColor: '#f0f9f4',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: '0.5rem',
+  },
+
+  '& h3': {
+    margin: 0,
+    fontSize: '1.5rem',
+    fontWeight: 700,
+    color: brand.textPrimary,
+  },
 
   '& p': {
-    fontSize: '1.5rem',
-    color: '#6b6b6b',
-    marginBottom: '2rem',
+    margin: 0,
+    fontSize: '1rem',
+    color: brand.textSecondary,
+    marginBottom: '1rem',
   },
 }));
 
@@ -145,11 +168,6 @@ const ItemDetails = styled(Box)(({ theme }) => ({
   },
 }));
 
-const ItemPrice = styled('p')(() => ({
-  margin: 0,
-  fontSize: '0.95rem',
-  color: brand.textSecondary,
-}));
 
 const ItemVariants = styled('p')(() => ({
   margin: 0,
@@ -395,14 +413,22 @@ function Cart() {
   return (
     <CheckoutPage>
       <CheckoutContainer>
-        <Typography sx={{ fontFamily: brand.fontDisplay, fontSize: '28px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: brand.primary, mb: 3 }}>
+        <Typography sx={{ fontFamily: brand.fontDisplay, fontSize: '28px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: brand.primary, mb: 2, textAlign: 'center' }}>
           Your Cart
         </Typography>
         {cartItems.length === 0 ? (
           <EmptyCart>
-            <p>Your cart is empty</p>
-            <Box component={Link} to="/" sx={{ textDecoration: 'none', display: 'block' }}>
-              <PrimaryBtn>Continue Shopping</PrimaryBtn>
+            <div className="empty-icon">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#00704a" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+                <line x1="3" y1="6" x2="21" y2="6"/>
+                <path d="M16 10a4 4 0 0 1-8 0"/>
+              </svg>
+            </div>
+            <h3>Your cart is empty</h3>
+            <p>Looks like you haven't added anything yet.</p>
+            <Box component={Link} to="/menu" sx={{ textDecoration: 'none', display: 'block', width: '220px' }}>
+              <PrimaryBtn>Browse Menu</PrimaryBtn>
             </Box>
           </EmptyCart>
         ) : (
@@ -423,7 +449,6 @@ function Cart() {
                   {/* Item Details */}
                   <ItemDetails>
                     <h3>{item.name}</h3>
-                    <ItemPrice>L.L {Number(item.price).toLocaleString()}</ItemPrice>
                     {(() => {
                       if (Array.isArray(item.variants) && item.variants.length > 0)
                         return <ItemVariants>{item.variants.join(', ')}</ItemVariants>
@@ -504,7 +529,7 @@ function Cart() {
                 Proceed to Checkout
               </CheckoutBtnStyled>
 
-              <Box component={Link} to="/" sx={{ textDecoration: 'none', display: 'block' }}>
+              <Box component={Link} to="/menu" sx={{ textDecoration: 'none', display: 'block' }}>
                 <SecondaryBtn>Continue Shopping</SecondaryBtn>
               </Box>
             </OrderSummary>

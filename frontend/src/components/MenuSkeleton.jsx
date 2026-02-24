@@ -1,7 +1,7 @@
 import Skeleton from '@mui/material/Skeleton'
 import Box from '@mui/material/Box'
 
-const PLACEHOLDER_COUNT = 8
+const PLACEHOLDER_COUNT = 13
 
 export default function MenuSkeleton() {
   return (

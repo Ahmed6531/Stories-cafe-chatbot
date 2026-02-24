@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import Box from '@mui/material/Box'
 
 export default function Success() {
@@ -34,7 +34,7 @@ export default function Success() {
         <button
           type="button"
           onClick={() => navigate('/')}
-          style={{ border: 0, background: '#00704a', color: '#fff', fontWeight: 900, borderRadius: '12px', padding: '12px 24px', cursor: 'pointer', fontSize: '16px', fontFamily: 'inherit' }}
+          style={{ border: 0, background: '#00704a', color: '#fff', fontWeight: 700, borderRadius: '8px', padding: '8px 20px', cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit' }}
         >
           Back to Home
         </button>
