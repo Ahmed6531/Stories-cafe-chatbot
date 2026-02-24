@@ -21,6 +21,12 @@ export function cartReducer(state, action) {
       };
     case "CART_ERROR":
       return { ...state, loading: false, error: action.payload || "Cart error" };
+    case "REMOVE_ITEM":
+      return {
+        ...state,
+        items: state.items.filter(item => item.lineId !== action.payload),
+        count: state.items.reduce((acc, item) => item.lineId === action.payload ? acc : acc + item.qty, 0)
+      };
     default:
       return state;
   }

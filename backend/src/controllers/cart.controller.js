@@ -146,7 +146,7 @@ export async function updateCartItem(req, res) {
     const item = cart.items.id(lineId);
     if (!item) return res.status(404).json({ error: "Item not found in cart" });
 
-    if (qty <= 0) item.remove();
+    if (qty <= 0) cart.items.pull(lineId);
     else item.qty = qty;
 
     await cart.save();
@@ -163,16 +163,15 @@ export async function removeFromCart(req, res) {
     const { cart, cartId } = await getOrCreateCart(req);
     const { lineId } = req.params;
 
-    const item = cart.items.id(lineId);
-    if (item) {
-      item.remove();
-      await cart.save();
-    }
+    // Use pull to remove item by its subdocument _id
+    cart.items.pull(lineId);
+    await cart.save();
 
     const payload = await buildCartResponse(cart);
     res.set("x-cart-id", cartId);
     res.json(payload);
   } catch (err) {
+    console.error("Remove from cart error:", err);
     res.status(500).json({ error: "Failed to remove from cart" });
   }
 }

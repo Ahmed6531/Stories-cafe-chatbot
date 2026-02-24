@@ -39,17 +39,16 @@ export function CartProvider({ children }) {
   }
 
   const removeFromCart = async (lineId) => {
-    const itemToRemove = state.items.find(item => item.lineId === lineId);
-    const qtyToRemove = itemToRemove ? itemToRemove.qty : 0;
-    
+    // Optimistic update: remove from state immediately
+    dispatch({ type: 'REMOVE_ITEM', payload: lineId });
+
     try {
-      // Send delete request first
       const data = await removeFromCartApi(lineId);
-      // Only update state after backend confirms deletion
+      // Sync state with backend response
       dispatch({ type: 'CART_LOADED', payload: data });
     } catch (err) {
-      // If delete fails, show error but reload to ensure consistency
       dispatch({ type: 'CART_ERROR', payload: err.message });
+      // On error, reload full cart to restore state
       loadCart();
     }
   }
