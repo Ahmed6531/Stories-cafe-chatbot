@@ -205,18 +205,27 @@ export async function getMenuByCategory(req, res) {
   }
 }
 // POST /api/menu -create new menu items (admin only)
-export async function createMenuItem(req,res){
- try {
+export async function createMenuItem(req, res) {
+  try {
     console.log("📥 POST /menu request received");
     const { name, category, description, basePrice, image, slug, isAvailable, isFeatured } = req.body;
 
     // Validate required fields
-    if (!name || !category || !description || basePrice === undefined || !image || !slug) {
-      return res.status(400).json({
-        success: false,
-        error: "Missing required fields: name, category, description, basePrice, image, slug",
-      });
-    }
+    const missingFields = [];
+
+if (!name) missingFields.push("name");
+if (!category) missingFields.push("category");
+if (!description) missingFields.push("description");
+if (basePrice === undefined) missingFields.push("basePrice");
+if (!image) missingFields.push("image");
+if (!slug) missingFields.push("slug");
+
+if (missingFields.length > 0) {
+  return res.status(400).json({
+    success: false,
+    error: `Missing or incorrect field(s): ${missingFields.join(", ")}`
+  });
+}
 
     // Generate next numeric ID
     const lastItem = await MenuItem.findOne().sort({ id: -1 });
@@ -251,18 +260,55 @@ export async function createMenuItem(req,res){
     });
   }
 }
-//PATCH /api/menu/:id -update menu items (admin only)
-export async function updateMenuItem(req,res){
- try {
-    const { id } = req.params;
-    console.log(`📥 PATCH /menu/${id} request received`);
 
+// PATCH /api/menu/:id - update menu items (admin only)
+export async function updateMenuItem(req, res) {
+  try {
+    const { id } = req.params;
+    console.log(`📥 PATCH /menu/${id} request received with data:`, req.body);
+
+    // Prevent updating the numeric id field
+    if (req.body.id) {
+      delete req.body.id;
+    }
+
+    // Validate data types if provided
+    const allowedFields = ['name', 'slug', 'image', 'category', 'subcategory', 'description', 'basePrice', 'isAvailable', 'isFeatured', 'variantGroups'];
+    const updateData = {};
+
+    for (const field of allowedFields) {
+      if (field in req.body) {
+        // Type validation
+        if (field === 'basePrice') {
+          updateData[field] = parseFloat(req.body[field]);
+        } else if (field === 'isAvailable' || field === 'isFeatured') {
+          updateData[field] = Boolean(req.body[field]);
+        } else if (field === 'slug') {
+          updateData[field] = req.body[field].trim().toLowerCase();
+        } else if (Array.isArray(req.body[field])) {
+          updateData[field] = req.body[field];
+        } else {
+          updateData[field] = req.body[field];
+        }
+      }
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "No valid fields to update",
+      });
+    }
+
+    // ✅ KEY FIX: Use findOneAndUpdate with proper write concern
     const updatedItem = await MenuItem.findOneAndUpdate(
       { id: parseInt(id) },
-      {
-        $set: req.body
-      },
-      { new: true, runValidators: true }
+      { $set: updateData },
+      { 
+        new: true, 
+        runValidators: true,
+        writeConcern: { w: 1, j: true } // ✅ Ensure write is journaled
+      }
     );
 
     if (!updatedItem) {
@@ -272,7 +318,17 @@ export async function updateMenuItem(req,res){
       });
     }
 
-    console.log(`✅ Updated menu item: ${updatedItem.name}`);
+    // ✅ CRITICAL FIX: Verify the update persisted by re-fetching
+    const verifiedItem = await MenuItem.findOne({ id: parseInt(id) });
+    if (!verifiedItem) {
+      console.error("❌ PERSISTENCE ERROR: Item was not saved to database!");
+      return res.status(500).json({
+        success: false,
+        error: "Failed to persist changes to database",
+      });
+    }
+
+    console.log(`✅ Updated menu item: ${updatedItem.name}`, updateData);
     res.status(200).json({
       success: true,
       message: "Menu item updated successfully",
@@ -286,13 +342,17 @@ export async function updateMenuItem(req,res){
     });
   }
 }
-//DELETE /api/menu/:id -delete menu item (admin only)
-export async function deleteMenuItem( req,res){
- try {
+
+// DELETE /api/menu/:id - delete menu item (admin only)
+export async function deleteMenuItem(req, res) {
+  try {
     const { id } = req.params;
     console.log(`📥 DELETE /menu/${id} request received`);
 
-    const deletedItem = await MenuItem.findOneAndDelete({ id: parseInt(id) });
+    const deletedItem = await MenuItem.findOneAndDelete(
+      { id: parseInt(id) },
+      { writeConcern: { w: 1, j: true } } // ✅ Ensure delete is journaled
+    );
 
     if (!deletedItem) {
       return res.status(404).json({
