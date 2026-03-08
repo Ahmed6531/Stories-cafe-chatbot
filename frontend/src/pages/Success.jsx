@@ -31,13 +31,31 @@ export default function Success() {
       </div>
 
       <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
-        <button
+        <Box
+          component="button"
           type="button"
           onClick={() => navigate('/')}
-          style={{ border: 0, background: '#00704a', color: '#fff', fontWeight: 700, borderRadius: '8px', padding: '8px 20px', cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit' }}
+          sx={{
+            border: 'none',
+            backgroundColor: '#1e5631',
+            color: '#fff',
+            fontWeight: 600,
+            borderRadius: '8px',
+            padding: '1rem 2rem',
+            cursor: 'pointer',
+            width: '220px',
+            fontSize: '1rem',
+            fontFamily: "'Montserrat', sans-serif",
+            letterSpacing: '0.5px',
+            transition: 'all 0.3s ease',
+            '&:hover': {
+              backgroundColor: '#1e5631',
+              transform: 'translateY(-2px)',
+            },
+          }}
         >
           Back to Home
-        </button>
+        </Box>
       </div>
     </Box>
   )

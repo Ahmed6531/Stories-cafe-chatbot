@@ -43,6 +43,10 @@ const Topbar = styled('header')(() => ({
   justifyContent: 'space-between',
   borderBottom: `1px solid ${brand.borderLight}`,
   alignItems: 'center',
+  position: 'sticky',
+  top: 0,
+  zIndex: 100,
+  backgroundColor: '#fff',
 }))
 
 const TopbarLeft = styled(Box)(() => ({
@@ -295,6 +299,8 @@ export default function Navbar() {
     location.pathname === '/cart' ||
     location.pathname.startsWith('/item/')
 
+  const isSuccessRoute = location.pathname === '/success'
+
   const navItems = [
     { label: 'Home', to: '/', icon: <HomeIcon /> },
     { label: 'Menu', to: '/menu', icon: <MenuBookIcon /> },
@@ -302,7 +308,7 @@ export default function Navbar() {
   ]
 
   useEffect(() => {
-    if (pageRef.current) pageRef.current.scrollTop = 0
+    pageRef.current?.scrollTo({ top: 0, behavior: 'auto' })
   }, [location.pathname, location.search])
 
   const closeChat = () => {
@@ -354,7 +360,12 @@ export default function Navbar() {
 
     const handleMouseMove = (e) => {
       const delta = startX - e.clientX
-      setChatWidth(Math.min(600, Math.max(280, startWidth + delta)))
+      const newWidth = startWidth + delta
+
+      // Fixed ceiling: always reserve space for open drawer + 774px content
+      const maxChat = window.innerWidth - DRAWER_OPEN_WIDTH - 774
+
+      setChatWidth(Math.min(Math.max(280, maxChat), Math.max(280, newWidth)))
     }
 
     const handleMouseUp = () => {
@@ -426,7 +437,7 @@ export default function Navbar() {
 
   return (
     <div className="app-shell">
-      <StyledDrawer variant="permanent" open={drawerOpen}>
+      <StyledDrawer variant="permanent" open={drawerOpen} sx={{ display: isSuccessRoute ? 'none' : undefined, position: 'sticky', top: 0, height: '100vh', alignSelf: 'flex-start', '& .MuiDrawer-paper': { height: '100vh' } }}>
         <Box
           sx={{
             height: 64,
@@ -541,7 +552,7 @@ export default function Navbar() {
         <main className="main">
           <Topbar>
             <TopbarLeft>
-              {!drawerOpen && (
+              {(!drawerOpen || isSuccessRoute) && (
                 <Box
                   component="img"
                   src="/stories-logo.png"
@@ -553,7 +564,7 @@ export default function Navbar() {
                   }}
                 />
               )}
-              {location.pathname !== '/' && (
+              {location.pathname !== '/' && !isSuccessRoute && (
                 <BreadcrumbNav component="nav">
                   {crumbs.map((c, idx) => (
                     <span key={c.to + idx} className="crumb">
@@ -565,7 +576,7 @@ export default function Navbar() {
               )}
             </TopbarLeft>
 
-            <TopbarActions>
+            <TopbarActions sx={{ display: isSuccessRoute ? 'none' : undefined }}>
               {isAuthed ? (
                 <TopPillBtn isAuth type="button" onClick={() => navigate(-1)}>Back</TopPillBtn>
               ) : (
@@ -600,7 +611,7 @@ export default function Navbar() {
         {isChatAllowedRoute && (chatOpen || chatClosing) && (
           <div
             className={`chat-unit${chatClosing ? ' chat-unit-closing' : ''}`}
-            style={{ '--chat-panel-width': `${chatWidth}px` }}
+            style={{ '--chat-panel-width': `${chatWidth}px`, position: 'sticky', top: 0, height: '100vh', alignSelf: 'flex-start' }}
             onAnimationEnd={handleAnimationEnd}
           >
             <div className="resize-handle" onMouseDown={handleResizeStart} />

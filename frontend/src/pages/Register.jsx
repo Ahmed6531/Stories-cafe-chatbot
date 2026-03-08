@@ -51,12 +51,31 @@ export default function Register() {
           <input type="password" name="confirmPassword" value={formData.confirmPassword} onChange={handleChange} required style={inputStyle} />
         </div>
 
-        <button
+        <Box
+          component="button"
           type="submit"
-          style={{ marginTop: '12px', border: 0, background: '#00704a', color: '#fff', fontWeight: 900, borderRadius: '12px', padding: '12px 14px', cursor: 'pointer', width: '100%', fontSize: '16px', fontFamily: 'inherit' }}
+          sx={{
+            marginTop: '12px',
+            border: 'none',
+            backgroundColor: '#1e5631',
+            color: '#fff',
+            fontWeight: 600,
+            borderRadius: '8px',
+            padding: '1rem 2rem',
+            cursor: 'pointer',
+            width: '100%',
+            fontSize: '1rem',
+            fontFamily: "'Montserrat', sans-serif",
+            letterSpacing: '0.5px',
+            transition: 'all 0.3s ease',
+            '&:hover': {
+              backgroundColor: '#1e5631',
+              transform: 'translateY(-2px)',
+            },
+          }}
         >
           Register
-        </button>
+        </Box>
       </form>
 
       <p style={{ textAlign: 'center', marginTop: '16px' }}>

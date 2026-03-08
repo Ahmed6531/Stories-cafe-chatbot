@@ -149,24 +149,31 @@ export default function Checkout() {
             />
           </div>
 
-          <button
+          <Box
+            component="button"
             type="submit"
-            style={{
+            sx={{
               marginTop: '12px',
-              border: 0,
-              background: '#00704a',
+              border: 'none',
+              backgroundColor: '#1e5631',
               color: '#fff',
-              fontWeight: 900,
-              borderRadius: '12px',
-              padding: '12px 14px',
+              fontWeight: 600,
+              borderRadius: '8px',
+              padding: '1rem 2rem',
               cursor: 'pointer',
               width: '100%',
-              fontSize: '16px',
-              fontFamily: 'inherit',
+              fontSize: '1rem',
+              fontFamily: "'Montserrat', sans-serif",
+              letterSpacing: '0.5px',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                backgroundColor: '#1e5631',
+                transform: 'translateY(-2px)',
+              },
             }}
           >
             Place Order
-          </button>
+          </Box>
         </form>
       </div>
 

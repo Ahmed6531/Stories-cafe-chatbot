@@ -28,6 +28,11 @@ import {
   Typography,
 } from '@mui/material'
 
+const brand = {
+  fontBase: "'Montserrat', sans-serif",
+  fontDisplay: "'DIN Alternate Bold', 'Montserrat', sans-serif",
+}
+
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n))
 }
@@ -477,14 +482,20 @@ export default function MenuItemDetails() {
 
   if (loading)
     return (
-      <Container sx={{ py: 3 }}>
+      <Container sx={{ py: 3, '& .MuiTypography-root': { fontFamily: brand.fontBase } }}>
         <Typography>Loading...</Typography>
       </Container>
     )
 
   if (!item)
     return (
-      <Container sx={{ py: 3 }}>
+      <Container
+        sx={{
+          py: 3,
+          '& .MuiTypography-root': { fontFamily: brand.fontBase },
+          '& .MuiButton-root': { fontFamily: brand.fontBase },
+        }}
+      >
         <Typography>Item not found</Typography>
         <Button onClick={() => navigate('/menu')}>Back</Button>
       </Container>
@@ -494,7 +505,17 @@ export default function MenuItemDetails() {
   const showPlaceholder = !item.image || imageError
 
   return (
-    <Container sx={{ py: 3 }}>
+    <Container
+      sx={{
+        py: 3,
+        '& .MuiTypography-root': { fontFamily: brand.fontBase },
+        '& .MuiButton-root': { fontFamily: brand.fontBase },
+        '& .MuiInputBase-input': { fontFamily: brand.fontBase },
+        '& .MuiInputLabel-root': { fontFamily: brand.fontBase },
+        '& .MuiMenuItem-root': { fontFamily: brand.fontBase },
+        '& .MuiChip-root': { fontFamily: brand.fontBase },
+      }}
+    >
       <Button onClick={() => navigate('/menu')} sx={{ mb: 2 }}>
         ← Back to Menu
       </Button>
@@ -554,7 +575,7 @@ export default function MenuItemDetails() {
             )}
           </Box>
           <Box sx={{ flex: 1 }}>
-            <Typography variant="h5" fontWeight={900}>
+            <Typography variant="h5" fontWeight={900} sx={{ fontFamily: brand.fontDisplay }}>
               {item.name}
             </Typography>
             {item.description && (

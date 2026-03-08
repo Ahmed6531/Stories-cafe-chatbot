@@ -1,6 +1,7 @@
 // migrated from menu.css
 import { useMemo, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useDragScroll } from '../hooks/useDragScroll'
 import { Box, Typography, styled } from '@mui/material'
 import FeaturedItems from '../components/FeaturedItems'
 import { fetchMenu } from '../API/menuApi'
@@ -101,6 +102,7 @@ const Catbar = styled(Box)(() => ({
   scrollbarWidth: 'none',
   padding: '4px 0 8px',
   overscrollBehaviorX: 'contain',
+  cursor: 'grab',
   '&::-webkit-scrollbar': {
     display: 'none',
   }
@@ -185,6 +187,9 @@ const CatChipImage = styled('img')(() => ({
   borderRadius: '12px',
   background: 'transparent',
   transition: 'transform 0.3s ease',
+  pointerEvents: 'none',
+  userSelect: 'none',
+  WebkitUserDrag: 'none',
 }));
 
 // .cat-chip-text
@@ -198,6 +203,7 @@ const CatChipText = styled('span')(() => ({
 
 export default function Home() {
   const navigate = useNavigate()
+  const { ref: catbarRef, onMouseDown: catbarMouseDown } = useDragScroll()
   const [items, setItems] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
@@ -255,7 +261,7 @@ export default function Home() {
         <StatusText isError>{error}</StatusText>
       ) : categories.length > 0 ? (
         <CatbarWrap>
-          <Catbar>
+          <Catbar ref={catbarRef} onMouseDown={catbarMouseDown}>
             <CatbarInner>
               {categories.map((c) => (
                 <CatChip key={c} type="button" onClick={() => pickCategory(c)}>
@@ -263,6 +269,7 @@ export default function Home() {
                     <CatChipImage
                       src={categoryImages[c] || '/images/placeholder.png'}
                       alt={c}
+                      draggable={false}
                       onError={(e) => { e.currentTarget.src = '/images/placeholder.png' }}
                     />
                     <CatChipText>{c === 'Mixed Beverages' ? 'Mixed Bev.' : c}</CatChipText>

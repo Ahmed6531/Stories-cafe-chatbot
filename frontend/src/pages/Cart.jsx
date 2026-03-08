@@ -42,10 +42,10 @@ const CheckoutPage = styled(Box)(() => ({
 const CheckoutContainer = styled(Box)(({ theme }) => ({
   maxWidth: '1200px',
   margin: '0 auto',
-  padding: '1.25rem 2rem 3rem',
+  padding: '10px 2rem 3rem',
 
   [theme.breakpoints.down('md')]: {
-    padding: '1rem 1rem 2rem',
+    padding: '10px 1rem 2rem',
   },
 }));
 
@@ -83,15 +83,12 @@ const EmptyCart = styled(Box)(() => ({
   },
 }));
 
-const CartContent = styled(Box)(({ theme }) => ({
-  display: 'grid',
-  gridTemplateColumns: '1fr 400px',
-  gap: '3rem',
-  alignItems: 'start',
-
-  [theme.breakpoints.down('lg')]: {
-    gridTemplateColumns: '1fr',
-  },
+const CartContent = styled(Box)(() => ({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '1.5rem',
+  maxWidth: '720px',
+  margin: '0 auto',
 }));
 
 const CartItems = styled(Box)(({ theme }) => ({
@@ -275,25 +272,18 @@ const RemoveBtn = styled('button')(({ theme }) => ({
   },
 }));
 
-const OrderSummary = styled(Box)(({ theme }) => ({
+const OrderSummary = styled(Box)(() => ({
   background: 'white',
   borderRadius: '12px',
   padding: '2rem',
   boxShadow: '0 2px 16px rgba(0,0,0,0.07)',
   border: '1px solid #e8e5e1',
   borderTop: '3px solid #00704a',
-  position: 'sticky',
-  top: '2rem',
-
   '& h2': {
     margin: '0 0 1.5rem 0',
     fontSize: '1.5rem',
     fontWeight: 600,
     color: brand.textPrimary,
-  },
-
-  [theme.breakpoints.down('md')]: {
-    position: 'static',
   },
 }));
 

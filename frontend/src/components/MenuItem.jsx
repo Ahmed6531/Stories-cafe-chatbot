@@ -69,7 +69,7 @@ const ItemCta = styled('button')(({ theme }) => ({
   alignItems: 'center',
   justifyContent: 'center',
   border: '1px solid #2f7f5e',
-  borderRadius: '12px',
+  borderRadius: '6px',
   background: '#2a7a59',
   color: '#ffffff',
   width: '28px',
@@ -100,7 +100,7 @@ const ItemCta = styled('button')(({ theme }) => ({
     width: '24px',
     height: '24px',
     fontSize: '14px',
-    borderRadius: '8px',
+    borderRadius: '4px',
     top: '7px',
     right: '7px',
 

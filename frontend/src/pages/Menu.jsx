@@ -1,5 +1,6 @@
 // migrated from menu.css
 import { useMemo, useState, useEffect } from 'react'
+import { useDragScroll } from '../hooks/useDragScroll'
 import { useSearchParams } from 'react-router-dom'
 import { Box, Typography, styled } from '@mui/material'
 import MenuList from '../components/MenuList'
@@ -127,6 +128,7 @@ const Catbar = styled(Box)(() => ({
   scrollbarWidth: 'none',
   padding: '4px 0 8px',
   overscrollBehaviorX: 'contain',
+  cursor: 'grab',
   '&::-webkit-scrollbar': {
     display: 'none',
   },
@@ -213,6 +215,9 @@ const CatChipImage = styled('img')(() => ({
   borderRadius: '12px',
   background: 'transparent',
   transition: 'transform 0.3s ease',
+  pointerEvents: 'none',
+  userSelect: 'none',
+  WebkitUserDrag: 'none',
 }));
 
 // .cat-chip-text
@@ -277,6 +282,7 @@ const RetryBtn = styled('button')(() => ({
 }));
 
 export default function Menu() {
+  const { ref: catbarRef, onMouseDown: catbarMouseDown } = useDragScroll()
   const [params, setParams] = useSearchParams()
   const category = params.get('category') // No default - falsy means show all
   const [subcategory, setSubcategory] = useState(null)
@@ -380,7 +386,7 @@ export default function Menu() {
       </SectionHeading>
 
       <CatbarWrap>
-        <Catbar>
+        <Catbar ref={catbarRef} onMouseDown={catbarMouseDown}>
           <CatbarInner>
             {categories.length > 0 ? (
               categories.map((c) => (
@@ -394,6 +400,7 @@ export default function Menu() {
                     <CatChipImage
                       src={categoryImages[c] || '/images/placeholder.png'}
                       alt={c}
+                      draggable={false}
                       onError={(e) => {
                         e.currentTarget.src = '/images/placeholder.png'
                       }}
@@ -411,7 +418,11 @@ export default function Menu() {
         </Catbar>
       </CatbarWrap>
 
-      {subcategories.length > 0 && (
+      <Box sx={{
+        overflow: 'hidden',
+        maxHeight: subcategories.length > 0 ? '56px' : '0px',
+        transition: 'max-height 0.25s ease',
+      }}>
         <SubcatBar>
           {subcategories.map((s) => (
             <SubcatChip
@@ -426,7 +437,7 @@ export default function Menu() {
             </SubcatChip>
           ))}
         </SubcatBar>
-      )}
+      </Box>
 
       <MenuList items={filteredItems} />
     </PageWrap>
