@@ -131,6 +131,7 @@ const CartBadge = styled(Box)(() => ({
 
 const DRAWER_OPEN_WIDTH = 240
 const DRAWER_CLOSED_WIDTH = 64
+const CHAT_PANEL_WIDTH = 420
 
 const paperStyles = {
   borderRight: '1px solid #e9e9e9',
@@ -278,7 +279,6 @@ export default function Navbar() {
   const [chatClosing, setChatClosing] = useState(false)
   const [micMode, setMicMode] = useState('idle')
   const [chatInput, setChatInput] = useState('')
-  const [chatWidth, setChatWidth] = useState(380)
   const [messages, setMessages] = useState([])
   const [typing, setTyping] = useState(false)
   const [chipsVisible, setChipsVisible] = useState(true)
@@ -352,30 +352,6 @@ export default function Navbar() {
   useEffect(() => {
     if (msgsRef.current) msgsRef.current.scrollTop = msgsRef.current.scrollHeight
   }, [messages, typing])
-
-  const handleResizeStart = (event) => {
-    event.preventDefault()
-    const startX = event.clientX
-    const startWidth = chatWidth
-
-    const handleMouseMove = (e) => {
-      const delta = startX - e.clientX
-      const newWidth = startWidth + delta
-
-      // Fixed ceiling: always reserve space for open drawer + 774px content
-      const maxChat = window.innerWidth - DRAWER_OPEN_WIDTH - 774
-
-      setChatWidth(Math.min(Math.max(280, maxChat), Math.max(280, newWidth)))
-    }
-
-    const handleMouseUp = () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
-  }
 
   const stopPendingReply = () => {
     if (pendingReplyTimeoutRef.current) {
@@ -611,10 +587,10 @@ export default function Navbar() {
         {isChatAllowedRoute && (chatOpen || chatClosing) && (
           <div
             className={`chat-unit${chatClosing ? ' chat-unit-closing' : ''}`}
-            style={{ '--chat-panel-width': `${chatWidth}px`, position: 'sticky', top: 0, height: '100vh', alignSelf: 'flex-start' }}
+            style={{ '--chat-panel-width': `${CHAT_PANEL_WIDTH}px`, position: 'sticky', top: 0, height: '100vh', alignSelf: 'flex-start' }}
             onAnimationEnd={handleAnimationEnd}
           >
-            <div className="resize-handle" onMouseDown={handleResizeStart} />
+            <div className="resize-handle" aria-hidden="true" />
             <div className="chat-panel-shell">
               <aside className="chat-panel">
                 <div className="cp-header">
