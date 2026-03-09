@@ -135,6 +135,9 @@ const CartBadge = styled(Box)(() => ({
 const DRAWER_OPEN_WIDTH = 240
 const DRAWER_CLOSED_WIDTH = 64
 const CHAT_PANEL_WIDTH = 420
+const CHAT_STORAGE_KEY = 'chatMessages'
+const CHAT_STORAGE_TS_KEY = 'chatMessagesSavedAt'
+const CHAT_TTL_MS = 24 * 60 * 60 * 1000
 
 const paperStyles = {
   borderRight: '1px solid #e9e9e9',
@@ -279,12 +282,22 @@ function Bubble({ msg, prevTime }) {
 export default function Navbar() {
   const initialMessages = useMemo(() => {
     try {
-      const saved = localStorage.getItem('chatMessages')
+      const saved = localStorage.getItem(CHAT_STORAGE_KEY)
       if (!saved) return []
+      const savedAtRaw = localStorage.getItem(CHAT_STORAGE_TS_KEY)
+      const savedAt = Number(savedAtRaw)
+      // eslint-disable-next-line react-hooks/purity
+      if (!Number.isFinite(savedAt) || Date.now() - savedAt > CHAT_TTL_MS) {
+        localStorage.removeItem(CHAT_STORAGE_KEY)
+        localStorage.removeItem(CHAT_STORAGE_TS_KEY)
+        return []
+      }
       const parsed = JSON.parse(saved)
       return Array.isArray(parsed) ? parsed : []
     } catch (e) {
       console.error('Failed to restore chat history:', e)
+      localStorage.removeItem(CHAT_STORAGE_KEY)
+      localStorage.removeItem(CHAT_STORAGE_TS_KEY)
       return []
     }
   }, [])
@@ -388,7 +401,13 @@ export default function Navbar() {
   }, [])
 
   useEffect(() => {
-    localStorage.setItem('chatMessages', JSON.stringify(messages))
+    if (messages.length === 0) {
+      localStorage.removeItem(CHAT_STORAGE_KEY)
+      localStorage.removeItem(CHAT_STORAGE_TS_KEY)
+      return
+    }
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages))
+    localStorage.setItem(CHAT_STORAGE_TS_KEY, String(Date.now()))
   }, [messages])
 
   const stopPendingReply = () => {
@@ -400,6 +419,22 @@ export default function Navbar() {
     setVoiceActive(false)
     setMicMode('idle')
   }
+
+  useEffect(() => {
+    if (!isSuccessRoute) return
+    if (pendingReplyTimeoutRef.current) {
+      window.clearTimeout(pendingReplyTimeoutRef.current)
+      pendingReplyTimeoutRef.current = null
+    }
+    setTyping(false)
+    setVoiceActive(false)
+    setMicMode('idle')
+    setChatInput('')
+    setMessages([])
+    setChipsVisible(true)
+    localStorage.removeItem(CHAT_STORAGE_KEY)
+    localStorage.removeItem(CHAT_STORAGE_TS_KEY)
+  }, [isSuccessRoute])
 
   const toggleVoiceCapture = () => {
     if (!isOnline) {
@@ -420,7 +455,6 @@ export default function Navbar() {
   }
 
   const cycleMicMode = () => toggleVoiceCapture()
-  const handleInputMicClick = () => toggleVoiceCapture()
 
   const appendMessage = (message) => {
     setChipsVisible(false)
@@ -749,36 +783,6 @@ export default function Navbar() {
                       </button>
                     )}
                   </div>
-                  <Tooltip title={!isOnline ? 'Voice input unavailable while offline' : ''}>
-                    <span>
-                      <button
-                        className={`chat-input-mic ${micMode === 'listening' ? 'active' : ''} ${micMode === 'thinking' ? 'active listening-stop' : ''}`}
-                        type="button"
-                        aria-label={micMode === 'listening' ? 'Listening, tap to stop' : micMode === 'thinking' ? 'Processing your message' : 'Tap to speak'}
-                        onClick={handleInputMicClick}
-                        disabled={!isOnline}
-                      >
-                        {micMode === 'thinking' ? (
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                            <rect x="5.5" y="5.5" width="13" height="13" rx="2.4" />
-                          </svg>
-                        ) : micMode === 'listening' ? (
-                          <span className="chat-input-mic-wave" aria-hidden="true">
-                            <span className="chat-input-mic-bar" />
-                            <span className="chat-input-mic-bar" />
-                            <span className="chat-input-mic-bar" />
-                          </span>
-                        ) : (
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="9" y="3" width="6" height="11" rx="3" />
-                            <path d="M5 11a7 7 0 0 0 14 0" />
-                            <line x1="12" y1="18" x2="12" y2="21" />
-                            <line x1="8" y1="21" x2="16" y2="21" />
-                          </svg>
-                        )}
-                      </button>
-                    </span>
-                  </Tooltip>
                 </div>
               </aside>
             </div>
