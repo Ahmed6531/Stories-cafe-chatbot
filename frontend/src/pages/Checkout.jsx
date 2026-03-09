@@ -22,7 +22,7 @@ const labelStyle = {
 
 export default function Checkout() {
   const navigate = useNavigate();
-  const { state, cartCount } = useCart();
+  const { state, cartCount, clearCart } = useCart();
   const { items } = state;
 
   const [formData, setFormData] = useState({
@@ -66,6 +66,7 @@ export default function Checkout() {
       const response = await http.post('/orders', payload);
       if (response.data.orderNumber) {
         localStorage.removeItem('cartId');
+        await clearCart();
         navigate('/success', { state: { orderNumber: response.data.orderNumber } });
       }
     } catch (err) {
