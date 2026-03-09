@@ -422,30 +422,6 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
   transform-origin: center;
 }
 
-.voice-wave-bars {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  height: 20px;
-  margin-top: 6px;
-  opacity: 0;
-  transition: opacity 200ms ease;
-}
-[data-mode="listening"] .voice-wave-bars { opacity: 1; }
-
-.voice-wave-bar {
-  width: 3px;
-  border-radius: 2px;
-  background: #1a6b3c;
-  height: 4px;
-}
-[data-mode="listening"] .voice-wave-bar:nth-child(1) { animation: bar-wave 0.85s ease-in-out infinite 0s; }
-[data-mode="listening"] .voice-wave-bar:nth-child(2) { animation: bar-wave 0.85s ease-in-out infinite 0.1s; }
-[data-mode="listening"] .voice-wave-bar:nth-child(3) { animation: bar-wave 0.85s ease-in-out infinite 0.2s; }
-[data-mode="listening"] .voice-wave-bar:nth-child(4) { animation: bar-wave 0.85s ease-in-out infinite 0.1s; }
-[data-mode="listening"] .voice-wave-bar:nth-child(5) { animation: bar-wave 0.85s ease-in-out infinite 0s; }
-
 .voice-state-label {
   font-size: 10px;
   font-weight: 600;
@@ -454,10 +430,12 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
   text-align: center;
   min-height: 16px;
   opacity: 0;
+  position: relative;
+  top: 2px;
   transition: opacity 200ms ease, color 200ms ease;
 }
 [data-mode="idle"] .voice-state-label { opacity: 1; color: #9ca3af; }
-[data-mode="listening"] .voice-state-label { opacity: 1; color: #1a6b3c; }
+[data-mode="listening"] .voice-state-label { opacity: 1; color: #9ca3af; }
 [data-mode="thinking"] .voice-state-label { opacity: 1; color: #9ca3af; }
 
 .voice-fab {
@@ -507,10 +485,6 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
 @keyframes arc-spin {
   from { transform: translate(-50%, -50%) rotate(-90deg); }
   to { transform: translate(-50%, -50%) rotate(270deg); }
-}
-@keyframes bar-wave {
-  0%, 100% { height: 4px; }
-  50% { height: 20px; }
 }
 @keyframes fab-pulse {
   0%   { transform: scale(1);   opacity: 0.6; }
@@ -627,7 +601,7 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
   left: 0;
   right: 0;
   bottom: 0;
-  height: 220px;
+  height: 140px;
   background: linear-gradient(to bottom, transparent 0%, #fafafa 66%, #fafafa 100%);
   pointer-events: none;
   z-index: 2;
@@ -654,10 +628,10 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
   transition: top 0.45s cubic-bezier(0.22, 1, 0.36, 1), transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), height 0.35s ease, background 0.35s ease, padding 0.35s ease;
 }
 .chat-mic-zone-active {
-  top: calc(100% - 148px);
+  top: calc(100% - 100px);
   transform: translateY(0);
-  height: 148px;
-  padding: 0 20px 12px;
+  height: 100px;
+  padding: 0 20px 8px;
   background: transparent;
 }
 
