@@ -29,30 +29,36 @@ const PageWrap = styled(Box)(() => ({
   width: '100%',
   display: 'flex',
   flexDirection: 'column',
-  gap: '14px',
+  gap: '10px',
 }));
 
 // .section-heading
 const SectionHeading = styled(Box)(() => ({
-  marginTop: '10px',
+  marginTop: '4px',
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
-  gap: '6px',
+  gap: '4px',
 }));
 
 // .section-title
-const SectionTitle = styled(Typography)(() => ({
+const SectionLabel = styled(Typography)(({ theme }) => ({
   fontFamily: brand.fontDisplay,
-  fontSize: '28px',
-  fontWeight: 700,
-  letterSpacing: '0.06em',
+  fontSize: '1.5rem',
+  fontWeight: 900,
+  letterSpacing: '0.04em',
   textTransform: 'uppercase',
   color: brand.primary,
   margin: 0,
   textAlign: 'center',
   position: 'relative',
   paddingBottom: '8px',
+
+  [theme.breakpoints.down('sm')]: {
+    fontSize: '1.25rem',
+    letterSpacing: '0.04em',
+    paddingBottom: '4px',
+  },
 }));
 
 // .state-text
@@ -67,17 +73,17 @@ const StatusText = styled(Typography, {
 }));
 
 // .catbar-wrap
-const CatbarWrap = styled(Box)(() => ({
+const CatbarWrap = styled(Box)(({ theme }) => ({
   position: 'relative',
   width: '100%',
   '&::after': {
     content: '""',
     position: 'absolute',
     top: 0,
-    right: 0,
-    width: '56px',
+    right: '-1px',
+    width: '38px',
     height: '100%',
-    background: 'linear-gradient(to right, transparent, #fff)',
+    background: 'linear-gradient(to right, rgba(255,255,255,0), rgba(255,255,255,0.78) 72%, #fff 100%)',
     pointerEvents: 'none',
     zIndex: 1,
   },
@@ -85,13 +91,17 @@ const CatbarWrap = styled(Box)(() => ({
     content: '""',
     position: 'absolute',
     top: 0,
-    left: 0,
-    width: '56px',
+    left: '-1px',
+    width: '28px',
     height: '100%',
-    background: 'linear-gradient(to left, transparent, #fff)',
+    background: 'linear-gradient(to left, rgba(255,255,255,0), rgba(255,255,255,0.56) 76%, #fff 100%)',
     pointerEvents: 'none',
     zIndex: 1,
-  }
+  },
+  [theme.breakpoints.down('sm')]: {
+    '&::after': { width: '30px' },
+    '&::before': { width: '22px' },
+  },
 }));
 
 // .catbar
@@ -109,20 +119,29 @@ const Catbar = styled(Box)(() => ({
 }));
 
 // .catbar-inner
-const CatbarInner = styled(Box)(() => ({
+const CatbarInner = styled(Box)(({ theme }) => ({
   display: 'flex',
   gap: '12px',
   flexWrap: 'nowrap',
   alignItems: 'center',
   justifyContent: 'center',
   minWidth: 'max-content',
-  padding: '0 24px',
+  padding: '0 18px',
+
+  [theme.breakpoints.down('md')]: {
+    gap: '10px',
+    padding: '0 14px',
+  },
+  [theme.breakpoints.down('sm')]: {
+    gap: '8px',
+    padding: '0 10px',
+  },
 }));
 
 // .cat-chip
 const CatChip = styled('button', {
   shouldForwardProp: (prop) => prop !== 'isActive',
-})(({ isActive }) => ({
+})(({ theme, isActive }) => ({
   padding: 0,
   border: '1px solid #d6e4dd',
   backgroundColor: '#ffffff',
@@ -140,6 +159,19 @@ const CatChip = styled('button', {
   minWidth: '120px',
   maxWidth: '140px',
   flexShrink: 0,
+
+  [theme.breakpoints.down('md')]: {
+    minWidth: '100px',
+    maxWidth: '120px',
+    fontSize: '13px',
+    borderRadius: '16px',
+  },
+  [theme.breakpoints.down('sm')]: {
+    minWidth: '84px',
+    maxWidth: '104px',
+    fontSize: '12px',
+    borderRadius: '14px',
+  },
 
   ...(isActive ? {
     background: brand.primary,
@@ -171,16 +203,25 @@ const CatChip = styled('button', {
 }));
 
 // .cat-chip-content
-const CatChipContent = styled(Box)(() => ({
+const CatChipContent = styled(Box)(({ theme }) => ({
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
   padding: '16px 12px',
   gap: '8px',
+
+  [theme.breakpoints.down('md')]: {
+    padding: '12px 10px',
+    gap: '6px',
+  },
+  [theme.breakpoints.down('sm')]: {
+    padding: '10px 8px',
+    gap: '5px',
+  },
 }));
 
 // .cat-chip-image
-const CatChipImage = styled('img')(() => ({
+const CatChipImage = styled('img')(({ theme }) => ({
   width: '56px',
   height: '56px',
   objectFit: 'cover',
@@ -190,15 +231,33 @@ const CatChipImage = styled('img')(() => ({
   pointerEvents: 'none',
   userSelect: 'none',
   WebkitUserDrag: 'none',
+
+  [theme.breakpoints.down('md')]: {
+    width: '46px',
+    height: '46px',
+    borderRadius: '10px',
+  },
+  [theme.breakpoints.down('sm')]: {
+    width: '38px',
+    height: '38px',
+    borderRadius: '8px',
+  },
 }));
 
 // .cat-chip-text
-const CatChipText = styled('span')(() => ({
+const CatChipText = styled('span')(({ theme }) => ({
   fontSize: '13px',
   fontWeight: 700,
   textAlign: 'center',
   lineHeight: 1.2,
   display: 'block',
+
+  [theme.breakpoints.down('md')]: {
+    fontSize: '12px',
+  },
+  [theme.breakpoints.down('sm')]: {
+    fontSize: '11px',
+  },
 }));
 
 export default function Home() {
@@ -252,7 +311,7 @@ export default function Home() {
   return (
     <PageWrap>
       <SectionHeading>
-        <SectionTitle component="h2">Categories</SectionTitle>
+        <SectionLabel component="h2">Categories</SectionLabel>
       </SectionHeading>
 
       {loading ? (
@@ -284,7 +343,7 @@ export default function Home() {
       )}
 
       <SectionHeading>
-        <SectionTitle component="h2">Featured items</SectionTitle>
+        <SectionLabel component="h2">Featured items</SectionLabel>
       </SectionHeading>
 
       {loading ? (

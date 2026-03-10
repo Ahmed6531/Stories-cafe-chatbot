@@ -1,42 +1,20 @@
-// Navbar.jsx (resolved: keep MUI drawer + chat from incoming, keep current's prevCategory tracking logic)
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
-import { useMemo, useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useCart } from '../state/useCart'
-import { fetchMenuItemById } from '../API/menuApi'
-import { styled } from '@mui/material/styles'
-import Drawer from '@mui/material/Drawer'
-import List from '@mui/material/List'
-import ListItem from '@mui/material/ListItem'
-import ListItemButton from '@mui/material/ListItemButton'
-import ListItemIcon from '@mui/material/ListItemIcon'
-import ListItemText from '@mui/material/ListItemText'
-import IconButton from '@mui/material/IconButton'
-import Tooltip from '@mui/material/Tooltip'
+import { styled, keyframes } from '@mui/material/styles'
 import Box from '@mui/material/Box'
-import HomeIcon from '@mui/icons-material/Home'
-import MenuBookIcon from '@mui/icons-material/MenuBook'
-import ShoppingCartIcon from '@mui/icons-material/ShoppingCart'
 import '../styles/index.css'
 
-// migrated from main.css
 const brand = {
   primary: '#00704a',
   primaryHover: '#147d56',
-  primaryActive: '#004a34',
-  primaryDark: '#1e5631',
   textPrimary: '#2b2b2b',
-  textSecondary: '#79747e',
-  border: '#e0e0e0',
   borderLight: '#e9e9e9',
-  bgLight: '#f8f9f8',
-  shadowSm: '0 0 6px rgba(0,0,0,0.06)',
-  shadowHover: '0 4px 12px rgba(0,0,0,0.15)',
   fontBase: "'Montserrat', sans-serif",
-  fontDisplay: "'DIN Alternate Bold', 'Montserrat', sans-serif",
 }
 
 const Topbar = styled('header')(() => ({
-  padding: '6px 14px',
+  padding: '0 20px',
   minHeight: '52px',
   display: 'flex',
   flexDirection: 'row',
@@ -45,17 +23,17 @@ const Topbar = styled('header')(() => ({
   alignItems: 'center',
   position: 'sticky',
   top: 0,
-  zIndex: 100,
+  zIndex: 500,
   backgroundColor: '#fff',
+  gap: '12px',
 }))
 
 const TopbarLeft = styled(Box)(() => ({
   display: 'flex',
   flexDirection: 'row',
-  gap: '12px',
-  minWidth: 0,
-  flex: 1,
+  gap: '4px',
   alignItems: 'center',
+  flexShrink: 0,
 }))
 
 const TopbarActions = styled(Box)(() => ({
@@ -65,30 +43,22 @@ const TopbarActions = styled(Box)(() => ({
   alignItems: 'center',
 }))
 
-const BreadcrumbNav = styled(Box)(() => ({
-  fontSize: '12px',
-  fontWeight: 500,
-  color: '#8b8f96',
-  whiteSpace: 'nowrap',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-}))
-
-const CrumbLink = styled(Link)(() => ({
-  color: '#8b8f96',
-  padding: '1px 3px',
-  borderRadius: '4px',
+const TopNavLink = styled(Link, {
+  shouldForwardProp: (prop) => prop !== 'isActive',
+})(({ isActive }) => ({
+  fontSize: '14px',
+  fontWeight: 600,
+  fontFamily: brand.fontBase,
+  color: isActive ? brand.primary : '#4b5563',
   textDecoration: 'none',
-  transition: 'all 0.2s ease',
+  padding: '5px 10px',
+  borderRadius: '6px',
+  transition: 'color 0.2s, background 0.2s',
+  whiteSpace: 'nowrap',
   '&:hover': {
     color: brand.primary,
-    textDecoration: 'underline',
+    backgroundColor: 'rgba(0, 112, 74, 0.06)',
   },
-}))
-
-const CrumbSep = styled('span')(() => ({
-  margin: '0 6px',
-  opacity: 0.6,
 }))
 
 const TopPillBtn = styled('button', {
@@ -129,131 +99,117 @@ const CartBadge = styled(Box)(() => ({
   lineHeight: '20px',
 }))
 
-const DRAWER_OPEN_WIDTH = 240
-const DRAWER_CLOSED_WIDTH = 64
-const CHAT_PANEL_WIDTH = 420
+const menuSlideIn = keyframes`
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+`
+const menuSlideOut = keyframes`
+  from { transform: translateX(0); }
+  to   { transform: translateX(100%); }
+`
+const backdropFadeIn = keyframes`
+  from { opacity: 0; }
+  to   { opacity: 1; }
+`
+const backdropFadeOut = keyframes`
+  from { opacity: 1; }
+  to   { opacity: 0; }
+`
 
-const paperStyles = {
-  borderRight: '1px solid #e9e9e9',
-  backgroundColor: '#fff',
-}
-
-const openedMixin = (theme) => ({
-  width: DRAWER_OPEN_WIDTH,
-  transition: theme.transitions.create('width', {
-    easing: theme.transitions.easing.sharp,
-    duration: 250,
-  }),
-  overflowX: 'hidden',
-  ...paperStyles,
-})
-
-const closedMixin = (theme) => ({
-  width: DRAWER_CLOSED_WIDTH,
-  transition: theme.transitions.create('width', {
-    easing: theme.transitions.easing.sharp,
-    duration: 250,
-  }),
-  overflowX: 'hidden',
-  ...paperStyles,
-})
-
-const StyledDrawer = styled(Drawer, { shouldForwardProp: (prop) => prop !== 'open' })(
-  ({ theme, open }) => ({
-    width: open ? DRAWER_OPEN_WIDTH : DRAWER_CLOSED_WIDTH,
+// Hamburger button — visible only on mobile
+const HamburgerBtn = styled('button')(() => ({
+  display: 'none',
+  '@media (max-width: 600px)': {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 36,
+    height: 36,
+    border: 'none',
+    background: 'transparent',
+    color: '#374151',
+    cursor: 'pointer',
+    borderRadius: '8px',
+    padding: 0,
     flexShrink: 0,
-    whiteSpace: 'nowrap',
-    boxSizing: 'border-box',
-    ...(open
-      ? {
-          ...openedMixin(theme),
-          '& .MuiDrawer-paper': openedMixin(theme),
-        }
-      : {
-          ...closedMixin(theme),
-          '& .MuiDrawer-paper': closedMixin(theme),
-        }),
-  })
-)
+    '&:hover': { background: 'rgba(0,0,0,0.05)' },
+  },
+}))
 
-function useBreadcrumb() {
-  const location = useLocation()
-  const [item, setItem] = useState(null)
-  const [prevCategory, setPrevCategory] = useState(null)
+// Faint shadow backdrop — sits below the topbar
+const MenuBackdrop = styled('div', {
+  shouldForwardProp: (p) => p !== 'isClosing',
+})(({ isClosing }) => ({
+  position: 'fixed',
+  top: '0',
+  left: 0,
+  right: 0,
+  bottom: 0,
+  background: 'rgba(0,0,0,0.22)',
+  zIndex: 400,
+  animation: `${isClosing ? backdropFadeOut : backdropFadeIn} 0.38s ease forwards`,
+}))
 
-  // keep current behavior: remember last selected menu category while on /menu
-  useEffect(() => {
-    if (location.pathname === '/menu') {
-      const params = new URLSearchParams(location.search)
-      const category = params.get('category')
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPrevCategory(category && category !== 'All' ? category : null)
-    }
-  }, [location.pathname, location.search])
+// Slide-in panel from the right — starts below the topbar
+const MenuPanel = styled('nav', {
+  shouldForwardProp: (p) => p !== 'isClosing',
+})(({ isClosing }) => ({
+  display: 'flex',
+  flexDirection: 'column',
+  position: 'fixed',
+  top: '0',
+  right: 0,
+  bottom: 0,
+  width: '72vw',
+  maxWidth: '280px',
+  background: '#fff',
+  zIndex: 401,
+  boxShadow: '-4px 0 24px rgba(0,0,0,0.12)',
+  animation: `${isClosing ? menuSlideOut : menuSlideIn} 0.38s cubic-bezier(0.4,0,0.2,1) forwards`,
+  overflowY: 'auto',
+  paddingTop: '50px',
+}))
 
-  useEffect(() => {
-    const fetchItem = async () => {
-      if (location.pathname.startsWith('/item/')) {
-        const id = location.pathname.split('/item/')[1]
-        if (id) {
-          try {
-            const data = await fetchMenuItemById(id)
-            setItem(data)
-          } catch (err) {
-            console.error('Failed to fetch item for breadcrumb:', err)
-            setItem(null)
-          }
-        }
-      } else {
-        setItem(null)
-      }
-    }
-    fetchItem()
-  }, [location.pathname])
 
-  return useMemo(() => {
-    const crumbs = [{ label: 'Home', to: '/' }]
-    const params = new URLSearchParams(location.search)
+const MenuPanelItem = styled('button', {
+  shouldForwardProp: (prop) => prop !== 'isActive',
+})(({ isActive }) => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '14px',
+  width: '100%',
+  padding: '14px 20px',
+  border: 'none',
+  borderLeft: isActive ? `3px solid ${brand.primary}` : '3px solid transparent',
+  background: isActive ? 'rgba(0, 112, 74, 0.06)' : 'transparent',
+  color: isActive ? brand.primary : '#374151',
+  fontFamily: brand.fontBase,
+  fontSize: '15px',
+  fontWeight: 600,
+  cursor: 'pointer',
+  textAlign: 'left',
+  transition: 'background 0.15s, color 0.15s',
+  '&:hover': { background: 'rgba(0, 112, 74, 0.06)', color: brand.primary },
+}))
 
-    if (location.pathname.startsWith('/menu')) {
-      crumbs.push({ label: 'Menu', to: '/menu' })
-      const category = params.get('category')
-      if (category && category !== 'All') {
-        crumbs.push({ label: category, to: `/menu?category=${encodeURIComponent(category)}` })
-      }
-    }
+// Hide topbar nav links on mobile
+const TopbarNavWrap = styled(Box)(() => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '4px',
+  '@media (max-width: 600px)': { display: 'none' },
+}))
 
-    if (location.pathname.startsWith('/cart')) crumbs.push({ label: 'Cart', to: '/cart' })
-    if (location.pathname.startsWith('/checkout')) {
-      crumbs.push({ label: 'Cart', to: '/cart' })
-      crumbs.push({ label: 'Checkout', to: '/checkout' })
-    }
-    if (location.pathname.startsWith('/success')) {
-      crumbs.push({ label: 'Cart', to: '/cart' })
-      crumbs.push({ label: 'Checkout', to: '/checkout' })
-      crumbs.push({ label: 'Order Confirmed', to: '/success' })
-    }
-    if (location.pathname.startsWith('/login')) crumbs.push({ label: 'Login', to: '/login' })
-    if (location.pathname.startsWith('/register')) crumbs.push({ label: 'Register', to: '/register' })
+// Hide topbar pill buttons on mobile — hamburger handles them
+const TopbarActionsWrap = styled(Box)(() => ({
+  display: 'flex',
+  flexDirection: 'row',
+  gap: '8px',
+  alignItems: 'center',
+  '@media (max-width: 600px)': { display: 'none' },
+}))
 
-    if (location.pathname.startsWith('/item/')) {
-      crumbs.push({ label: 'Menu', to: '/menu' })
-      if (item) {
-        crumbs.push({ label: item.category, to: `/menu?category=${encodeURIComponent(item.category)}` })
-        crumbs.push({ label: item.name, to: location.pathname })
-      } else {
-        if (prevCategory) {
-          crumbs.push({ label: prevCategory, to: `/menu?category=${encodeURIComponent(prevCategory)}` })
-        } else {
-          crumbs.push({ label: '---', to: '#' })
-        }
-        crumbs.push({ label: '---', to: '#' })
-      }
-    }
-
-    return crumbs
-  }, [location.pathname, location.search, item, prevCategory])
-}
+const CHAT_PANEL_WIDTH = 420
 
 function Bubble({ msg }) {
   const isUser = msg.role === 'user'
@@ -274,7 +230,8 @@ function Bubble({ msg }) {
 
 export default function Navbar() {
   const [isAuthed] = useState(false)
-  const [drawerOpen, setDrawerOpen] = useState(true)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [menuClosing, setMenuClosing] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   const [chatClosing, setChatClosing] = useState(false)
   const [micMode, setMicMode] = useState('idle')
@@ -288,7 +245,6 @@ export default function Navbar() {
   const pendingReplyTimeoutRef = useRef(null)
 
   const { cartCount } = useCart()
-  const crumbs = useBreadcrumb()
   const location = useLocation()
   const navigate = useNavigate()
   const hasConversation = messages.length > 0
@@ -301,15 +257,18 @@ export default function Navbar() {
 
   const isSuccessRoute = location.pathname === '/success'
 
-  const navItems = [
-    { label: 'Home', to: '/', icon: <HomeIcon /> },
-    { label: 'Menu', to: '/menu', icon: <MenuBookIcon /> },
-    { label: 'Cart', to: '/cart', icon: <ShoppingCartIcon /> },
-  ]
-
   useEffect(() => {
     pageRef.current?.scrollTo({ top: 0, behavior: 'auto' })
   }, [location.pathname, location.search])
+
+  const closeMenu = () => {
+    if (menuClosing) return
+    setMenuClosing(true)
+    setTimeout(() => {
+      setMenuClosing(false)
+      setMenuOpen(false)
+    }, 380)
+  }
 
   const closeChat = () => {
     if (pendingReplyTimeoutRef.current) {
@@ -320,7 +279,8 @@ export default function Navbar() {
   }
 
   const handleAnimationEnd = (e) => {
-    if (chatClosing && e.animationName === 'chatUnitPushOut') {
+    const closingAnimations = ['chatUnitPushOut', 'chatMobileFadeOut']
+    if (chatClosing && closingAnimations.includes(e.animationName)) {
       setChatClosing(false)
       setChatOpen(false)
       setMicMode('idle')
@@ -413,146 +373,27 @@ export default function Navbar() {
 
   return (
     <div className="app-shell">
-      <StyledDrawer variant="permanent" open={drawerOpen} sx={{ display: isSuccessRoute ? 'none' : undefined, position: 'sticky', top: 0, height: '100vh', alignSelf: 'flex-start', '& .MuiDrawer-paper': { height: '100vh' } }}>
-        <Box
-          sx={{
-            height: 64,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: drawerOpen ? 'space-between' : 'center',
-            px: drawerOpen ? 2 : 0,
-            pt: 0.5,
-          }}
-        >
-          {drawerOpen ? (
-            <Box
-              component="img"
-              src="/stories-logo.png"
-              alt="Stories"
-              sx={{ maxWidth: '118px', maxHeight: '28px', objectFit: 'contain', ml: '4px' }}
-              onError={(e) => {
-                e.currentTarget.style.display = 'none'
-              }}
-            />
-          ) : null}
-          <IconButton
-            onClick={() => setDrawerOpen((prev) => !prev)}
-            aria-label="Toggle drawer"
-            sx={{
-              width: 36,
-              height: 36,
-              borderRadius: '8px',
-              color: '#1a4a35',
-              ml: drawerOpen ? 1 : 0,
-              '&:hover': { bgcolor: 'rgba(26,74,53,.08)' },
-            }}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <line x1="3" y1="6" x2="21" y2="6" />
-              <line x1="3" y1="12" x2="21" y2="12" />
-              <line x1="3" y1="18" x2="21" y2="18" />
-            </svg>
-          </IconButton>
-        </Box>
-
-        <List>
-          {navItems.map((item) => {
-            const isActive = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to)
-            const navButton = (
-              <ListItem key={item.to} disablePadding sx={{ display: 'block', my: 0.25 }}>
-                <ListItemButton
-                  onClick={() => navigate(item.to)}
-                  selected={isActive}
-                  sx={{
-                    minHeight: 44,
-                    justifyContent: drawerOpen ? 'initial' : 'center',
-                    px: drawerOpen ? 2 : 1.5,
-                    mx: 1,
-                    my: 0.5,
-                    mt: drawerOpen ? 0.5 : 0.75,
-                    borderRadius: '20px',
-                    color: isActive ? '#fff' : '#1a4a35',
-                    fontFamily: 'Montserrat, sans-serif',
-                    fontWeight: 600,
-                    position: 'relative',
-                    '&.Mui-selected': {
-                      bgcolor: 'rgba(26,107,58,0.10)',
-                      color: '#1a4a35',
-                      '& .MuiListItemIcon-root': { color: '#1a6b3a !important' },
-                      '&::before': {
-                        content: '""',
-                        position: 'absolute',
-                        left: 0,
-                        top: 10,
-                        bottom: 10,
-                        width: 3,
-                        borderRadius: 3,
-                        backgroundColor: '#1a6b3a',
-                      },
-                      '&:hover': { bgcolor: 'rgba(26,107,58,0.14)' },
-                    },
-                    '&:hover': { bgcolor: 'rgba(26,74,53,.08)', color: '#1a4a35' },
-                  }}
-                >
-                  <ListItemIcon
-                    sx={{
-                      minWidth: 0,
-                      mr: drawerOpen ? 1.5 : 'auto',
-                      ml: drawerOpen ? -0.5 : 0,
-                      justifyContent: 'center',
-                      color: isActive ? '#fff' : '#555',
-                    }}
-                  >
-                    {item.icon}
-                  </ListItemIcon>
-                  {drawerOpen && (
-                    <ListItemText
-                      primary={item.label}
-                      primaryTypographyProps={{
-                        fontFamily: 'Montserrat, sans-serif',
-                        fontWeight: 600,
-                        fontSize: 16,
-                      }}
-                    />
-                  )}
-                </ListItemButton>
-              </ListItem>
-            )
-            if (!drawerOpen) return <Tooltip key={item.to} title={item.label} placement="right">{navButton}</Tooltip>
-            return navButton
-          })}
-        </List>
-      </StyledDrawer>
-
       <div className="content-shell">
         <main className="main">
           <Topbar>
             <TopbarLeft>
-              {(!drawerOpen || isSuccessRoute) && (
-                <Box
-                  component="img"
-                  src="/stories-logo.png"
-                  alt="Stories"
-                  className="topbar-logo"
-                  sx={{ maxWidth: '112px', maxHeight: '24px', objectFit: 'contain', width: 'auto' }}
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none'
-                  }}
-                />
-              )}
-              {location.pathname !== '/' && !isSuccessRoute && (
-                <BreadcrumbNav component="nav">
-                  {crumbs.map((c, idx) => (
-                    <span key={c.to + idx} className="crumb">
-                      <CrumbLink to={c.to}>{c.label}</CrumbLink>
-                      {idx < crumbs.length - 1 && <CrumbSep>/</CrumbSep>}
-                    </span>
-                  ))}
-                </BreadcrumbNav>
+              <Box
+                component="img"
+                src="/stories-logo.png"
+                alt="Stories"
+                sx={{ maxWidth: '112px', maxHeight: '26px', objectFit: 'contain', flexShrink: 0 }}
+                onError={(e) => { e.currentTarget.style.display = 'none' }}
+              />
+              {!isSuccessRoute && (
+                <TopbarNavWrap>
+                  <Box sx={{ width: '1px', height: '18px', bgcolor: '#e9e9e9', mx: '6px', flexShrink: 0 }} />
+                  <TopNavLink to="/" isActive={location.pathname === '/'}>Home</TopNavLink>
+                  <TopNavLink to="/menu" isActive={location.pathname.startsWith('/menu')}>Menu</TopNavLink>
+                </TopbarNavWrap>
               )}
             </TopbarLeft>
 
-            <TopbarActions sx={{ display: isSuccessRoute ? 'none' : undefined }}>
+            <TopbarActionsWrap sx={{ display: isSuccessRoute ? 'none' : undefined }}>
               {isAuthed ? (
                 <TopPillBtn isAuth type="button" onClick={() => navigate(-1)}>Back</TopPillBtn>
               ) : (
@@ -576,11 +417,38 @@ export default function Navbar() {
                 <span>Cart</span>
                 {cartCount > 0 && <CartBadge>{cartCount}</CartBadge>}
               </TopPillBtn>
-            </TopbarActions>
+            </TopbarActionsWrap>
+
+            {!isSuccessRoute && (
+              <HamburgerBtn
+                type="button"
+                aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+                onClick={() => {
+                  if (menuClosing) return
+                  if (menuOpen) closeMenu()
+                  else setMenuOpen(true)
+                }}
+              >
+                {menuOpen ? (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <line x1="3" y1="3" x2="21" y2="21" />
+                    <line x1="21" y1="3" x2="3" y2="21" />
+                  </svg>
+                ) : (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                    <line x1="3" y1="18" x2="21" y2="18" />
+                  </svg>
+                )}
+              </HamburgerBtn>
+            )}
           </Topbar>
 
           <div ref={pageRef} className="page">
-            <Outlet />
+            <div className="page-content">
+              <Outlet />
+            </div>
           </div>
         </main>
 
@@ -718,13 +586,55 @@ export default function Navbar() {
         )}
       </div>
 
-      {isChatAllowedRoute && !chatOpen && (
+      {(menuOpen || menuClosing) && !isSuccessRoute && (
+        <>
+          <MenuBackdrop isClosing={menuClosing} onClick={closeMenu} />
+          <MenuPanel isClosing={menuClosing} aria-label="Mobile navigation">
+            <MenuPanelItem type="button" isActive={location.pathname === '/'} onClick={() => { closeMenu(); navigate('/') }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
+              </svg>
+              Home
+            </MenuPanelItem>
+
+            <MenuPanelItem type="button" isActive={location.pathname.startsWith('/menu')} onClick={() => { closeMenu(); navigate('/menu') }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z" /><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z" />
+              </svg>
+              Menu
+            </MenuPanelItem>
+
+            <MenuPanelItem type="button" isActive={location.pathname.startsWith('/cart')} onClick={() => { closeMenu(); navigate('/cart') }}>
+              <Box sx={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" />
+                  <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.95-1.57L23 6H6" />
+                </svg>
+                {cartCount > 0 && (
+                  <Box sx={{ position: 'absolute', top: -5, right: -7, width: 15, height: 15, bgcolor: '#00704a', color: '#fff', borderRadius: '50%', fontSize: '9px', fontWeight: 700, display: 'grid', placeItems: 'center' }}>
+                    {cartCount}
+                  </Box>
+                )}
+              </Box>
+              Cart
+            </MenuPanelItem>
+
+            <MenuPanelItem type="button" isActive={location.pathname.startsWith('/login')} onClick={() => { closeMenu(); navigate('/login') }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+              </svg>
+              Login
+            </MenuPanelItem>
+          </MenuPanel>
+        </>
+      )}
+
+      {isChatAllowedRoute && !chatOpen && !menuOpen && !menuClosing && (
         <button
           className="voice-fab"
           type="button"
           aria-label="Open chat"
           onClick={() => {
-            setDrawerOpen(false)
             setChatClosing(false)
             setChatOpen(true)
           }}

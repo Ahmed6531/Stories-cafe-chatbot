@@ -29,24 +29,24 @@ const PageWrap = styled(Box)(() => ({
   width: '100%',
   display: 'flex',
   flexDirection: 'column',
-  gap: '14px',
+  gap: '10px',
 }));
 
 // .section-heading
 const SectionHeading = styled(Box)(() => ({
-  marginTop: '10px',
+  marginTop: '4px',
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
-  gap: '6px',
+  gap: '4px',
 }));
 
 // .section-title
-const SectionTitle = styled(Typography)(({ theme }) => ({
+const SectionLabel = styled(Typography)(({ theme }) => ({
   fontFamily: brand.fontDisplay,
-  fontSize: '28px',
-  fontWeight: 700,
-  letterSpacing: '0.06em',
+  fontSize: '1.5rem',
+  fontWeight: 900,
+  letterSpacing: '0.04em',
   textTransform: 'uppercase',
   color: brand.primary,
   margin: 0,
@@ -55,7 +55,7 @@ const SectionTitle = styled(Typography)(({ theme }) => ({
   paddingBottom: '8px',
 
   [theme.breakpoints.down('sm')]: {
-    fontSize: '20px',
+    fontSize: '1.25rem',
     letterSpacing: '0.04em',
     paddingBottom: '4px',
   },
@@ -100,10 +100,10 @@ const CatbarWrap = styled(Box)(() => ({
     content: '""',
     position: 'absolute',
     top: 0,
-    right: 0,
-    width: '56px',
+    right: '-1px',
+    width: '38px',
     height: '100%',
-    background: 'linear-gradient(to right, transparent, #fff)',
+    background: 'linear-gradient(to right, rgba(255,255,255,0), rgba(255,255,255,0.78) 72%, #fff 100%)',
     pointerEvents: 'none',
     zIndex: 1,
   },
@@ -111,13 +111,13 @@ const CatbarWrap = styled(Box)(() => ({
     content: '""',
     position: 'absolute',
     top: 0,
-    left: 0,
-    width: '56px',
+    left: '-1px',
+    width: '28px',
     height: '100%',
-    background: 'linear-gradient(to left, transparent, #fff)',
+    background: 'linear-gradient(to left, rgba(255,255,255,0), rgba(255,255,255,0.56) 76%, #fff 100%)',
     pointerEvents: 'none',
     zIndex: 1,
-  },
+  }
 }));
 
 // .catbar
@@ -142,7 +142,7 @@ const CatbarInner = styled(Box)(() => ({
   alignItems: 'center',
   justifyContent: 'center',
   minWidth: 'max-content',
-  padding: '0 24px',
+  padding: '0 18px',
 }));
 
 // .cat-chip
@@ -296,7 +296,7 @@ export default function Menu() {
     'Coffee': '/images/coffee.png',
     'Mixed Beverages': '/images/mixedbev.png',
     'Pastries': '/images/pastries.png',
-    'Salad': '/images/salad.png',
+    'Salad': '/images/salad.jpg',
     'Sandwiches': '/images/sandwiches.png',
     'Soft Drinks': '/images/soft-drinks.png',
     'Tea': '/images/tea.png',
@@ -371,7 +371,7 @@ export default function Menu() {
     return (
       <PageWrap>
         <SectionHeading>
-          <SectionTitle component="h2">Categories</SectionTitle>
+          <SectionLabel component="h2">Categories</SectionLabel>
         </SectionHeading>
         <CategoryChipsSkeleton />
         <MenuSkeleton />
@@ -382,7 +382,7 @@ export default function Menu() {
   return (
     <PageWrap>
       <SectionHeading>
-        <SectionTitle component="h2">Categories</SectionTitle>
+        <SectionLabel component="h2">Categories</SectionLabel>
       </SectionHeading>
 
       <CatbarWrap>

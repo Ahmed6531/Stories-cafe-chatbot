@@ -37,7 +37,12 @@ const ItemsGrid = styled(Box)(({ theme }) => ({
     gridTemplateColumns: 'repeat(2, 1fr)',
     gap: '10px',
     padding: '10px 0 16px',
-  }
+  },
+
+  '@media (orientation: landscape) and (max-width: 900px)': {
+    gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+    gap: '12px',
+  },
 }));
 
 export default function MenuList({ items }) {

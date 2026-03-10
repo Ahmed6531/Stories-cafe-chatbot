@@ -104,6 +104,7 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
   h3 { font-size: 18px; }
 }
 
+
 @media (prefers-color-scheme: light) {
   :root { color: #213547; background-color: #ffffff; }
   a:hover { color: #747bff; }
@@ -133,14 +134,21 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
 
 /* ==================== PAGE ==================== */
 .page {
-  padding: 8px;
-  padding-right: 16px;
+  padding: 0;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-gutter: stable;
 }
+
+.page-content {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: clamp(16px, 4vw, 48px);
+  width: 100%;
+}
+
 
 /* ==================== CHAT UNIT + ANIMATION ==================== */
 .chat-unit {
@@ -155,8 +163,31 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
   -webkit-backface-visibility: hidden;
 }
 
+@media (max-width: 600px) {
+  .chat-unit {
+    position: fixed;
+    inset: 0;
+    width: 100% !important;
+    height: 100%;
+    z-index: 300;
+    animation: chatMobileFadeIn 0.22s ease forwards;
+  }
+  .chat-unit-closing {
+    animation: chatMobileFadeOut 0.2s ease forwards !important;
+  }
+}
+
 .chat-unit-closing {
   animation: chatUnitPushOut 0.26s ease forwards;
+}
+
+@keyframes chatMobileFadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes chatMobileFadeOut {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(12px); }
 }
 
 @keyframes chatUnitPushIn {
