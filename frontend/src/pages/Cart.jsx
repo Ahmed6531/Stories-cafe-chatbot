@@ -14,7 +14,9 @@ import AddIcon from '@mui/icons-material/Add'
 import RemoveIcon from '@mui/icons-material/Remove'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import LocalGroceryStoreOutlinedIcon from '@mui/icons-material/LocalGroceryStoreOutlined'
+import CartSummary from '../components/CartSummary'
 import { useCart } from '../state/useCart'
+import { formatLL } from '../data/variantCatalog'
 
 const brand = {
   primary: '#00704a',
@@ -27,16 +29,10 @@ const brand = {
 
 const placeholderImg = 'https://via.placeholder.com/100/8B7355/FFFFFF?text=Coffee'
 
-const formatLL = (value) => `L.L ${Number(value || 0).toLocaleString()}`
-
 export default function Cart() {
   const navigate = useNavigate()
   const { state, updateQty, removeFromCart } = useCart()
   const { items: cartItems, loading } = state
-
-  const subtotal = cartItems.reduce((total, item) => total + (item.price || 0) * item.qty, 0)
-  const estimatedTax = Math.round(subtotal * 0.08)
-  const total = subtotal + estimatedTax
 
   if (loading) {
     return (
@@ -235,97 +231,64 @@ export default function Cart() {
             </CardContent>
           </Card>
 
-          <Card
-            variant="outlined"
+          <Box
             sx={{
               width: '100%',
               maxWidth: { lg: 360 },
-              borderRadius: 2,
-              borderColor: '#dce8e1',
               position: { lg: 'sticky' },
               top: { lg: 84 },
             }}
           >
-            <CardContent>
-              <Typography variant="h6" fontWeight={800} sx={{ color: brand.textPrimary, mb: 1.5 }}>
-                Order Summary
-              </Typography>
+            <CartSummary
+              items={cartItems}
+              mode="cartSummary"
+              action={
+                <Stack spacing={1.1}>
+                  <Button
+                    fullWidth
+                    variant="contained"
+                    onClick={() => navigate('/checkout')}
+                    sx={{
+                      borderRadius: '8px',
+                      py: 1.2,
+                      fontWeight: 600,
+                      fontSize: '1rem',
+                      fontFamily: "'Montserrat', sans-serif",
+                      letterSpacing: '0.5px',
+                      textTransform: 'none',
+                      backgroundColor: brand.primaryDark,
+                      '&:hover': { backgroundColor: brand.primaryDark, transform: 'translateY(-2px)' },
+                      transition: 'all 0.3s ease',
+                    }}
+                  >
+                    Proceed to Checkout
+                  </Button>
 
-              <Stack spacing={1.1}>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="body2" sx={{ color: brand.textSecondary }}>
-                    Subtotal
-                  </Typography>
-                  <Typography variant="body2" fontWeight={700}>
-                    {formatLL(subtotal)}
-                  </Typography>
+                  <Button
+                    fullWidth
+                    component={Link}
+                    to="/menu"
+                    variant="outlined"
+                    sx={{
+                      borderRadius: '8px',
+                      py: 1.2,
+                      fontWeight: 600,
+                      fontSize: '1rem',
+                      fontFamily: "'Montserrat', sans-serif",
+                      letterSpacing: '0.5px',
+                      textTransform: 'none',
+                      borderColor: '#c7ddd1',
+                      color: brand.primaryDark,
+                      '&:visited': { color: brand.primaryDark, borderColor: '#c7ddd1' },
+                      '&:hover': { borderColor: brand.primary, backgroundColor: 'rgba(0,112,74,0.06)' },
+                    }}
+                  >
+                    Continue Shopping
+                  </Button>
                 </Stack>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="body2" sx={{ color: brand.textSecondary }}>
-                    Tax (estimated)
-                  </Typography>
-                  <Typography variant="body2" fontWeight={700}>
-                    {formatLL(estimatedTax)}
-                  </Typography>
-                </Stack>
-
-                <Divider sx={{ my: 0.4 }} />
-
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="subtitle1" fontWeight={800}>
-                    Total
-                  </Typography>
-                  <Typography variant="subtitle1" fontWeight={900} sx={{ color: brand.primaryDark }}>
-                    {formatLL(total)}
-                  </Typography>
-                </Stack>
-              </Stack>
-
-              <Button
-                fullWidth
-                variant="contained"
-                onClick={() => navigate('/checkout')}
-                sx={{
-                  mt: 2,
-                  borderRadius: '8px',
-                  py: 1.2,
-                  fontWeight: 600,
-                  fontSize: '1rem',
-                  fontFamily: "'Montserrat', sans-serif",
-                  letterSpacing: '0.5px',
-                  textTransform: 'none',
-                  backgroundColor: brand.primaryDark,
-                  '&:hover': { backgroundColor: brand.primaryDark, transform: 'translateY(-2px)' },
-                  transition: 'all 0.3s ease',
-                }}
-              >
-                Proceed to Checkout
-              </Button>
-
-              <Button
-                fullWidth
-                component={Link}
-                to="/menu"
-                variant="outlined"
-                sx={{
-                  mt: 1.1,
-                  borderRadius: '8px',
-                  py: 1.2,
-                  fontWeight: 600,
-                  fontSize: '1rem',
-                  fontFamily: "'Montserrat', sans-serif",
-                  letterSpacing: '0.5px',
-                  textTransform: 'none',
-                  borderColor: '#c7ddd1',
-                  color: brand.primaryDark,
-                  '&:visited': { color: brand.primaryDark, borderColor: '#c7ddd1' },
-                  '&:hover': { borderColor: brand.primary, backgroundColor: 'rgba(0,112,74,0.06)' },
-                }}
-              >
-                Continue Shopping
-              </Button>
-            </CardContent>
-          </Card>
+              }
+            />
+          </Box>
         </Stack>
       )}
     </Container>

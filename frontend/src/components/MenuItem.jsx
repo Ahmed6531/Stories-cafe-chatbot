@@ -132,7 +132,7 @@ const ItemName = styled(Typography)(({ theme }) => ({
   fontWeight: 600,
   color: brand.textPrimary,
   lineHeight: 1.2,
-  [theme.breakpoints.down('sm')]: { fontSize: '13px' }
+  [theme.breakpoints.down('sm')]: { fontSize: '12px' }
 }));
 
 const ItemDescription = styled(Typography)(() => ({
