@@ -127,6 +127,18 @@ function validate(groups, selections) {
   return errors
 }
 
+const optionHeadingSx = {
+  mb: 0.75,
+  fontSize: { xs: '0.95rem', md: '1.05rem' },
+  lineHeight: 1.15,
+}
+
+const optionMetaSx = {
+  mb: 1,
+  display: 'block',
+  fontSize: { xs: '0.72rem', md: '0.75rem' },
+}
+
 export default function MenuItemDetails() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -157,7 +169,6 @@ export default function MenuItemDetails() {
     load()
   }, [id])
 
-  // Reset image error when item changes
   useEffect(() => {
     setImageError(false)
   }, [item?.id])
@@ -221,11 +232,11 @@ export default function MenuItemDetails() {
 
     return (
       <Box>
-        <Typography variant="h6" fontWeight={800} sx={{ mb: 1 }}>
+        <Typography variant="h6" fontWeight={800} sx={optionHeadingSx}>
           {group.name}
         </Typography>
         {groupMetaText(group) && (
-          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+          <Typography variant="caption" color="text.secondary" sx={optionMetaSx}>
             {groupMetaText(group)}
           </Typography>
         )}
@@ -270,11 +281,11 @@ export default function MenuItemDetails() {
 
     return (
       <Box>
-        <Typography variant="h6" fontWeight={800} sx={{ mb: 1 }}>
+        <Typography variant="h6" fontWeight={800} sx={optionHeadingSx}>
           {group.name}
         </Typography>
         {groupMetaText(group) && (
-          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+          <Typography variant="caption" color="text.secondary" sx={optionMetaSx}>
             {groupMetaText(group)}
           </Typography>
         )}
@@ -331,11 +342,11 @@ export default function MenuItemDetails() {
 
     return (
       <Box>
-        <Typography variant="h6" fontWeight={800} sx={{ mb: 1 }}>
+        <Typography variant="h6" fontWeight={800} sx={optionHeadingSx}>
           {group.name}
         </Typography>
         {groupMetaText(group) && (
-          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+          <Typography variant="caption" color="text.secondary" sx={optionMetaSx}>
             {groupMetaText(group)}
           </Typography>
         )}
@@ -403,11 +414,11 @@ export default function MenuItemDetails() {
 
     return (
       <Box>
-        <Typography variant="h6" fontWeight={800} sx={{ mb: 1 }}>
+        <Typography variant="h6" fontWeight={800} sx={optionHeadingSx}>
           {group.name}
         </Typography>
         {groupMetaText(group) && (
-          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+          <Typography variant="caption" color="text.secondary" sx={optionMetaSx}>
             {groupMetaText(group)}
           </Typography>
         )}
@@ -470,7 +481,7 @@ export default function MenuItemDetails() {
     }
 
     try {
-      console.log('🛒 Adding to cart:', payload)
+      console.log('Adding to cart:', payload)
       await addToCart(payload)
       setSnackOpen(true)
       setTimeout(() => navigate('/cart'), 500)
@@ -507,7 +518,8 @@ export default function MenuItemDetails() {
   return (
     <Container
       sx={{
-        py: 3,
+        py: { xs: 1.5, md: 3 },
+        px: { xs: 1.5, md: 2 },
         '& .MuiTypography-root': { fontFamily: brand.fontBase },
         '& .MuiButton-root': { fontFamily: brand.fontBase },
         '& .MuiInputBase-input': { fontFamily: brand.fontBase },
@@ -516,12 +528,175 @@ export default function MenuItemDetails() {
         '& .MuiChip-root': { fontFamily: brand.fontBase },
       }}
     >
-      <Button onClick={() => navigate('/menu')} sx={{ mb: 2 }}>
-        ← Back to Menu
+      <Button
+        onClick={() => navigate('/menu')}
+        sx={{
+          mb: 1.5,
+          px: 0,
+          minWidth: 0,
+          textTransform: 'none',
+          fontSize: { xs: '0.8rem', md: '0.9rem' },
+          justifyContent: 'flex-start',
+        }}
+      >
+        {'<- Back to Menu'}
       </Button>
 
       <Box
         sx={{
+          display: { xs: 'block', md: 'none' },
+          bgcolor: 'primary.main',
+          color: 'primary.contrastText',
+          borderRadius: 3,
+          overflow: 'hidden',
+          mb: 3,
+          border: '1px solid rgba(0, 112, 74, 0.32)',
+        }}
+      >
+        <Box
+          sx={{
+            bgcolor: '#fff',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            px: 2,
+            pt: { xs: 1, md: 2.5 },
+            pb: { xs: 0.5, md: 2 },
+          }}
+        >
+          <Box
+            sx={{
+              width: { xs: 108, md: 140 },
+              height: { xs: 108, md: 140 },
+              display: 'grid',
+              placeItems: 'center',
+              overflow: 'hidden',
+              flexShrink: 0,
+            }}
+          >
+            {showPlaceholder ? (
+              <Box
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#b0b8be',
+                }}
+              >
+                <svg
+                  width="32"
+                  height="32"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                >
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <path d="m21 15-5-5L5 21" />
+                </svg>
+              </Box>
+            ) : (
+              <img
+                src={item.image}
+                alt={item.name}
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                onError={() => setImageError(true)}
+              />
+            )}
+          </Box>
+        </Box>
+
+        <Box sx={{ px: { xs: 1.5, md: 2.5 }, pt: { xs: 1, md: 0 }, pb: { xs: 1.25, md: 2.5 } }}>
+          <Typography
+            sx={{
+              fontFamily: brand.fontDisplay,
+              fontWeight: 900,
+              fontSize: { xs: '1.05rem', md: '1.6rem' },
+              lineHeight: 1.05,
+              mb: { xs: 0.4, md: 0.75 },
+            }}
+          >
+            {item.name}
+          </Typography>
+          {item.description && (
+            <Typography
+              sx={{
+                fontSize: { xs: '0.74rem', md: '0.92rem' },
+                lineHeight: { xs: 1.35, md: 1.45 },
+                opacity: 0.95,
+                mb: { xs: 0.75, md: 1.25 },
+                display: '-webkit-box',
+                WebkitLineClamp: { xs: 4, md: 'unset' },
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
+            >
+              {item.description}
+            </Typography>
+          )}
+          <Typography
+            sx={{
+              fontWeight: 900,
+              fontSize: { xs: '1.15rem', md: '1.9rem' },
+              lineHeight: 1,
+              mb: { xs: 0.75, md: 1.25 },
+            }}
+          >
+            {formatLL(unitPrice)}
+          </Typography>
+
+          <Stack direction="row" spacing={0.75} alignItems="center" sx={{ justifyContent: 'flex-start' }}>
+            <Button
+              variant="contained"
+              onClick={() => setQty((q) => clamp(q - 1, 1, 99))}
+              sx={{
+                minWidth: { xs: 28, md: 36 },
+                width: { xs: 28, md: 36 },
+                height: { xs: 28, md: 36 },
+                p: 0,
+                borderRadius: { xs: '8px', md: '10px' },
+                fontSize: { xs: '0.9rem', md: '1rem' },
+                bgcolor: '#176946',
+                '&:hover': { bgcolor: '#125438' },
+              }}
+            >
+              -
+            </Button>
+            <Typography
+              sx={{
+                minWidth: { xs: 16, md: 24 },
+                textAlign: 'center',
+                fontWeight: 800,
+                fontSize: { xs: '0.9rem', md: '1rem' },
+              }}
+            >
+              {qty}
+            </Typography>
+            <Button
+              variant="contained"
+              onClick={() => setQty((q) => clamp(q + 1, 1, 99))}
+              sx={{
+                minWidth: { xs: 28, md: 36 },
+                width: { xs: 28, md: 36 },
+                height: { xs: 28, md: 36 },
+                p: 0,
+                borderRadius: { xs: '8px', md: '10px' },
+                fontSize: { xs: '0.9rem', md: '1rem' },
+                bgcolor: '#176946',
+                '&:hover': { bgcolor: '#125438' },
+              }}
+            >
+              +
+            </Button>
+          </Stack>
+        </Box>
+      </Box>
+
+      <Box
+        sx={{
+          display: { xs: 'none', md: 'block' },
           bgcolor: 'primary.main',
           color: 'primary.contrastText',
           borderRadius: 2,
@@ -593,7 +768,7 @@ export default function MenuItemDetails() {
               onClick={() => setQty((q) => clamp(q - 1, 1, 99))}
               sx={{ minWidth: 40 }}
             >
-              −
+              -
             </Button>
             <Typography fontWeight={900} sx={{ minWidth: 24, textAlign: 'center' }}>
               {qty}
@@ -617,10 +792,10 @@ export default function MenuItemDetails() {
 
       <Card sx={{ borderRadius: 2 }}>
         <CardContent>
-          <Stack spacing={3}>
+          <Stack spacing={{ xs: 2, sm: 3 }}>
             {!isSandwich ? (
               <>
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={{ xs: 2, md: 3 }}>
                   <Box sx={{ flex: 1 }}>{renderSizePills(sizeGroup)}</Box>
                   <Box sx={{ flex: 1 }}>{renderSingleSelect(espressoGroup)}</Box>
                   <Box sx={{ flex: 1 }}>{renderSingleSelect(milkGroup)}</Box>
@@ -629,7 +804,7 @@ export default function MenuItemDetails() {
               </>
             ) : (
               <>
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={{ xs: 2, md: 3 }}>
                   <Box sx={{ flex: 1 }}>{renderSingleSelect(breadGroup)}</Box>
                   <Box sx={{ flex: 1 }}>{renderMultiSelectDropdown(ingredientsGroup)}</Box>
                   <Box sx={{ flex: 1 }}>{renderToppingsChecklist(toppingsGroup)}</Box>
@@ -644,7 +819,7 @@ export default function MenuItemDetails() {
               label="Special instructions"
               placeholder="e.g., no sugar, extra hot..."
               multiline
-              minRows={3}
+              minRows={2}
               value={instructions}
               onChange={(e) => setInstructions(e.target.value.slice(0, 250))}
               helperText={`${instructions.length}/250`}
@@ -653,10 +828,10 @@ export default function MenuItemDetails() {
             <Stack
               direction={{ xs: 'column', sm: 'row' }}
               justifyContent="space-between"
-              spacing={2}
+              spacing={1.25}
               alignItems={{ sm: 'center' }}
             >
-              <Typography variant="h6" fontWeight={900}>
+              <Typography variant="h6" fontWeight={900} sx={{ fontSize: { xs: '0.98rem', md: '1.15rem' } }}>
                 Total: {formatLL(totalPrice)}
               </Typography>
               <Button
@@ -664,7 +839,12 @@ export default function MenuItemDetails() {
                 size="large"
                 onClick={handleSubmit}
                 disabled={!item.isAvailable}
-                sx={{ borderRadius: 2, px: 4 }}
+                sx={{
+                  borderRadius: 2,
+                  px: 2.5,
+                  py: 1,
+                  fontSize: { xs: '0.88rem', md: '1rem' },
+                }}
               >
                 ADD TO CART
               </Button>
