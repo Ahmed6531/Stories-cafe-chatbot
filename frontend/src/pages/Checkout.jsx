@@ -110,7 +110,16 @@ export default function Checkout() {
   }
 
   return (
-    <Box sx={{ p: { xs: 2, md: 4 }, maxWidth: '1200px', margin: '0 auto' }}>
+    <Box
+      sx={{
+        p: { xs: 2, md: 4 },
+        maxWidth: '1200px',
+        margin: '0 auto',
+        fontFamily: "'Montserrat', sans-serif",
+        '& .MuiTypography-root': { fontFamily: "'Montserrat', sans-serif" },
+        '& .MuiButton-root': { fontFamily: "'Montserrat', sans-serif" },
+      }}
+    >
       <Typography
         variant="h5"
         sx={{
@@ -126,15 +135,24 @@ export default function Checkout() {
         Checkout
       </Typography>
 
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: { xs: '1fr', md: '1.2fr 0.8fr' },
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: '1.2fr 0.8fr' },
           gap: { xs: '28px', md: '40px' },
-          alignItems: 'start',
+          alignItems: 'stretch',
         }}
       >
-        <form id="checkout-form" onSubmit={handleSubmit}>
+        <Box
+          component="form"
+          id="checkout-form"
+          onSubmit={handleSubmit}
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: '100%',
+          }}
+        >
           <Box style={formGroupStyle}>
             <label style={labelStyle}>Full Name *</label>
             <input
@@ -217,7 +235,11 @@ export default function Checkout() {
               value={formData.notes}
               onChange={handleChange}
               rows="3"
-              style={{ ...inputStyle, resize: 'none' }}
+              style={{
+                ...inputStyle,
+                resize: 'none',
+                minHeight: '180px',
+              }}
               placeholder="Any specific requests?"
             />
           </Box>
@@ -232,41 +254,87 @@ export default function Checkout() {
               }}
             />
           </Box>
-        </form>
 
-        <Box sx={{ display: { xs: 'none', md: 'block' }, pt: 0.5 }}>
-          <Box sx={{ pt: 4 }}>
+          <Box sx={{ mt: 'auto', pt: { xs: 2, md: 3 } }}>
+            <Button
+              component="button"
+              type="button"
+              onClick={() => navigate('/cart')}
+              variant="text"
+              sx={{
+                px: 0,
+                minWidth: 0,
+                color: '#5f6b64',
+                fontWeight: 600,
+                textTransform: 'none',
+                fontSize: '0.95rem',
+                '&:hover': { backgroundColor: 'transparent', color: '#1e5631' },
+              }}
+            >
+              Back to Cart
+            </Button>
+          </Box>
+        </Box>
+
+        <Box
+          sx={{
+            display: { xs: 'none', md: 'flex' },
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            minHeight: '100%',
+            pt: { xs: 0, md: 5.5 },
+          }}
+        >
           <CartSummary
             items={items}
             mode="receipt"
             sx={{
               maxWidth: 360,
+              width: '100%',
               mx: 'auto',
             }}
           />
-          </Box>
-        </Box>
-      </Box>
 
-      <Box sx={{ mt: 3, maxWidth: { xs: '100%', md: 'calc(54.545% - 20px)' } }}>
-        <Button
-          type="submit"
-          form="checkout-form"
-          fullWidth
-          variant="contained"
-          sx={{
-            py: 1.5,
-            borderRadius: '10px',
-            bgcolor: '#1e5631',
-            fontWeight: 700,
-            textTransform: 'none',
-            fontSize: '1rem',
-            fontFamily: "'Montserrat', sans-serif",
-            '&:hover': { bgcolor: '#143d22' },
-          }}
-        >
-          Place Order
-        </Button>
+          <Stack
+            direction={{ xs: 'column', md: 'column' }}
+            spacing={1.25}
+            sx={{ pt: 2.5, maxWidth: 360, width: '100%', mx: 'auto' }}
+          >
+            <Button
+              type="submit"
+              form="checkout-form"
+              fullWidth
+              variant="contained"
+              sx={{
+                py: 1.5,
+                borderRadius: '10px',
+                bgcolor: '#1e5631',
+                fontWeight: 700,
+                textTransform: 'none',
+                fontSize: '1rem',
+                fontFamily: "'Montserrat', sans-serif",
+                '&:hover': { bgcolor: '#143d22' },
+              }}
+            >
+              Place Order
+            </Button>
+
+            <Button
+              onClick={() => navigate('/cart')}
+              variant="text"
+              sx={{
+                display: { xs: 'inline-flex', md: 'none' },
+                color: '#5f6b64',
+                fontWeight: 600,
+                textTransform: 'none',
+                fontSize: '0.95rem',
+                '&:hover': { backgroundColor: 'transparent', color: '#1e5631' },
+              }}
+            >
+              Back to Cart
+            </Button>
+          </Stack>
+        </Box>
       </Box>
     </Box>
   )

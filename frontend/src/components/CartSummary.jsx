@@ -1,14 +1,23 @@
-import { Box, Button, Card, CardContent, Divider, Stack, Typography } from '@mui/material'
+import { Box, Card, CardContent, Divider, IconButton, Stack, Typography } from '@mui/material'
+import AddIcon from '@mui/icons-material/Add'
+import RemoveIcon from '@mui/icons-material/Remove'
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import { formatLL } from '../data/variantCatalog'
 import { calculateOrderTotals } from '../utils/orderPricing'
+import { useCart } from '../state/useCart'
 
 const brand = {
+  primary: '#00704a',
   primaryDark: '#1e5631',
   textPrimary: '#2b2b2b',
   textSecondary: '#79747e',
+  fontBase: "'Montserrat', sans-serif",
   paper: '#fdfcfb',
   border: '#e0ddd5',
+  borderSoft: '#ecefed',
 }
+
+const placeholderImg = 'https://via.placeholder.com/100/8B7355/FFFFFF?text=Coffee'
 
 export default function CartSummary({
   items = [],
@@ -17,9 +26,10 @@ export default function CartSummary({
   action,
   sx,
 }) {
+  const { updateQty, removeFromCart } = useCart()
   const { subtotal, tax, total } = calculateOrderTotals(items)
+  
   const isReceipt = mode === 'receipt'
-  const showItemList = isReceipt
   const resolvedTitle = isReceipt ? 'Receipt' : title
 
   return (
@@ -27,20 +37,21 @@ export default function CartSummary({
       variant="outlined"
       sx={{
         width: '100%',
-        borderRadius: '4px',
+        borderRadius: isReceipt ? '4px' : '16px', 
         borderColor: brand.border,
         bgcolor: brand.paper,
         boxShadow: 'none',
         ...sx,
       }}
     >
-      <CardContent sx={{ p: isReceipt ? { xs: 2.5, md: 3.5 } : 2.5 }}>
+      <CardContent sx={{ p: isReceipt ? { xs: 2.5, md: 3.5 } : { xs: 2, sm: 3 } }}>
         <Typography
           variant="subtitle2"
           sx={{
+            fontFamily: brand.fontBase,
             fontWeight: 800,
             textAlign: isReceipt ? 'center' : 'left',
-            mb: isReceipt ? 2.5 : 2,
+            mb: 2.5,
             letterSpacing: '0.1em',
             textTransform: 'uppercase',
             color: brand.textPrimary,
@@ -51,51 +62,113 @@ export default function CartSummary({
         </Typography>
 
         {items.length === 0 ? (
-          <Typography variant="body2" sx={{ color: brand.textSecondary }}>
+          <Typography variant="body2" sx={{ color: brand.textSecondary, py: 2, fontFamily: brand.fontBase }}>
             Your cart is empty.
           </Typography>
         ) : (
           <>
-            {showItemList && (
-              <Stack spacing={1.2} sx={{ mb: 2 }}>
-                {items.map((item, idx) => (
-                  <Stack key={item.lineId || idx} direction="row" justifyContent="space-between" alignItems="baseline">
-                    <Typography variant="body2" sx={{ fontSize: '0.85rem', color: brand.textPrimary }}>
-                      <Box component="span" sx={{ fontWeight: 700, mr: 0.5, opacity: 0.7 }}>
-                        {item.qty}x
+            {/* ITEM LISTING SECTION */}
+            <Stack spacing={isReceipt ? 1.2 : 0}>
+              {items.map((item, index) => {
+                if (isReceipt) {
+                  // --- RECEIPT MODE UI ---
+                  return (
+                    <Stack key={item.lineId || index} direction="row" justifyContent="space-between" alignItems="baseline">
+                      <Typography
+                        variant="body2"
+                        sx={{ fontSize: '0.85rem', color: brand.textPrimary, fontFamily: brand.fontBase }}
+                      >
+                        <Box component="span" sx={{ fontWeight: 700, mr: 0.5, opacity: 0.7 }}>
+                          {item.qty}x
+                        </Box>
+                        {item.name}
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        sx={{ fontSize: '0.85rem', fontWeight: 600, fontFamily: brand.fontBase }}
+                      >
+                        {formatLL((item.price || 0) * item.qty)}
+                      </Typography>
+                    </Stack>
+                  )
+                }
+
+                // --- CART MODE UI (Rich Layout) ---
+                return (
+                  <Box key={item.lineId || index}>
+                    <Stack direction="row" alignItems="center" spacing={2} sx={{ py: 2 }}>
+                      <Box sx={{ width: 64, height: 64, borderRadius: '12px', overflow: 'hidden', flexShrink: 0, bgcolor: '#f3efe9' }}>
+                        <Box component="img" src={item.image || placeholderImg} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       </Box>
-                      {item.name}
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        fontSize: '0.85rem',
-                        fontWeight: 600,
-                        fontFamily: isReceipt ? 'monospace' : 'inherit',
-                      }}
-                    >
-                      {formatLL((item.price || 0) * item.qty)}
-                    </Typography>
-                  </Stack>
-                ))}
-              </Stack>
-            )}
+
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography
+                          variant="body1"
+                          sx={{
+                            color: brand.textPrimary,
+                            fontWeight: 800,
+                            fontSize: '0.95rem',
+                            lineHeight: 1.2,
+                            fontFamily: brand.fontBase,
+                          }}
+                        >
+                          {item.name}
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{ color: brand.textSecondary, fontWeight: 600, fontFamily: brand.fontBase }}
+                        >
+                          {formatLL(item.price || 0)}
+                        </Typography>
+                      </Box>
+
+                      <Stack direction="row" alignItems="center" spacing={1}>
+                        <Stack direction="row" alignItems="center" sx={{ border: `1px solid ${brand.border}`, borderRadius: '999px', height: 32, px: 0.5, bgcolor: '#fff' }}>
+                          <IconButton size="small" onClick={() => updateQty(item.lineId, item.qty - 1)} disabled={item.qty <= 1}>
+                            <RemoveIcon sx={{ fontSize: '1.1rem' }} />
+                          </IconButton>
+                          <Typography
+                            sx={{
+                              minWidth: 20,
+                              textAlign: 'center',
+                              fontWeight: 700,
+                              fontSize: '0.85rem',
+                              fontFamily: brand.fontBase,
+                            }}
+                          >
+                            {item.qty}
+                          </Typography>
+                          <IconButton size="small" onClick={() => updateQty(item.lineId, item.qty + 1)}>
+                            <AddIcon sx={{ fontSize: '1.1rem' }} />
+                          </IconButton>
+                        </Stack>
+                        <IconButton onClick={() => removeFromCart(item.lineId)} sx={{ color: '#cf2e2e' }} size="small">
+                          <DeleteOutlineIcon fontSize="small" />
+                        </IconButton>
+                      </Stack>
+                    </Stack>
+                    {index < items.length - 1 && <Divider sx={{ borderColor: brand.borderSoft }} />}
+                  </Box>
+                )
+              })}
+            </Stack>
 
             <Divider
               sx={{
                 borderStyle: isReceipt ? 'dashed' : 'solid',
-                my: 2,
+                my: 2.5,
                 borderColor: '#d1cdc2',
                 opacity: isReceipt ? 1 : 0.5,
               }}
             />
 
+            {/* TOTALS SECTION */}
             <Stack spacing={1}>
               <Stack direction="row" justifyContent="space-between">
-                <Typography variant="caption" sx={{ color: brand.textSecondary }}>
+                <Typography variant="caption" sx={{ color: brand.textSecondary, fontWeight: 700, fontFamily: brand.fontBase }}>
                   SUBTOTAL
                 </Typography>
-                <Typography variant="caption" sx={{ fontFamily: isReceipt ? 'monospace' : 'inherit' }}>
+                <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: brand.fontBase }}>
                   {formatLL(subtotal)}
                 </Typography>
               </Stack>
@@ -103,10 +176,10 @@ export default function CartSummary({
               {isReceipt && (
                 <>
                   <Stack direction="row" justifyContent="space-between" sx={{ mb: 1 }}>
-                    <Typography variant="caption" sx={{ color: brand.textSecondary }}>
+                    <Typography variant="caption" sx={{ color: brand.textSecondary, fontFamily: brand.fontBase }}>
                       TAX (VAT)
                     </Typography>
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                    <Typography variant="caption" sx={{ fontFamily: brand.fontBase }}>
                       {formatLL(tax)}
                     </Typography>
                   </Stack>
@@ -115,17 +188,13 @@ export default function CartSummary({
               )}
 
               <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Typography variant="body2" fontWeight={800} sx={{ letterSpacing: '0.05em' }}>
+                <Typography variant="body2" fontWeight={800} sx={{ letterSpacing: '0.05em', fontFamily: brand.fontBase }}>
                   TOTAL
                 </Typography>
                 <Typography
                   variant="h6"
                   fontWeight={900}
-                  sx={{
-                    color: brand.primaryDark,
-                    fontFamily: isReceipt ? 'monospace' : 'inherit',
-                    fontSize: isReceipt ? '1.25rem' : '1.1rem',
-                  }}
+                  sx={{ color: brand.primaryDark, fontSize: isReceipt ? '1.25rem' : '1.1rem', fontFamily: brand.fontBase }}
                 >
                   {formatLL(total)}
                 </Typography>
@@ -146,6 +215,7 @@ export default function CartSummary({
               opacity: 0.4,
               letterSpacing: '0.2em',
               textTransform: 'uppercase',
+              fontFamily: brand.fontBase,
             }}
           >
             *** Thank You ***

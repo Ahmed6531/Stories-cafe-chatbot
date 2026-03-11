@@ -1,22 +1,8 @@
 import { Link, useNavigate } from 'react-router-dom'
-import {
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Container,
-  Divider,
-  IconButton,
-  Stack,
-  Typography,
-} from '@mui/material'
-import AddIcon from '@mui/icons-material/Add'
-import RemoveIcon from '@mui/icons-material/Remove'
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
+import { Box, Button, Container, Stack, Typography } from '@mui/material'
 import LocalGroceryStoreOutlinedIcon from '@mui/icons-material/LocalGroceryStoreOutlined'
-import CartSummary from '../components/CartSummary'
 import { useCart } from '../state/useCart'
-import { formatLL } from '../data/variantCatalog'
+import CartSummary from '../components/CartSummary'
 
 const brand = {
   primary: '#00704a',
@@ -27,38 +13,37 @@ const brand = {
   fontDisplay: "'DIN Alternate Bold', 'Montserrat', sans-serif",
 }
 
-const placeholderImg = 'https://via.placeholder.com/100/8B7355/FFFFFF?text=Coffee'
-
 export default function Cart() {
   const navigate = useNavigate()
-  const { state, updateQty, removeFromCart } = useCart()
+  const { state } = useCart()
   const { items: cartItems, loading } = state
 
   if (loading) {
     return (
-      <Container sx={{ py: 3, '& .MuiTypography-root': { fontFamily: brand.fontBase } }}>
-        <Typography>Loading your cart...</Typography>
+      <Container sx={{ py: 3, textAlign: 'center' }}>
+        <Typography sx={{ fontFamily: brand.fontBase }}>Loading your cart...</Typography>
       </Container>
     )
   }
 
   return (
     <Container
-      maxWidth="xl"
+      maxWidth={false}
       sx={{
-        py: 3,
+        py: { xs: 2, md: 4 },
+        maxWidth: '1200px',
         '& .MuiTypography-root': { fontFamily: brand.fontBase },
         '& .MuiButton-root': { fontFamily: brand.fontBase },
       }}
     >
       <Typography
         variant="h5"
-        fontWeight={900}
         sx={{
           fontFamily: brand.fontDisplay,
+          fontWeight: 900,
+          color: brand.primary,
           letterSpacing: '0.04em',
           textTransform: 'uppercase',
-          color: brand.primary,
           textAlign: 'center',
           mb: 3,
         }}
@@ -67,229 +52,76 @@ export default function Cart() {
       </Typography>
 
       {cartItems.length === 0 ? (
-        <Stack spacing={2} alignItems="center" textAlign="center" sx={{ py: 6 }}>
-          <LocalGroceryStoreOutlinedIcon sx={{ fontSize: 30, color: brand.primary, opacity: 0.9 }} />
+        <Stack spacing={2} alignItems="center" textAlign="center" sx={{ py: 8 }}>
+          <LocalGroceryStoreOutlinedIcon sx={{ fontSize: 50, color: brand.primary, opacity: 0.3 }} />
           <Typography variant="h6" fontWeight={800} sx={{ color: brand.textPrimary }}>
             Your cart is empty
           </Typography>
-          <Typography variant="body2" sx={{ color: brand.textSecondary, maxWidth: 360 }}>
-            Start with a drink or pastry, and we will keep everything here until checkout.
+          <Typography variant="body2" sx={{ color: brand.textSecondary, maxWidth: 360, mb: 2 }}>
+            Looks like you haven't added anything yet. Explore our menu to find your favorites.
           </Typography>
           <Button
             component={Link}
             to="/menu"
             variant="contained"
             sx={{
-              mt: 1,
-              borderRadius: '8px',
-              px: 4,
-              py: 1.2,
-              fontWeight: 600,
-              fontSize: '1rem',
-              fontFamily: "'Montserrat', sans-serif",
-              letterSpacing: '0.5px',
+              borderRadius: '10px',
+              px: 5,
+              py: 1.5,
+              fontWeight: 700,
               textTransform: 'none',
               backgroundColor: brand.primaryDark,
-              '&:hover': { backgroundColor: brand.primaryDark, transform: 'translateY(-2px)' },
-              '&:visited': { color: '#fff' },
-              transition: 'all 0.3s ease',
+              '&:hover': { backgroundColor: '#143d22' },
             }}
           >
             Browse Menu
           </Button>
         </Stack>
       ) : (
-        <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2.5} alignItems="flex-start">
-          <Card
-            variant="outlined"
-            sx={{ flex: 1, width: '100%', borderRadius: 2, borderColor: '#dce8e1', overflow: 'hidden' }}
-          >
-            <CardContent sx={{ p: { xs: 1.5, sm: 2 }, '&:last-child': { pb: { xs: 1.5, sm: 2 } } }}>
-              <Stack spacing={1.5}>
-                {cartItems.map((item, index) => (
-                  <Box key={item.lineId}>
-                    <Stack
-                      direction={{ xs: 'column', sm: 'row' }}
-                      spacing={1.5}
-                      alignItems={{ xs: 'stretch', sm: 'center' }}
-                      sx={{
-                        p: { xs: 1.25, sm: 1.5 },
-                        border: '1px solid #e8efeb',
-                        borderRadius: 2,
-                        bgcolor: '#fff',
-                      }}
-                    >
-                      <Box
-                        sx={{
-                          width: { xs: '100%', sm: 92 },
-                          height: { xs: 140, sm: 92 },
-                          borderRadius: 1.5,
-                          overflow: 'hidden',
-                          flexShrink: 0,
-                          bgcolor: '#f0ede8',
-                        }}
-                      >
-                        <Box
-                          component="img"
-                          src={item.image || placeholderImg}
-                          alt={item.name}
-                          onError={(e) => {
-                            e.currentTarget.src = placeholderImg
-                          }}
-                          sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        />
-                      </Box>
+        <Box sx={{ maxWidth: 650, mx: 'auto' }}>
+          <CartSummary
+            items={cartItems}
+            mode="cartSummary"
+            title="Review Order"
+            action={
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                <Button
+                  fullWidth
+                  component={Link}
+                  to="/menu"
+                  variant="outlined"
+                  sx={{
+                    py: 1.5,
+                    borderRadius: '12px',
+                    fontWeight: 700,
+                    textTransform: 'none',
+                    color: brand.primaryDark,
+                    borderColor: '#cfe0d6',
+                    '&:hover': { borderColor: brand.primary, backgroundColor: 'rgba(0,112,74,0.04)' },
+                  }}
+                >
+                  Add More
+                </Button>
 
-                      <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <Typography variant="subtitle1" fontWeight={800} sx={{ color: brand.textPrimary }}>
-                          {item.name}
-                        </Typography>
-                        {(() => {
-                          if (Array.isArray(item.variants) && item.variants.length > 0) {
-                            return (
-                              <Typography variant="caption" sx={{ color: brand.primary }}>
-                                {item.variants.join(', ')}
-                              </Typography>
-                            )
-                          }
-                          if (item.options && typeof item.options === 'object') {
-                            const vals = Object.values(item.options).filter(Boolean)
-                            if (vals.length > 0) {
-                              return (
-                                <Typography variant="caption" sx={{ color: brand.primary }}>
-                                  {vals.join(', ')}
-                                </Typography>
-                              )
-                            }
-                          }
-                          return null
-                        })()}
-                        <Typography variant="body2" sx={{ color: brand.textSecondary, mt: 0.4, fontWeight: 700 }}>
-                          {formatLL((item.price || 0) * item.qty)}
-                        </Typography>
-                      </Box>
-
-                      <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-                        <Stack
-                          direction="row"
-                          alignItems="center"
-                          sx={{
-                            border: '1px solid #e7e7e7',
-                            borderRadius: 999,
-                            px: 0.5,
-                            py: 0.2,
-                            bgcolor: '#fafafa',
-                          }}
-                        >
-                          <IconButton
-                            size="small"
-                            onClick={() => updateQty(item.lineId, item.qty - 1)}
-                            disabled={item.qty <= 1}
-                            aria-label="Decrease quantity"
-                            sx={{
-                              color: brand.primary,
-                              '&:hover': { bgcolor: '#f1f1f1' },
-                            }}
-                          >
-                            <RemoveIcon fontSize="small" />
-                          </IconButton>
-                          <Typography sx={{ minWidth: 26, textAlign: 'center', fontWeight: 700 }}>
-                            {item.qty}
-                          </Typography>
-                          <IconButton
-                            size="small"
-                            onClick={() => updateQty(item.lineId, item.qty + 1)}
-                            aria-label="Increase quantity"
-                            sx={{
-                              color: brand.primary,
-                              '&:hover': { bgcolor: '#f1f1f1' },
-                            }}
-                          >
-                            <AddIcon fontSize="small" />
-                          </IconButton>
-                        </Stack>
-
-                        <IconButton
-                          onClick={() => removeFromCart(item.lineId)}
-                          aria-label="Remove item"
-                          sx={{
-                            color: '#c62828',
-                            border: '1px solid #e7e7e7',
-                            bgcolor: '#fafafa',
-                            '&:hover': { color: '#b42318', bgcolor: '#f1f1f1' },
-                          }}
-                        >
-                          <DeleteOutlineIcon />
-                        </IconButton>
-                      </Stack>
-
-                    </Stack>
-                    {index < cartItems.length - 1 && <Divider sx={{ my: 1.2, opacity: 0.45 }} />}
-                  </Box>
-                ))}
+                <Button
+                  fullWidth
+                  variant="contained"
+                  onClick={() => navigate('/checkout')}
+                  sx={{
+                    py: 1.5,
+                    borderRadius: '12px',
+                    fontWeight: 700,
+                    textTransform: 'none',
+                    backgroundColor: brand.primaryDark,
+                    '&:hover': { backgroundColor: '#143d22' },
+                  }}
+                >
+                  Checkout
+                </Button>
               </Stack>
-            </CardContent>
-          </Card>
-
-          <Box
-            sx={{
-              width: '100%',
-              maxWidth: { lg: 360 },
-              position: { lg: 'sticky' },
-              top: { lg: 84 },
-            }}
-          >
-            <CartSummary
-              items={cartItems}
-              mode="cartSummary"
-              action={
-                <Stack spacing={1.1}>
-                  <Button
-                    fullWidth
-                    variant="contained"
-                    onClick={() => navigate('/checkout')}
-                    sx={{
-                      borderRadius: '8px',
-                      py: 1.2,
-                      fontWeight: 600,
-                      fontSize: '1rem',
-                      fontFamily: "'Montserrat', sans-serif",
-                      letterSpacing: '0.5px',
-                      textTransform: 'none',
-                      backgroundColor: brand.primaryDark,
-                      '&:hover': { backgroundColor: brand.primaryDark, transform: 'translateY(-2px)' },
-                      transition: 'all 0.3s ease',
-                    }}
-                  >
-                    Proceed to Checkout
-                  </Button>
-
-                  <Button
-                    fullWidth
-                    component={Link}
-                    to="/menu"
-                    variant="outlined"
-                    sx={{
-                      borderRadius: '8px',
-                      py: 1.2,
-                      fontWeight: 600,
-                      fontSize: '1rem',
-                      fontFamily: "'Montserrat', sans-serif",
-                      letterSpacing: '0.5px',
-                      textTransform: 'none',
-                      borderColor: '#c7ddd1',
-                      color: brand.primaryDark,
-                      '&:visited': { color: brand.primaryDark, borderColor: '#c7ddd1' },
-                      '&:hover': { borderColor: brand.primary, backgroundColor: 'rgba(0,112,74,0.06)' },
-                    }}
-                  >
-                    Continue Shopping
-                  </Button>
-                </Stack>
-              }
-            />
-          </Box>
-        </Stack>
+            }
+          />
+        </Box>
       )}
     </Container>
   )
