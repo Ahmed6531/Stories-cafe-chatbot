@@ -7,6 +7,7 @@ import FeaturedItems from '../components/FeaturedItems'
 import { fetchMenu } from '../API/menuApi'
 import CategoryChipsSkeleton from '../components/CategoryChipsSkeleton'
 import MenuSkeleton from '../components/MenuSkeleton'
+import { categoryChipLayout } from '../theme/layoutTokens'
 
 const brand = {
   primary: '#00704a',
@@ -121,20 +122,20 @@ const Catbar = styled(Box)(() => ({
 // .catbar-inner
 const CatbarInner = styled(Box)(({ theme }) => ({
   display: 'flex',
-  gap: '12px',
+  gap: categoryChipLayout.railGap.lg,
   flexWrap: 'nowrap',
   alignItems: 'center',
   justifyContent: 'center',
   minWidth: 'max-content',
-  padding: '0 18px',
+  padding: categoryChipLayout.railPadding.lg,
 
   [theme.breakpoints.down('md')]: {
-    gap: '10px',
-    padding: '0 14px',
+    gap: categoryChipLayout.railGap.md,
+    padding: categoryChipLayout.railPadding.md,
   },
   [theme.breakpoints.down('sm')]: {
-    gap: '8px',
-    padding: '0 10px',
+    gap: categoryChipLayout.railGap.xs,
+    padding: categoryChipLayout.railPadding.xs,
   },
 }));
 
@@ -156,21 +157,21 @@ const CatChip = styled('button', {
   userSelect: 'none',
   boxShadow: brand.shadowSm,
   overflow: 'hidden',
-  minWidth: '120px',
-  maxWidth: '140px',
+  minWidth: `${categoryChipLayout.widths.lg.min}px`,
+  maxWidth: `${categoryChipLayout.widths.lg.max}px`,
   flexShrink: 0,
 
   [theme.breakpoints.down('md')]: {
-    minWidth: '100px',
-    maxWidth: '120px',
+    minWidth: `${categoryChipLayout.widths.md.min}px`,
+    maxWidth: `${categoryChipLayout.widths.md.max}px`,
     fontSize: '13px',
-    borderRadius: '16px',
+    borderRadius: `${categoryChipLayout.radius.md}px`,
   },
   [theme.breakpoints.down('sm')]: {
-    minWidth: '84px',
-    maxWidth: '104px',
+    minWidth: `${categoryChipLayout.widths.xs.min}px`,
+    maxWidth: `${categoryChipLayout.widths.xs.max}px`,
     fontSize: '12px',
-    borderRadius: '14px',
+    borderRadius: `${categoryChipLayout.radius.xs}px`,
   },
 
   ...(isActive ? {
@@ -207,25 +208,25 @@ const CatChipContent = styled(Box)(({ theme }) => ({
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
-  padding: '16px 12px',
-  gap: '8px',
+  padding: categoryChipLayout.contentPadding.lg,
+  gap: categoryChipLayout.gap.lg,
 
   [theme.breakpoints.down('md')]: {
-    padding: '12px 10px',
-    gap: '6px',
+    padding: categoryChipLayout.contentPadding.md,
+    gap: categoryChipLayout.gap.md,
   },
   [theme.breakpoints.down('sm')]: {
-    padding: '10px 8px',
-    gap: '5px',
+    padding: categoryChipLayout.contentPadding.xs,
+    gap: categoryChipLayout.gap.xs,
   },
 }));
 
 // .cat-chip-image
 const CatChipImage = styled('img')(({ theme }) => ({
-  width: '56px',
-  height: '56px',
+  width: `${categoryChipLayout.image.lg}px`,
+  height: `${categoryChipLayout.image.lg}px`,
   objectFit: 'cover',
-  borderRadius: '12px',
+  borderRadius: `${categoryChipLayout.imageRadius.lg}px`,
   background: 'transparent',
   transition: 'transform 0.3s ease',
   pointerEvents: 'none',
@@ -233,30 +234,30 @@ const CatChipImage = styled('img')(({ theme }) => ({
   WebkitUserDrag: 'none',
 
   [theme.breakpoints.down('md')]: {
-    width: '46px',
-    height: '46px',
-    borderRadius: '10px',
+    width: `${categoryChipLayout.image.md}px`,
+    height: `${categoryChipLayout.image.md}px`,
+    borderRadius: `${categoryChipLayout.imageRadius.md}px`,
   },
   [theme.breakpoints.down('sm')]: {
-    width: '38px',
-    height: '38px',
-    borderRadius: '8px',
+    width: `${categoryChipLayout.image.xs}px`,
+    height: `${categoryChipLayout.image.xs}px`,
+    borderRadius: `${categoryChipLayout.imageRadius.xs}px`,
   },
 }));
 
 // .cat-chip-text
 const CatChipText = styled('span')(({ theme }) => ({
-  fontSize: '13px',
+  fontSize: categoryChipLayout.text.lg,
   fontWeight: 700,
   textAlign: 'center',
   lineHeight: 1.2,
   display: 'block',
 
   [theme.breakpoints.down('md')]: {
-    fontSize: '12px',
+    fontSize: categoryChipLayout.text.md,
   },
   [theme.breakpoints.down('sm')]: {
-    fontSize: '11px',
+    fontSize: categoryChipLayout.text.xs,
   },
 }));
 
@@ -273,7 +274,7 @@ export default function Home() {
     'Coffee': '/images/coffee.png',
     'Mixed Beverages': '/images/mixedbev.png',
     'Pastries': '/images/pastries.png',
-    'Salad': '/images/salad.jpg',
+    'Salad': '/images/salad.png',
     'Sandwiches': '/images/sandwiches.png',
     'Soft Drinks': '/images/soft-drinks.png',
     'Tea': '/images/tea.png',

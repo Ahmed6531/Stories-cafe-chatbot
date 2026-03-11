@@ -2,6 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { Box, Typography, styled } from '@mui/material';
+import { menuCardLayout } from '../theme/layoutTokens';
 
 const brand = {
   primary: '#00704a',
@@ -19,9 +20,6 @@ const brand = {
   fontDisplay: "'DIN Alternate Bold', 'Montserrat', sans-serif",
 }
 
-// TODO: .bestseller-badge, .premium-badge, .unavailable-badge and rating/tag classes
-// could not be fully migrated to JSX because they are not utilized in the current component structure.
-
 const ItemCard = styled(Box, {
   shouldForwardProp: (prop) => prop !== 'isAvailable',
 })(({ theme, isAvailable }) => ({
@@ -31,12 +29,12 @@ const ItemCard = styled(Box, {
   borderRadius: '12px',
   overflow: 'hidden',
   cursor: isAvailable ? 'pointer' : 'default',
-  transition: 'all 0.3s cubic-bezier(0.23, 1, 0.32, 1)',
-  boxShadow: brand.shadowSm,
-  height: '280px',
-  position: 'relative',
-  border: `1px solid ${brand.border}`,
-  opacity: isAvailable ? 1 : 0.7,
+	  transition: 'all 0.3s cubic-bezier(0.23, 1, 0.32, 1)',
+	  boxShadow: brand.shadowSm,
+	  height: `${menuCardLayout.cardHeight.desktop}px`,
+	  position: 'relative',
+	  border: `1px solid ${brand.border}`,
+	  opacity: isAvailable ? 1 : 0.7,
 
   ...(isAvailable && {
     '&:hover': {
@@ -49,195 +47,124 @@ const ItemCard = styled(Box, {
     }
   }),
 
-  [theme.breakpoints.down('md')]: {
-    height: '280px',
-    borderRadius: '12px',
-  },
-
-  [theme.breakpoints.down('sm')]: {
-    height: '220px',
-    borderRadius: '10px',
-  }
-}));
+	  [theme.breakpoints.down('md')]: { height: `${menuCardLayout.cardHeight.desktop}px` },
+	  [theme.breakpoints.down('sm')]: { height: `${menuCardLayout.cardHeight.mobile}px`, borderRadius: '10px' }
+	}));
 
 const ItemCta = styled('button')(({ theme }) => ({
   position: 'absolute',
-  top: '10px',
-  right: '10px',
+  top: '12px',
+  right: '12px',
   zIndex: 3,
-  display: 'inline-flex',
+  display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  border: '1px solid #2f7f5e',
-  borderRadius: '6px',
-  background: '#2a7a59',
-  color: '#ffffff',
-  width: '28px',
-  height: '28px',
+  // Glassmorphism effect to be less distracting
+  background: 'rgba(255, 255, 255, 0.85)',
+  backdropFilter: 'blur(4px)',
+  border: `1px solid ${brand.border}`,
+  borderRadius: '50%', 
+  width: '32px',
+  height: '32px',
   padding: 0,
-  fontFamily: brand.fontBase,
-  fontSize: '16px',
-  fontWeight: 700,
-  lineHeight: 1,
-  boxShadow: 'none',
-  transition: 'all 0.2s ease',
+  color: brand.primary,
+  cursor: 'pointer',
+  transition: 'all 0.25s ease',
 
   '&:hover:not(:disabled)': {
-    transform: 'translateY(-2px)',
-    backgroundColor: brand.primaryHover,
-    borderColor: brand.primaryHover,
+    backgroundColor: brand.primary,
     color: '#ffffff',
-    boxShadow: '0 8px 18px rgba(17, 24, 39, 0.08)',
+    borderColor: brand.primary,
+    transform: 'scale(1.1)',
   },
 
   '&:disabled': {
-    background: '#9ca3af',
-    boxShadow: 'none',
-    cursor: 'not-allowed',
+    display: 'none', // Hide the magnifier if item is unavailable
   },
 
   [theme.breakpoints.down('sm')]: {
-    width: '24px',
-    height: '24px',
-    fontSize: '14px',
-    borderRadius: '4px',
-    top: '7px',
-    right: '7px',
-
-    '& span': {
-      fontSize: '13px',
-    }
+    width: '28px',
+    height: '28px',
+    top: '8px',
+    right: '8px',
   }
 }));
 
 const ItemImageContainer = styled(Box)(({ theme }) => ({
-  position: 'relative',
-  width: '100%',
-  height: '180px',
-  overflow: 'hidden',
-  backgroundColor: '#ffffff',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
+	  position: 'relative',
+	  width: '100%',
+	  height: `${menuCardLayout.imageHeight.desktop}px`,
+	  overflow: 'hidden',
+	  backgroundColor: '#ffffff',
+	  display: 'flex',
+	  alignItems: 'center',
+	  justifyContent: 'center',
+	  [theme.breakpoints.down('sm')]: { height: `${menuCardLayout.imageHeight.mobile}px` }
+	}));
 
-  [theme.breakpoints.down('sm')]: {
-    height: '120px',
-  }
-}));
-
-const ImgPlaceholder = styled(Box)(() => ({
-  width: '100%',
-  height: '100%',
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: '6px',
-  backgroundColor: '#ffffff',
-  color: '#b0b8be',
-}));
-
-const ItemImage = styled('img')(({ theme }) => ({
+const ItemImage = styled('img')(() => ({
   width: '100%',
   height: '100%',
   objectFit: 'contain',
-  padding: '8px',
-  transition: 'transform 0.4s ease',
+  padding: '12px',
+  transition: 'transform 0.5s cubic-bezier(0.33, 1, 0.68, 1)',
   backgroundColor: '#ffffff',
+}));
 
-  [theme.breakpoints.down('sm')]: {
-    padding: '6px',
-  }
+const ImgPlaceholder = styled(Box)(() => ({
+  width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
+  alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#b0b8be',
 }));
 
 const ItemContent = styled(Box)(({ theme }) => ({
-  display: 'flex',
-  flexDirection: 'column',
-  padding: '12px',
-  flex: 1,
-  gap: '6px',
-  background: brand.bgLight,
-
-  [theme.breakpoints.down('sm')]: {
-    padding: '8px',
-    gap: '3px',
-  }
-}));
+	  display: 'flex',
+	  flexDirection: 'column',
+	  padding: `${menuCardLayout.contentPadding.desktop}px`,
+	  flex: 1,
+	  gap: '4px',
+	  background: brand.bgLight,
+	  [theme.breakpoints.down('sm')]: { padding: `${menuCardLayout.contentPadding.mobile}px` }
+	}));
 
 const ItemName = styled(Typography)(({ theme }) => ({
   fontFamily: brand.fontDisplay,
   fontSize: '15px',
   fontWeight: 600,
   color: brand.textPrimary,
-  margin: 0,
   lineHeight: 1.2,
-  flex: 1,
-  wordBreak: 'break-word',
-
-  [theme.breakpoints.down('sm')]: {
-    fontSize: '12px',
-    display: '-webkit-box',
-    WebkitLineClamp: 1,
-    lineClamp: 1,
-    WebkitBoxOrient: 'vertical',
-    overflow: 'hidden',
-  }
+  [theme.breakpoints.down('sm')]: { fontSize: '13px' }
 }));
 
-const ItemDescription = styled(Typography)(({ theme }) => ({
+const ItemDescription = styled(Typography)(() => ({
   fontFamily: brand.fontBase,
-  fontSize: '13px',
-  fontWeight: 400,
+  fontSize: '12px',
   color: brand.textSecondary,
-  margin: 0,
   lineHeight: 1.4,
   display: '-webkit-box',
-  WebkitLineClamp: 1,
-  lineClamp: 1,
+  WebkitLineClamp: 2,
   WebkitBoxOrient: 'vertical',
   overflow: 'hidden',
   textOverflow: 'ellipsis',
-
-  [theme.breakpoints.down('sm')]: {
-    WebkitLineClamp: 2,
-    lineClamp: 2,
-    fontSize: '11px',
-    lineHeight: 1.25,
-    marginTop: '-1px',
-  }
+  minHeight: '2.8em',
 }));
 
-const ItemBottom = styled(Box)(({ theme }) => ({
+const ItemBottom = styled(Box)(() => ({
   marginTop: 'auto',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
   gap: '8px',
-  flexWrap: 'nowrap',
-  whiteSpace: 'nowrap',
-
-  [theme.breakpoints.down('sm')]: {
-    gap: '4px',
-  }
 }));
 
 const StatusPill = styled(Box, {
   shouldForwardProp: (prop) => prop !== 'isAvailable',
-})(({ theme, isAvailable }) => ({
-  width: 'fit-content',
+})(({ isAvailable }) => ({
   padding: '4px 10px',
   borderRadius: '20px',
-  fontWeight: 500,
-  fontSize: '12px',
-  whiteSpace: 'nowrap',
-  flexShrink: 0,
+  fontWeight: 600,
+  fontSize: '11px',
   background: isAvailable ? '#edf3ef' : '#fee2e2',
   color: isAvailable ? '#5b6b62' : '#b91c1c',
-
-  [theme.breakpoints.down('sm')]: {
-    fontSize: '10px',
-    padding: '3px 7px',
-  }
 }));
 
 const ItemPrice = styled(Typography)(({ theme }) => ({
@@ -245,79 +172,54 @@ const ItemPrice = styled(Typography)(({ theme }) => ({
   fontSize: '17px',
   fontWeight: 700,
   color: brand.textPrimary,
-  marginTop: 0,
-  flexShrink: 0,
-  whiteSpace: 'nowrap',
-
-  [theme.breakpoints.down('sm')]: {
-    fontSize: '13px',
-  }
+  [theme.breakpoints.down('sm')]: { fontSize: '14px' }
 }));
 
 export default function MenuItem({ item }) {
   const navigate = useNavigate();
   const [imageError, setImageError] = useState(false);
   const showPlaceholder = !item.hasImage || imageError;
+
   const formatPrice = (p) => (
     <>
-      <Box component="span" sx={{ fontSize: '0.72em', fontWeight: 600, opacity: 0.72, letterSpacing: '0.02em' }}>LL</Box> {Number(p).toLocaleString()}
+      <Box component="span" sx={{ fontSize: '0.72em', fontWeight: 600, opacity: 0.7 }}>LL</Box> {Number(p).toLocaleString()}
     </>
   );
 
-  const handleClick = () => {
-    if (item.isAvailable) {
-      navigate(`/item/${item.id}`);
-    }
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && item.isAvailable) {
-      navigate(`/item/${item.id}`);
-    }
-  };
-
-  const handleAddClick = (e) => {
-    e.stopPropagation();
-    if (item.isAvailable) {
-      navigate(`/item/${item.id}`);
-    }
+  const handleAction = (e) => {
+    if (e) e.stopPropagation();
+    if (item.isAvailable) navigate(`/item/${item.id}`);
   };
 
   return (
     <ItemCard
       isAvailable={item.isAvailable}
-      role={item.isAvailable ? "button" : undefined}
+      onClick={handleAction}
+      onKeyDown={(e) => e.key === 'Enter' && handleAction()}
       tabIndex={item.isAvailable ? 0 : -1}
-      onClick={handleClick}
-      onKeyDown={handleKeyDown}
     >
-      <ItemCta
-        type="button"
-        aria-label={item.isAvailable ? `Add ${item.name}` : `${item.name} unavailable`}
-        onClick={handleAddClick}
-        disabled={!item.isAvailable}
+      {/* MAGNIFIER CTA */}
+      <ItemCta 
+        disabled={!item.isAvailable} 
+        onClick={handleAction}
+        aria-label="View Details"
       >
-        <Box component="span" sx={{ fontSize: '15px', lineHeight: 1 }}>+</Box>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
       </ItemCta>
 
       <ItemImageContainer>
         {showPlaceholder ? (
           <ImgPlaceholder>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <rect x="3" y="3" width="18" height="18" rx="2" />
-              <circle cx="8.5" cy="8.5" r="1.5" />
               <path d="m21 15-5-5L5 21" />
             </svg>
-            <Box component="span" sx={{ fontSize: '10px', fontWeight: 600, fontFamily: brand.fontBase }}>
-              Image coming soon
-            </Box>
           </ImgPlaceholder>
         ) : (
-          <ItemImage
-            src={item.image}
-            alt={item.name}
-            onError={() => setImageError(true)}
-          />
+          <ItemImage src={item.image} alt={item.name} onError={() => setImageError(true)} />
         )}
       </ItemImageContainer>
 

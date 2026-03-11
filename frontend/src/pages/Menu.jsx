@@ -7,6 +7,7 @@ import MenuList from '../components/MenuList'
 import MenuSkeleton from '../components/MenuSkeleton'
 import CategoryChipsSkeleton from '../components/CategoryChipsSkeleton'
 import { fetchMenu } from '../API/menuApi'
+import { categoryChipLayout } from '../theme/layoutTokens'
 
 const brand = {
   primary: '#00704a',
@@ -93,7 +94,7 @@ const StatusText = styled(Typography, {
 }));
 
 // .catbar-wrap
-const CatbarWrap = styled(Box)(() => ({
+const CatbarWrap = styled(Box)(({ theme }) => ({
   position: 'relative',
   width: '100%',
   '&::after': {
@@ -117,7 +118,11 @@ const CatbarWrap = styled(Box)(() => ({
     background: 'linear-gradient(to left, rgba(255,255,255,0), rgba(255,255,255,0.56) 76%, #fff 100%)',
     pointerEvents: 'none',
     zIndex: 1,
-  }
+  },
+  [theme.breakpoints.down('sm')]: {
+    '&::after': { width: '30px' },
+    '&::before': { width: '22px' },
+  },
 }));
 
 // .catbar
@@ -135,25 +140,33 @@ const Catbar = styled(Box)(() => ({
 }));
 
 // .catbar-inner
-const CatbarInner = styled(Box)(() => ({
+const CatbarInner = styled(Box)(({ theme }) => ({
   display: 'flex',
-  gap: '12px',
+  gap: categoryChipLayout.railGap.lg,
   flexWrap: 'nowrap',
   alignItems: 'center',
   justifyContent: 'center',
   minWidth: 'max-content',
-  padding: '0 18px',
+  padding: categoryChipLayout.railPadding.lg,
+  [theme.breakpoints.down('md')]: {
+    gap: categoryChipLayout.railGap.md,
+    padding: categoryChipLayout.railPadding.md,
+  },
+  [theme.breakpoints.down('sm')]: {
+    gap: categoryChipLayout.railGap.xs,
+    padding: categoryChipLayout.railPadding.xs,
+  },
 }));
 
 // .cat-chip
 const CatChip = styled('button', {
   shouldForwardProp: (prop) => prop !== 'isActive',
-})(({ isActive }) => ({
+})(({ theme, isActive }) => ({
   padding: 0,
   border: '1px solid #d6e4dd',
   backgroundColor: '#ffffff',
   color: '#1a4a35',
-  borderRadius: '20px',
+  borderRadius: `${categoryChipLayout.radius.lg}px`,
   fontFamily: brand.fontBase,
   fontSize: '14px',
   fontWeight: 600,
@@ -163,9 +176,21 @@ const CatChip = styled('button', {
   userSelect: 'none',
   boxShadow: brand.shadowSm,
   overflow: 'hidden',
-  minWidth: '120px',
-  maxWidth: '140px',
+  minWidth: `${categoryChipLayout.widths.lg.min}px`,
+  maxWidth: `${categoryChipLayout.widths.lg.max}px`,
   flexShrink: 0,
+  [theme.breakpoints.down('md')]: {
+    minWidth: `${categoryChipLayout.widths.md.min}px`,
+    maxWidth: `${categoryChipLayout.widths.md.max}px`,
+    fontSize: '13px',
+    borderRadius: `${categoryChipLayout.radius.md}px`,
+  },
+  [theme.breakpoints.down('sm')]: {
+    minWidth: `${categoryChipLayout.widths.xs.min}px`,
+    maxWidth: `${categoryChipLayout.widths.xs.max}px`,
+    fontSize: '12px',
+    borderRadius: `${categoryChipLayout.radius.xs}px`,
+  },
 
   ...(isActive
     ? {
@@ -199,34 +224,58 @@ const CatChip = styled('button', {
 }));
 
 // .cat-chip-content
-const CatChipContent = styled(Box)(() => ({
+const CatChipContent = styled(Box)(({ theme }) => ({
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
-  padding: '16px 12px',
-  gap: '8px',
+  padding: categoryChipLayout.contentPadding.lg,
+  gap: categoryChipLayout.gap.lg,
+  [theme.breakpoints.down('md')]: {
+    padding: categoryChipLayout.contentPadding.md,
+    gap: categoryChipLayout.gap.md,
+  },
+  [theme.breakpoints.down('sm')]: {
+    padding: categoryChipLayout.contentPadding.xs,
+    gap: categoryChipLayout.gap.xs,
+  },
 }));
 
 // .cat-chip-image
-const CatChipImage = styled('img')(() => ({
-  width: '56px',
-  height: '56px',
+const CatChipImage = styled('img')(({ theme }) => ({
+  width: `${categoryChipLayout.image.lg}px`,
+  height: `${categoryChipLayout.image.lg}px`,
   objectFit: 'cover',
-  borderRadius: '12px',
+  borderRadius: `${categoryChipLayout.imageRadius.lg}px`,
   background: 'transparent',
   transition: 'transform 0.3s ease',
   pointerEvents: 'none',
   userSelect: 'none',
   WebkitUserDrag: 'none',
+  [theme.breakpoints.down('md')]: {
+    width: `${categoryChipLayout.image.md}px`,
+    height: `${categoryChipLayout.image.md}px`,
+    borderRadius: `${categoryChipLayout.imageRadius.md}px`,
+  },
+  [theme.breakpoints.down('sm')]: {
+    width: `${categoryChipLayout.image.xs}px`,
+    height: `${categoryChipLayout.image.xs}px`,
+    borderRadius: `${categoryChipLayout.imageRadius.xs}px`,
+  },
 }));
 
 // .cat-chip-text
-const CatChipText = styled('span')(() => ({
-  fontSize: '13px',
+const CatChipText = styled('span')(({ theme }) => ({
+  fontSize: categoryChipLayout.text.lg,
   fontWeight: 700,
   textAlign: 'center',
   lineHeight: 1.2,
   display: 'block',
+  [theme.breakpoints.down('md')]: {
+    fontSize: categoryChipLayout.text.md,
+  },
+  [theme.breakpoints.down('sm')]: {
+    fontSize: categoryChipLayout.text.xs,
+  },
 }));
 
 // .subcatbar
@@ -290,13 +339,14 @@ export default function Menu() {
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [hasLoadedCategories, setHasLoadedCategories] = useState(false)
 
   // Category image mapping
   const categoryImages = {
     'Coffee': '/images/coffee.png',
     'Mixed Beverages': '/images/mixedbev.png',
     'Pastries': '/images/pastries.png',
-    'Salad': '/images/salad.jpg',
+    'Salad': '/images/salad.png',
     'Sandwiches': '/images/sandwiches.png',
     'Soft Drinks': '/images/soft-drinks.png',
     'Tea': '/images/tea.png',
@@ -321,6 +371,7 @@ export default function Menu() {
         setItems(data.items);
         setCategories(data.categories);
         setError(null);
+        setHasLoadedCategories(true)
       } catch (err) {
         setError(err.message);
         console.error(err);
@@ -373,7 +424,40 @@ export default function Menu() {
         <SectionHeading>
           <SectionLabel component="h2">Categories</SectionLabel>
         </SectionHeading>
-        <CategoryChipsSkeleton />
+        {hasLoadedCategories ? (
+          <>
+            <CatbarWrap>
+              <Catbar ref={catbarRef} onMouseDown={catbarMouseDown}>
+                <CatbarInner>
+                  {categories.map((c) => (
+                    <CatChip
+                      key={c}
+                      type="button"
+                      isActive={category === c}
+                      onClick={() => handleCategoryClick(c)}
+                    >
+                      <CatChipContent>
+                        <CatChipImage
+                          src={categoryImages[c] || '/images/placeholder.png'}
+                          alt={c}
+                          draggable={false}
+                          onError={(e) => {
+                            e.currentTarget.src = '/images/placeholder.png'
+                          }}
+                        />
+                        <CatChipText>
+                          {c === 'Mixed Beverages' ? 'Mixed Bev.' : c}
+                        </CatChipText>
+                      </CatChipContent>
+                    </CatChip>
+                  ))}
+                </CatbarInner>
+              </Catbar>
+            </CatbarWrap>
+          </>
+        ) : (
+          <CategoryChipsSkeleton />
+        )}
         <MenuSkeleton />
       </PageWrap>
     )

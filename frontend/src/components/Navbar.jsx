@@ -51,13 +51,14 @@ const TopNavLink = styled(Link, {
   fontFamily: brand.fontBase,
   color: isActive ? brand.primary : '#4b5563',
   textDecoration: 'none',
-  padding: '5px 10px',
-  borderRadius: '6px',
-  transition: 'color 0.2s, background 0.2s',
+  padding: '7px 10px 5px',
+  borderRadius: '0',
+  borderBottom: `2px solid ${isActive ? brand.primary : 'transparent'}`,
+  transition: 'color 0.2s, border-color 0.2s',
   whiteSpace: 'nowrap',
   '&:hover': {
     color: brand.primary,
-    backgroundColor: 'rgba(0, 112, 74, 0.06)',
+    borderBottomColor: brand.primary,
   },
 }))
 
