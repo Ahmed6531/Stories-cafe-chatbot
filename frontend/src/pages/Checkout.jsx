@@ -37,7 +37,7 @@ const labelStyle = {
 }
 
 const formGroupStyle = {
-  marginBottom: '16px',
+  marginBottom: '18px',
 }
 
 const orderOptionStyle = {
@@ -112,7 +112,9 @@ export default function Checkout() {
   return (
     <Box
       sx={{
-        p: { xs: 2, md: 4 },
+        px: { xs: 2, md: 4 },
+        pt: { xs: 1, md: 2 },
+        pb: { xs: 2, md: 4 },
         maxWidth: '1200px',
         margin: '0 auto',
         fontFamily: "'Montserrat', sans-serif",
@@ -124,12 +126,13 @@ export default function Checkout() {
         variant="h5"
         sx={{
           fontFamily: "'DIN Alternate Bold', 'Montserrat', sans-serif",
+          fontSize: { xs: '1.25rem', sm: '1.5rem' },
           fontWeight: 900,
           color: '#00704a',
           letterSpacing: '0.04em',
           textTransform: 'uppercase',
           textAlign: 'center',
-          mb: 3,
+          mb: { xs: 2.5, md: 3 },
         }}
       >
         Checkout
@@ -138,11 +141,11 @@ export default function Checkout() {
         <Box
           sx={{
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: '1.2fr 0.8fr' },
-          gap: { xs: '28px', md: '40px' },
-          alignItems: 'stretch',
-        }}
-      >
+            gridTemplateColumns: { xs: '1fr', md: '1fr 360px' },
+            gap: { xs: '24px', md: '32px' },
+            alignItems: 'stretch',
+          }}
+        >
         <Box
           component="form"
           id="checkout-form"
@@ -238,7 +241,7 @@ export default function Checkout() {
               style={{
                 ...inputStyle,
                 resize: 'none',
-                minHeight: '180px',
+                minHeight: '140px',
               }}
               placeholder="Any specific requests?"
             />
@@ -255,7 +258,32 @@ export default function Checkout() {
             />
           </Box>
 
-          <Box sx={{ mt: 'auto', pt: { xs: 2, md: 3 } }}>
+          <Box sx={{ display: { xs: 'block', md: 'none' }, mt: 1.5 }}>
+            <Button
+              type="submit"
+              form="checkout-form"
+              fullWidth
+              variant="contained"
+              sx={{
+                maxWidth: 360,
+                width: '100%',
+                mx: 'auto',
+                display: 'flex',
+                py: 1.5,
+                borderRadius: '10px',
+                bgcolor: '#1e5631',
+                fontWeight: 700,
+                textTransform: 'none',
+                fontSize: '1rem',
+                fontFamily: "'Montserrat', sans-serif",
+                '&:hover': { bgcolor: '#143d22' },
+              }}
+            >
+              Place Order
+            </Button>
+          </Box>
+
+          <Box sx={{ mt: { xs: 1, md: 0.25 }, pt: 0 }}>
             <Button
               component="button"
               type="button"
@@ -264,7 +292,7 @@ export default function Checkout() {
               sx={{
                 px: 0,
                 minWidth: 0,
-                color: '#5f6b64',
+                color: '#6b7a73',
                 fontWeight: 600,
                 textTransform: 'none',
                 fontSize: '0.95rem',
@@ -280,9 +308,8 @@ export default function Checkout() {
           sx={{
             display: { xs: 'none', md: 'flex' },
             flexDirection: 'column',
-            justifyContent: 'space-between',
             minHeight: '100%',
-            pt: { xs: 0, md: 5.5 },
+            pt: { xs: 0, md: 4 },
           }}
         >
           <CartSummary
@@ -298,7 +325,7 @@ export default function Checkout() {
           <Stack
             direction={{ xs: 'column', md: 'column' }}
             spacing={1.25}
-            sx={{ pt: 2.5, maxWidth: 360, width: '100%', mx: 'auto' }}
+            sx={{ pt: 1.5, maxWidth: 360, width: '100%', mx: 'auto' }}
           >
             <Button
               type="submit"

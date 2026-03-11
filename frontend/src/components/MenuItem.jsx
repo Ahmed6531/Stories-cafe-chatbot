@@ -135,7 +135,7 @@ const ItemName = styled(Typography)(({ theme }) => ({
   [theme.breakpoints.down('sm')]: { fontSize: '12px' }
 }));
 
-const ItemDescription = styled(Typography)(() => ({
+const ItemDescription = styled(Typography)(({ theme }) => ({
   fontFamily: brand.fontBase,
   fontSize: '12px',
   color: brand.textSecondary,
@@ -146,6 +146,10 @@ const ItemDescription = styled(Typography)(() => ({
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   minHeight: '2.8em',
+  [theme.breakpoints.down('sm')]: {
+    WebkitLineClamp: 1,
+    minHeight: '1.4em',
+  },
 }));
 
 const ItemBottom = styled(Box)(() => ({
@@ -158,13 +162,17 @@ const ItemBottom = styled(Box)(() => ({
 
 const StatusPill = styled(Box, {
   shouldForwardProp: (prop) => prop !== 'isAvailable',
-})(({ isAvailable }) => ({
+})(({ theme, isAvailable }) => ({
   padding: '4px 10px',
   borderRadius: '20px',
   fontWeight: 600,
   fontSize: '11px',
   background: isAvailable ? '#edf3ef' : '#fee2e2',
   color: isAvailable ? '#5b6b62' : '#b91c1c',
+  [theme.breakpoints.down('sm')]: {
+    fontSize: '9px',
+    padding: '2px 7px',
+  },
 }));
 
 const ItemPrice = styled(Typography)(({ theme }) => ({

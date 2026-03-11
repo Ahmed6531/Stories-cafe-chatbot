@@ -84,7 +84,7 @@ export default function MenuSkeleton() {
               sx={{
                 transform: 'none',
                 transformOrigin: 'center',
-                bgcolor: '#eef2ef',
+                bgcolor: '#eceff1',
                 '@media (max-width: 600px)': {
                   height: `${menuCardLayout.imageHeight.mobile}px`,
                 },

@@ -30,7 +30,8 @@ export default function Cart() {
     <Container
       maxWidth={false}
       sx={{
-        py: { xs: 2, md: 4 },
+        pt: { xs: 1, md: 2 },
+        pb: { xs: 2, md: 3.5 },
         maxWidth: '1200px',
         '& .MuiTypography-root': { fontFamily: brand.fontBase },
         '& .MuiButton-root': { fontFamily: brand.fontBase },
@@ -40,12 +41,13 @@ export default function Cart() {
         variant="h5"
         sx={{
           fontFamily: brand.fontDisplay,
+          fontSize: { xs: '1.25rem', sm: '1.5rem' },
           fontWeight: 900,
           color: brand.primary,
           letterSpacing: '0.04em',
           textTransform: 'uppercase',
           textAlign: 'center',
-          mb: 3,
+          mb: { xs: 2.5, md: 3 },
         }}
       >
         Your Cart
@@ -71,6 +73,7 @@ export default function Cart() {
               fontWeight: 700,
               textTransform: 'none',
               backgroundColor: brand.primaryDark,
+              '&:visited': { color: '#fff', backgroundColor: brand.primaryDark },
               '&:hover': { backgroundColor: '#143d22' },
             }}
           >
@@ -78,7 +81,7 @@ export default function Cart() {
           </Button>
         </Stack>
       ) : (
-        <Box sx={{ maxWidth: 650, mx: 'auto' }}>
+        <Box sx={{ maxWidth: 860, mx: 'auto' }}>
           <CartSummary
             items={cartItems}
             mode="cartSummary"
@@ -91,13 +94,18 @@ export default function Cart() {
                   to="/menu"
                   variant="outlined"
                   sx={{
-                    py: 1.5,
-                    borderRadius: '12px',
+                    py: 1.35,
+                    borderRadius: '10px',
                     fontWeight: 700,
                     textTransform: 'none',
                     color: brand.primaryDark,
-                    borderColor: '#cfe0d6',
-                    '&:hover': { borderColor: brand.primary, backgroundColor: 'rgba(0,112,74,0.04)' },
+                    borderColor: '#d6e4dd',
+                    backgroundColor: '#fff',
+                    '&:visited': {
+                      color: brand.primaryDark,
+                      borderColor: '#d6e4dd',
+                    },
+                    '&:hover': { borderColor: '#b7cec2', backgroundColor: '#f8fcfa' },
                   }}
                 >
                   Add More
@@ -109,11 +117,13 @@ export default function Cart() {
                   onClick={() => navigate('/checkout')}
                   sx={{
                     py: 1.5,
-                    borderRadius: '12px',
+                    borderRadius: '10px',
                     fontWeight: 700,
                     textTransform: 'none',
-                    backgroundColor: brand.primaryDark,
-                    '&:hover': { backgroundColor: '#143d22' },
+                    fontSize: '1rem',
+                    fontFamily: "'Montserrat', sans-serif",
+                    bgcolor: '#1e5631',
+                    '&:hover': { bgcolor: '#143d22' },
                   }}
                 >
                   Checkout
