@@ -55,7 +55,7 @@ const SectionLabel = styled(Typography)(({ theme }) => ({
   position: 'relative',
   paddingBottom: '8px',
 
-  [theme.breakpoints.down('sm')]: {
+  [theme.breakpoints.down('md')]: {
     fontSize: '1.25rem',
     letterSpacing: '0.04em',
     paddingBottom: '4px',
@@ -119,7 +119,7 @@ const CatbarWrap = styled(Box)(({ theme }) => ({
     pointerEvents: 'none',
     zIndex: 1,
   },
-  [theme.breakpoints.down('sm')]: {
+  [theme.breakpoints.down('md')]: {
     '&::after': { width: '30px' },
     '&::before': { width: '22px' },
   },
@@ -148,11 +148,11 @@ const CatbarInner = styled(Box)(({ theme }) => ({
   justifyContent: 'center',
   minWidth: 'max-content',
   padding: categoryChipLayout.railPadding.lg,
-  [theme.breakpoints.down('md')]: {
+  [theme.breakpoints.down('lg')]: {
     gap: categoryChipLayout.railGap.md,
     padding: categoryChipLayout.railPadding.md,
   },
-  [theme.breakpoints.down('sm')]: {
+  [theme.breakpoints.down('md')]: {
     gap: categoryChipLayout.railGap.xs,
     padding: categoryChipLayout.railPadding.xs,
   },
@@ -179,13 +179,13 @@ const CatChip = styled('button', {
   minWidth: `${categoryChipLayout.widths.lg.min}px`,
   maxWidth: `${categoryChipLayout.widths.lg.max}px`,
   flexShrink: 0,
-  [theme.breakpoints.down('md')]: {
+  [theme.breakpoints.down('lg')]: {
     minWidth: `${categoryChipLayout.widths.md.min}px`,
     maxWidth: `${categoryChipLayout.widths.md.max}px`,
     fontSize: '13px',
     borderRadius: `${categoryChipLayout.radius.md}px`,
   },
-  [theme.breakpoints.down('sm')]: {
+  [theme.breakpoints.down('md')]: {
     minWidth: `${categoryChipLayout.widths.xs.min}px`,
     maxWidth: `${categoryChipLayout.widths.xs.max}px`,
     fontSize: '12px',
@@ -230,11 +230,11 @@ const CatChipContent = styled(Box)(({ theme }) => ({
   alignItems: 'center',
   padding: categoryChipLayout.contentPadding.lg,
   gap: categoryChipLayout.gap.lg,
-  [theme.breakpoints.down('md')]: {
+  [theme.breakpoints.down('lg')]: {
     padding: categoryChipLayout.contentPadding.md,
     gap: categoryChipLayout.gap.md,
   },
-  [theme.breakpoints.down('sm')]: {
+  [theme.breakpoints.down('md')]: {
     padding: categoryChipLayout.contentPadding.xs,
     gap: categoryChipLayout.gap.xs,
   },
@@ -251,12 +251,12 @@ const CatChipImage = styled('img')(({ theme }) => ({
   pointerEvents: 'none',
   userSelect: 'none',
   WebkitUserDrag: 'none',
-  [theme.breakpoints.down('md')]: {
+  [theme.breakpoints.down('lg')]: {
     width: `${categoryChipLayout.image.md}px`,
     height: `${categoryChipLayout.image.md}px`,
     borderRadius: `${categoryChipLayout.imageRadius.md}px`,
   },
-  [theme.breakpoints.down('sm')]: {
+  [theme.breakpoints.down('md')]: {
     width: `${categoryChipLayout.image.xs}px`,
     height: `${categoryChipLayout.image.xs}px`,
     borderRadius: `${categoryChipLayout.imageRadius.xs}px`,
@@ -270,10 +270,10 @@ const CatChipText = styled('span')(({ theme }) => ({
   textAlign: 'center',
   lineHeight: 1.2,
   display: 'block',
-  [theme.breakpoints.down('md')]: {
+  [theme.breakpoints.down('lg')]: {
     fontSize: categoryChipLayout.text.md,
   },
-  [theme.breakpoints.down('sm')]: {
+  [theme.breakpoints.down('md')]: {
     fontSize: categoryChipLayout.text.xs,
   },
 }));

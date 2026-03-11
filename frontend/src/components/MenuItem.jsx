@@ -36,7 +36,7 @@ const ItemCard = styled(Box, {
 	  border: `1px solid ${brand.border}`,
 	  opacity: isAvailable ? 1 : 0.7,
 
-  ...(isAvailable && {
+	...(isAvailable && {
     '&:hover': {
       boxShadow: `${brand.shadowHover}, inset 0 0 0 1px rgba(26, 74, 53, 0.08)`,
       transform: 'translateY(-4px)',
@@ -47,9 +47,8 @@ const ItemCard = styled(Box, {
     }
   }),
 
-	  [theme.breakpoints.down('md')]: { height: `${menuCardLayout.cardHeight.desktop}px` },
-	  [theme.breakpoints.down('sm')]: { height: `${menuCardLayout.cardHeight.mobile}px`, borderRadius: '10px' }
-	}));
+	  [theme.breakpoints.down('md')]: { height: `${menuCardLayout.cardHeight.mobile}px`, borderRadius: '10px' }
+		}));
 
 const ItemCta = styled('button')(({ theme }) => ({
   position: 'absolute',
@@ -82,7 +81,7 @@ const ItemCta = styled('button')(({ theme }) => ({
     display: 'none', // Hide the magnifier if item is unavailable
   },
 
-  [theme.breakpoints.down('sm')]: {
+  [theme.breakpoints.down('md')]: {
     width: '28px',
     height: '28px',
     top: '8px',
@@ -99,8 +98,8 @@ const ItemImageContainer = styled(Box)(({ theme }) => ({
 	  display: 'flex',
 	  alignItems: 'center',
 	  justifyContent: 'center',
-	  [theme.breakpoints.down('sm')]: { height: `${menuCardLayout.imageHeight.mobile}px` }
-	}));
+	  [theme.breakpoints.down('md')]: { height: `${menuCardLayout.imageHeight.mobile}px` }
+		}));
 
 const ItemImage = styled('img')(() => ({
   width: '100%',
@@ -123,8 +122,8 @@ const ItemContent = styled(Box)(({ theme }) => ({
 	  flex: 1,
 	  gap: '4px',
 	  background: brand.bgLight,
-	  [theme.breakpoints.down('sm')]: { padding: `${menuCardLayout.contentPadding.mobile}px` }
-	}));
+	  [theme.breakpoints.down('md')]: { padding: `${menuCardLayout.contentPadding.mobile}px` }
+		}));
 
 const ItemName = styled(Typography)(({ theme }) => ({
   fontFamily: brand.fontDisplay,
@@ -132,7 +131,7 @@ const ItemName = styled(Typography)(({ theme }) => ({
   fontWeight: 600,
   color: brand.textPrimary,
   lineHeight: 1.2,
-  [theme.breakpoints.down('sm')]: { fontSize: '12px' }
+  [theme.breakpoints.down('md')]: { fontSize: '12px' }
 }));
 
 const ItemDescription = styled(Typography)(({ theme }) => ({
@@ -146,7 +145,7 @@ const ItemDescription = styled(Typography)(({ theme }) => ({
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   minHeight: '2.8em',
-  [theme.breakpoints.down('sm')]: {
+  [theme.breakpoints.down('md')]: {
     WebkitLineClamp: 1,
     minHeight: '1.4em',
   },
@@ -169,7 +168,7 @@ const StatusPill = styled(Box, {
   fontSize: '11px',
   background: isAvailable ? '#edf3ef' : '#fee2e2',
   color: isAvailable ? '#5b6b62' : '#b91c1c',
-  [theme.breakpoints.down('sm')]: {
+  [theme.breakpoints.down('md')]: {
     fontSize: '9px',
     padding: '2px 7px',
   },
@@ -180,7 +179,7 @@ const ItemPrice = styled(Typography)(({ theme }) => ({
   fontSize: '17px',
   fontWeight: 700,
   color: brand.textPrimary,
-  [theme.breakpoints.down('sm')]: { fontSize: '14px' }
+  [theme.breakpoints.down('md')]: { fontSize: '14px' }
 }));
 
 export default function MenuItem({ item }) {

@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId, useState } from 'react'
 import { Box, Card, CardContent, Divider, IconButton, Stack, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import RemoveIcon from '@mui/icons-material/Remove'
@@ -18,9 +18,52 @@ const brand = {
   borderSoft: '#edf2ef',
 }
 
-const placeholderImg = 'https://via.placeholder.com/100/8B7355/FFFFFF?text=Coffee'
 const receiptPath =
   'M 2 2 H 98 V 96 L 94 98 L 90 96 L 86 98 L 82 96 L 78 98 L 74 96 L 70 98 L 66 96 L 62 98 L 58 96 L 54 98 L 50 96 L 46 98 L 42 96 L 38 98 L 34 96 L 30 98 L 26 96 L 22 98 L 18 96 L 14 98 L 10 96 L 6 98 L 2 96 Z'
+
+function SummaryItemImage({ image, name }) {
+  const [imageError, setImageError] = useState(false)
+  const showPlaceholder = !image || imageError
+
+  if (showPlaceholder) {
+    return (
+      <Box
+        sx={{
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#b0b8be',
+          bgcolor: '#fff',
+        }}
+      >
+        <svg
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        >
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <circle cx="8.5" cy="8.5" r="1.5" />
+          <path d="m21 15-5-5L5 21" />
+        </svg>
+      </Box>
+    )
+  }
+
+  return (
+    <Box
+      component="img"
+      src={image}
+      alt={name}
+      onError={() => setImageError(true)}
+      sx={{ width: '100%', height: '100%', objectFit: 'contain', bgcolor: '#fff' }}
+    />
+  )
+}
 
 export default function CartSummary({
   items = [],
@@ -94,7 +137,7 @@ export default function CartSummary({
         sx={{
           position: 'relative',
           zIndex: 1,
-          p: isReceipt ? { xs: 2.75, md: 3.5 } : { xs: 2, sm: 2.5 },
+          p: isReceipt ? { xs: 2.75, md: 3.5 } : { xs: 1.5, sm: 2 },
           display: isReceipt ? 'flex' : 'block',
           flexDirection: isReceipt ? 'column' : 'unset',
           minHeight: isReceipt ? { xs: 250, md: 280 } : 'auto',
@@ -151,19 +194,21 @@ export default function CartSummary({
                 // --- CART MODE UI (Rich Layout) ---
                 return (
                   <Box key={item.lineId || index}>
-                    <Stack direction="row" alignItems="center" spacing={1.75} sx={{ py: 1.25 }}>
+                    <Stack direction="row" alignItems="center" spacing={{ xs: 0.75, sm: 1.25 }} sx={{ py: { xs: 0.75, sm: 1 } }}>
                       <Box
                         sx={{
-                          width: 56,
-                          height: 56,
-                          borderRadius: '10px',
+                          width: { xs: 48, sm: 56 },
+                          height: { xs: 48, sm: 56 },
+                          borderRadius: '8px',
                           overflow: 'hidden',
                           flexShrink: 0,
-                          bgcolor: '#fafbfa',
-                          border: '1px solid #edf2ef',
+                          bgcolor: '#fff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
                         }}
                       >
-                        <Box component="img" src={item.image || placeholderImg} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <SummaryItemImage image={item.image} name={item.name} />
                       </Box>
 
                       <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -171,48 +216,78 @@ export default function CartSummary({
                           variant="body1"
                           sx={{
                             color: brand.textPrimary,
-                            fontWeight: 800,
-                            fontSize: '0.95rem',
-                            lineHeight: 1.2,
+                            fontWeight: 600,
+                            fontSize: { xs: '0.9rem', sm: '0.95rem' },
+                            lineHeight: { xs: 1.15, sm: 1.2 },
                             fontFamily: brand.fontBase,
+                            mb: { xs: 0.3, sm: 0.2 },
                           }}
                         >
                           {item.name}
                         </Typography>
                         <Typography
                           variant="body2"
-                          sx={{ color: brand.textSecondary, fontWeight: 600, fontFamily: brand.fontBase }}
+                          sx={{
+                            color: brand.textSecondary,
+                            fontWeight: 600,
+                            fontFamily: brand.fontBase,
+                            fontSize: { xs: '0.8rem', sm: '0.875rem' },
+                            lineHeight: 1.2,
+                          }}
                         >
                           {formatLL(item.price || 0)}
                         </Typography>
                       </Box>
 
-                      <Stack direction="row" alignItems="center" spacing={1}>
-                        <Stack direction="row" alignItems="center" sx={{ border: `1px solid ${brand.border}`, borderRadius: '999px', height: 32, px: 0.5, bgcolor: '#fff' }}>
-                          <IconButton size="small" onClick={() => updateQty(item.lineId, item.qty - 1)} disabled={item.qty <= 1}>
-                            <RemoveIcon sx={{ fontSize: '1.1rem' }} />
+                      <Stack direction="row" alignItems="center" spacing={{ xs: 0.5, sm: 0.75 }}>
+                        <Stack
+                          direction="row"
+                          alignItems="center"
+                          sx={{
+                            border: `1px solid ${brand.border}`,
+                            borderRadius: '999px',
+                            height: { xs: 28, sm: 30 },
+                            px: { xs: 0.25, sm: 0.5 },
+                            bgcolor: '#fff',
+                          }}
+                        >
+                          <IconButton
+                            size="small"
+                            onClick={() => updateQty(item.lineId, item.qty - 1)}
+                            disabled={item.qty <= 1}
+                            sx={{ width: { xs: 22, sm: 24 }, height: { xs: 22, sm: 24 }, p: 0 }}
+                          >
+                            <RemoveIcon sx={{ fontSize: { xs: '0.95rem', sm: '1.05rem' } }} />
                           </IconButton>
                           <Typography
                             sx={{
-                              minWidth: 20,
+                              minWidth: { xs: 18, sm: 20 },
                               textAlign: 'center',
                               fontWeight: 700,
-                              fontSize: '0.85rem',
+                              fontSize: { xs: '0.8rem', sm: '0.85rem' },
                               fontFamily: brand.fontBase,
                             }}
                           >
                             {item.qty}
                           </Typography>
-                          <IconButton size="small" onClick={() => updateQty(item.lineId, item.qty + 1)}>
-                            <AddIcon sx={{ fontSize: '1.1rem' }} />
+                          <IconButton
+                            size="small"
+                            onClick={() => updateQty(item.lineId, item.qty + 1)}
+                            sx={{ width: { xs: 22, sm: 24 }, height: { xs: 22, sm: 24 }, p: 0 }}
+                          >
+                            <AddIcon sx={{ fontSize: { xs: '0.95rem', sm: '1.05rem' } }} />
                           </IconButton>
                         </Stack>
-                        <IconButton onClick={() => removeFromCart(item.lineId)} sx={{ color: '#cf2e2e' }} size="small">
+                        <IconButton
+                          onClick={() => removeFromCart(item.lineId)}
+                          sx={{ color: '#cf2e2e', width: { xs: 24, sm: 28 }, height: { xs: 24, sm: 28 } }}
+                          size="small"
+                        >
                           <DeleteOutlineIcon fontSize="small" />
                         </IconButton>
                       </Stack>
                     </Stack>
-                    {index < items.length - 1 && <Divider sx={{ borderColor: '#eef2ef' }} />}
+                    {index < items.length - 1 && <Divider sx={{ borderColor: brand.borderSoft }} />}
                   </Box>
                 )
               })}
@@ -222,7 +297,7 @@ export default function CartSummary({
               sx={{
                 borderStyle: isReceipt ? 'dashed' : 'solid',
                 my: isReceipt ? 2.25 : 2,
-                borderColor: '#e7ece8',
+                borderColor: brand.borderSoft,
                 opacity: 1,
               }}
             />
@@ -250,7 +325,7 @@ export default function CartSummary({
                       {formatLL(tax)}
                     </Typography>
                   </Stack>
-                  <Divider sx={{ borderStyle: 'dashed', mb: 2, borderColor: '#d1cdc2' }} />
+                  <Divider sx={{ borderStyle: 'dashed', mb: 2, borderColor: brand.borderSoft }} />
                 </>
               )}
 

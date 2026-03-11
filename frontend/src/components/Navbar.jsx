@@ -120,7 +120,7 @@ const backdropFadeOut = keyframes`
 // Hamburger button — visible only on mobile
 const HamburgerBtn = styled('button')(() => ({
   display: 'none',
-  '@media (max-width: 600px)': {
+  '@media (max-width: 850px)': {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -198,7 +198,7 @@ const TopbarNavWrap = styled(Box)(() => ({
   display: 'flex',
   alignItems: 'center',
   gap: '4px',
-  '@media (max-width: 600px)': { display: 'none' },
+  '@media (max-width: 850px)': { display: 'none' },
 }))
 
 // Hide topbar pill buttons on mobile — hamburger handles them
@@ -207,7 +207,7 @@ const TopbarActionsWrap = styled(Box)(() => ({
   flexDirection: 'row',
   gap: '8px',
   alignItems: 'center',
-  '@media (max-width: 600px)': { display: 'none' },
+  '@media (max-width: 850px)': { display: 'none' },
 }))
 
 const CHAT_PANEL_WIDTH = 420

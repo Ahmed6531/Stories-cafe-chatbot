@@ -22,12 +22,7 @@ export default function MenuSkeleton() {
             gridTemplateColumns: menuCardLayout.grid.md,
             gap: menuCardLayout.gap.md,
           },
-          '@media (max-width: 900px)': {
-            gridTemplateColumns: menuCardLayout.grid.sm,
-            gap: menuCardLayout.gap.md,
-            padding: '16px 0',
-          },
-          '@media (max-width: 600px)': {
+          '@media (max-width: 850px)': {
             gridTemplateColumns: menuCardLayout.grid.xs,
             gap: menuCardLayout.gap.xs,
             padding: '10px 0 16px',
@@ -51,7 +46,7 @@ export default function MenuSkeleton() {
               border: `1px solid ${brand.border}`,
               backgroundColor: '#fff',
               boxShadow: brand.shadowSm,
-              '@media (max-width: 600px)': {
+              '@media (max-width: 850px)': {
                 height: `${menuCardLayout.cardHeight.mobile}px`,
                 borderRadius: '10px',
               },
@@ -68,7 +63,7 @@ export default function MenuSkeleton() {
                 right: '12px',
                 zIndex: 2,
                 bgcolor: 'rgba(255,255,255,0.9)',
-                '@media (max-width: 600px)': {
+                '@media (max-width: 850px)': {
                   width: 28,
                   height: 28,
                   top: '8px',
@@ -85,7 +80,7 @@ export default function MenuSkeleton() {
                 transform: 'none',
                 transformOrigin: 'center',
                 bgcolor: '#eceff1',
-                '@media (max-width: 600px)': {
+                '@media (max-width: 850px)': {
                   height: `${menuCardLayout.imageHeight.mobile}px`,
                 },
               }}
@@ -98,7 +93,7 @@ export default function MenuSkeleton() {
                 gap: '4px',
                 padding: `${menuCardLayout.contentPadding.desktop}px`,
                 background: brand.bgLight,
-                '@media (max-width: 600px)': {
+                '@media (max-width: 850px)': {
                   padding: `${menuCardLayout.contentPadding.mobile}px`,
                 },
               }}

@@ -29,12 +29,6 @@ const ItemsGrid = styled(Box)(({ theme }) => ({
   },
 
   [theme.breakpoints.down('md')]: {
-    gridTemplateColumns: menuCardLayout.grid.sm,
-    gap: menuCardLayout.gap.md,
-    padding: '16px 0',
-  },
-
-  [theme.breakpoints.down('sm')]: {
     gridTemplateColumns: menuCardLayout.grid.xs,
     gap: menuCardLayout.gap.xs,
     padding: '10px 0 16px',

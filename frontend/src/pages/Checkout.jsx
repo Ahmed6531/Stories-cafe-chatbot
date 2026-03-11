@@ -36,7 +36,7 @@ const labelStyle = {
   letterSpacing: '0.02em',
 }
 
-const formGroupStyle = {
+const formGroupSx = {
   marginBottom: '18px',
 }
 
@@ -54,10 +54,24 @@ const orderOptionStyle = {
   },
 }
 
+const checkoutWidths = {
+  content: { xs: 420, sm: 760, md: 1200 },
+  receiptMobile: { xs: 420, sm: 560 },
+  buttonMobile: { xs: 420, sm: 520 },
+  receiptDesktop: 360,
+}
+
+const centeredWidth = (maxWidth) => ({
+  width: '100%',
+  maxWidth,
+  mx: 'auto',
+})
+
 export default function Checkout() {
   const navigate = useNavigate()
   const { state, clearCart } = useCart()
   const { items } = state
+  const [orderTypeError, setOrderTypeError] = useState(false)
 
   const [formData, setFormData] = useState({
     name: '',
@@ -69,13 +83,16 @@ export default function Checkout() {
   const handleChange = (e) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
+    if (name === 'orderType' && value) {
+      setOrderTypeError(false)
+    }
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
 
-    if (!formData.name || !formData.phone || !formData.orderType) {
-      alert('Please fill in all required fields')
+    if (!formData.orderType) {
+      setOrderTypeError(true)
       return
     }
 
@@ -144,6 +161,7 @@ export default function Checkout() {
             gridTemplateColumns: { xs: '1fr', md: '1fr 360px' },
             gap: { xs: '24px', md: '32px' },
             alignItems: 'stretch',
+            ...centeredWidth(checkoutWidths.content),
           }}
         >
         <Box
@@ -156,7 +174,7 @@ export default function Checkout() {
             minHeight: '100%',
           }}
         >
-          <Box style={formGroupStyle}>
+          <Box sx={formGroupSx}>
             <label style={labelStyle}>Full Name *</label>
             <input
               type="text"
@@ -169,7 +187,7 @@ export default function Checkout() {
             />
           </Box>
 
-          <Box style={formGroupStyle}>
+          <Box sx={formGroupSx}>
             <label style={labelStyle}>Phone Number *</label>
             <input
               type="tel"
@@ -182,9 +200,9 @@ export default function Checkout() {
             />
           </Box>
 
-          <Box style={formGroupStyle}>
+          <Box sx={formGroupSx}>
             <label style={labelStyle}>Order Type *</label>
-            <FormControl component="fieldset" fullWidth>
+            <FormControl component="fieldset" fullWidth error={orderTypeError}>
               <RadioGroup
                 name="orderType"
                 value={formData.orderType}
@@ -228,10 +246,23 @@ export default function Checkout() {
                   sx={orderOptionStyle}
                 />
               </RadioGroup>
+              {orderTypeError && (
+                <Typography
+                  variant="caption"
+                  sx={{
+                    mt: 0.5,
+                    color: '#cf2e2e',
+                    fontSize: '0.75rem',
+                    fontFamily: "'Montserrat', sans-serif",
+                  }}
+                >
+                  Required
+                </Typography>
+              )}
             </FormControl>
           </Box>
 
-          <Box style={formGroupStyle}>
+          <Box sx={formGroupSx}>
             <label style={labelStyle}>Special Notes</label>
             <textarea
               name="notes"
@@ -247,27 +278,22 @@ export default function Checkout() {
             />
           </Box>
 
-          <Box sx={{ display: { xs: 'block', md: 'none' }, mt: 2 }}>
+          <Box sx={{ display: { xs: 'block', md: 'none' }, mt: 2.5 }}>
             <CartSummary
               items={items}
               mode="receipt"
-              sx={{
-                maxWidth: 360,
-                mx: 'auto',
-              }}
+              sx={centeredWidth(checkoutWidths.receiptMobile)}
             />
           </Box>
 
-          <Box sx={{ display: { xs: 'block', md: 'none' }, mt: 1.5 }}>
+          <Box sx={{ display: { xs: 'block', md: 'none' }, mt: 1.75 }}>
             <Button
               type="submit"
               form="checkout-form"
               fullWidth
               variant="contained"
               sx={{
-                maxWidth: 360,
-                width: '100%',
-                mx: 'auto',
+                ...centeredWidth(checkoutWidths.buttonMobile),
                 display: 'flex',
                 py: 1.5,
                 borderRadius: '10px',
@@ -283,7 +309,7 @@ export default function Checkout() {
             </Button>
           </Box>
 
-          <Box sx={{ mt: { xs: 1, md: 0.25 }, pt: 0 }}>
+          <Box sx={{ mt: { xs: 1, md: 0.25 } }}>
             <Button
               component="button"
               type="button"
@@ -309,24 +335,16 @@ export default function Checkout() {
             display: { xs: 'none', md: 'flex' },
             flexDirection: 'column',
             minHeight: '100%',
-            pt: { xs: 0, md: 4 },
+            py: { xs: 0, md: 2 },
           }}
         >
           <CartSummary
             items={items}
             mode="receipt"
-            sx={{
-              maxWidth: 360,
-              width: '100%',
-              mx: 'auto',
-            }}
+            sx={centeredWidth(checkoutWidths.receiptDesktop)}
           />
 
-          <Stack
-            direction={{ xs: 'column', md: 'column' }}
-            spacing={1.25}
-            sx={{ pt: 1.5, maxWidth: 360, width: '100%', mx: 'auto' }}
-          >
+          <Stack direction="column" spacing={1.25} sx={{ pt: 1.5, ...centeredWidth(checkoutWidths.receiptDesktop) }}>
             <Button
               type="submit"
               form="checkout-form"
@@ -344,21 +362,6 @@ export default function Checkout() {
               }}
             >
               Place Order
-            </Button>
-
-            <Button
-              onClick={() => navigate('/cart')}
-              variant="text"
-              sx={{
-                display: { xs: 'inline-flex', md: 'none' },
-                color: '#5f6b64',
-                fontWeight: 600,
-                textTransform: 'none',
-                fontSize: '0.95rem',
-                '&:hover': { backgroundColor: 'transparent', color: '#1e5631' },
-              }}
-            >
-              Back to Cart
             </Button>
           </Stack>
         </Box>

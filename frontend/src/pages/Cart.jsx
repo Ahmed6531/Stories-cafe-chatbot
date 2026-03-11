@@ -81,7 +81,7 @@ export default function Cart() {
           </Button>
         </Stack>
       ) : (
-        <Box sx={{ maxWidth: 860, mx: 'auto' }}>
+        <Box sx={{ width: '100%', maxWidth: { xs: 420, sm: 680, md: 860 }, mx: 'auto' }}>
           <CartSummary
             items={cartItems}
             mode="cartSummary"

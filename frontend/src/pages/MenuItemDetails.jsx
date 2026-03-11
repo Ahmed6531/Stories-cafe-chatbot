@@ -131,12 +131,14 @@ const optionHeadingSx = {
   mb: 0.75,
   fontSize: { xs: '0.95rem', md: '1.05rem' },
   lineHeight: 1.15,
+  fontFamily: brand.fontDisplay,
 }
 
 const optionMetaSx = {
   mb: 1,
   display: 'block',
   fontSize: { xs: '0.72rem', md: '0.75rem' },
+  fontFamily: brand.fontBase,
 }
 
 export default function MenuItemDetails() {
@@ -523,9 +525,13 @@ export default function MenuItemDetails() {
         '& .MuiTypography-root': { fontFamily: brand.fontBase },
         '& .MuiButton-root': { fontFamily: brand.fontBase },
         '& .MuiInputBase-input': { fontFamily: brand.fontBase },
+        '& .MuiInputBase-root': { fontFamily: brand.fontBase },
         '& .MuiInputLabel-root': { fontFamily: brand.fontBase },
+        '& .MuiFormLabel-root': { fontFamily: brand.fontBase },
+        '& .MuiFormControlLabel-label': { fontFamily: brand.fontBase },
         '& .MuiMenuItem-root': { fontFamily: brand.fontBase },
         '& .MuiChip-root': { fontFamily: brand.fontBase },
+        '& .MuiAlert-message': { fontFamily: brand.fontBase },
       }}
     >
       <Button
@@ -536,6 +542,7 @@ export default function MenuItemDetails() {
           minWidth: 0,
           textTransform: 'none',
           fontSize: { xs: '0.8rem', md: '0.9rem' },
+          fontFamily: brand.fontBase,
           justifyContent: 'flex-start',
         }}
       >
@@ -620,12 +627,13 @@ export default function MenuItemDetails() {
           >
             {item.name}
           </Typography>
-          {item.description && (
-            <Typography
-              sx={{
-                fontSize: { xs: '0.74rem', md: '0.92rem' },
-                lineHeight: { xs: 1.35, md: 1.45 },
-                opacity: 0.95,
+            {item.description && (
+              <Typography
+                sx={{
+                  fontFamily: brand.fontBase,
+                  fontSize: { xs: '0.74rem', md: '0.92rem' },
+                  lineHeight: { xs: 1.35, md: 1.45 },
+                  opacity: 0.95,
                 mb: { xs: 0.75, md: 1.25 },
                 display: '-webkit-box',
                 WebkitLineClamp: { xs: 4, md: 'unset' },
@@ -754,11 +762,11 @@ export default function MenuItemDetails() {
               {item.name}
             </Typography>
             {item.description && (
-              <Typography variant="body2" sx={{ opacity: 0.9 }}>
+              <Typography variant="body2" sx={{ opacity: 0.9, fontFamily: brand.fontBase }}>
                 {item.description}
               </Typography>
             )}
-            <Typography variant="h6" fontWeight={900} sx={{ mt: 1 }}>
+            <Typography variant="h6" fontWeight={900} sx={{ mt: 1, fontFamily: brand.fontBase }}>
               {formatLL(unitPrice)}
             </Typography>
           </Box>
@@ -831,7 +839,11 @@ export default function MenuItemDetails() {
               spacing={1.25}
               alignItems={{ sm: 'center' }}
             >
-              <Typography variant="h6" fontWeight={900} sx={{ fontSize: { xs: '0.98rem', md: '1.15rem' } }}>
+              <Typography
+                variant="h6"
+                fontWeight={900}
+                sx={{ fontSize: { xs: '0.98rem', md: '1.15rem' }, fontFamily: brand.fontDisplay }}
+              >
                 Total: {formatLL(totalPrice)}
               </Typography>
               <Button
