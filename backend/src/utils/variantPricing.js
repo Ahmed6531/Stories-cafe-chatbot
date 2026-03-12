@@ -50,3 +50,39 @@ export function calculateSelectedOptionsDelta(selectedOptions, variantGroups = [
 
   return delta;
 }
+
+export function sortSelectedOptionsForDisplay(selectedOptions, variantGroups = []) {
+  const original = sanitizeSelectedOptions(selectedOptions);
+  const remaining = new Map();
+  original.forEach((optionName) => {
+    remaining.set(optionName, (remaining.get(optionName) || 0) + 1);
+  });
+
+  const ordered = [];
+
+  variantGroups.forEach((group) => {
+    const options = Array.isArray(group?.options)
+      ? [...group.options].sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+      : [];
+
+    options.forEach((option) => {
+      const count = remaining.get(option.name) || 0;
+      for (let i = 0; i < count; i += 1) {
+        ordered.push(option.name);
+      }
+      if (count > 0) {
+        remaining.delete(option.name);
+      }
+    });
+  });
+
+  original.forEach((optionName) => {
+    const count = remaining.get(optionName) || 0;
+    if (count > 0) {
+      ordered.push(optionName);
+      remaining.set(optionName, count - 1);
+    }
+  });
+
+  return ordered;
+}

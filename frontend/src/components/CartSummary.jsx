@@ -204,6 +204,14 @@ export default function CartSummary({
                       </Box>
 
                       <Box sx={{ flex: 1, minWidth: 0 }}>
+                        {(() => {
+                          const optionSummary = Array.isArray(item.selectedOptions)
+                            ? item.selectedOptions.filter(Boolean).join(' · ')
+                            : ''
+                          const instructions = item.instructions?.trim()
+
+                          return (
+                            <>
                         <Typography
                           variant="body1"
                           sx={{
@@ -227,8 +235,43 @@ export default function CartSummary({
                             lineHeight: 1.2,
                           }}
                         >
-                          {formatLL(item.price || 0)}
+                          {formatLL(item.qty > 1 ? (item.price || 0) * item.qty : item.price || 0)}
                         </Typography>
+                              {optionSummary && (
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    color: brand.textSecondary,
+                                    fontWeight: 500,
+                                    fontFamily: brand.fontBase,
+                                    fontSize: { xs: '0.74rem', sm: '0.8rem' },
+                                    lineHeight: 1.35,
+                                    mt: 0.45,
+                                  }}
+                                >
+                                  {optionSummary}
+                                </Typography>
+                              )}
+                              {instructions && (
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    color: brand.textSecondary,
+                                    fontWeight: 500,
+                                    fontFamily: brand.fontBase,
+                                    fontSize: { xs: '0.72rem', sm: '0.78rem' },
+                                    lineHeight: 1.35,
+                                    mt: 0.25,
+                                    fontStyle: 'italic',
+                                    opacity: 0.9,
+                                  }}
+                                >
+                                  Note: {instructions}
+                                </Typography>
+                              )}
+                            </>
+                          )
+                        })()}
                       </Box>
 
                       <Stack direction="row" alignItems="center" spacing={{ xs: 0.5, sm: 0.75 }}>

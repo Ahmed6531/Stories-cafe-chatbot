@@ -8,6 +8,7 @@ import {
   resolveVariantGroupsForMenuItem,
   sanitizeSelectedOptions,
   sameSelectedOptions,
+  sortSelectedOptionsForDisplay,
 } from "../utils/variantPricing.js";
 
 function makeCartId() {
@@ -84,7 +85,7 @@ async function buildCartResponse(cart) {
       image: menuItem ? menuItem.image : undefined,
       qty: line.qty,
       price: price,
-      selectedOptions: sanitizeSelectedOptions(line.selectedOptions),
+      selectedOptions: sortSelectedOptionsForDisplay(line.selectedOptions, resolvedVariantGroups),
       instructions: line.instructions || "",
       isAvailable: menuItem ? !!menuItem.isAvailable : false
     };
