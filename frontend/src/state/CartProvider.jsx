@@ -20,47 +20,47 @@ export function CartProvider({ children }) {
     loadCart()
   }, [loadCart])
 
-  const addToCart = async (item) => {
+  const addToCart = useCallback(async (item) => {
     try {
       const data = await addToCartApi(item)
       dispatch({ type: 'CART_LOADED', payload: data })
     } catch (err) {
       dispatch({ type: 'CART_ERROR', payload: err.message })
     }
-  }
+  }, [])
 
-  const updateQty = async (lineId, qty) => {
+  const updateQty = useCallback(async (lineId, qty) => {
     try {
       const data = await updateCartItemApi(lineId, qty)
       dispatch({ type: 'CART_LOADED', payload: data })
     } catch (err) {
       dispatch({ type: 'CART_ERROR', payload: err.message })
     }
-  }
+  }, [])
 
-  const removeFromCart = async (lineId) => {
+  const removeFromCart = useCallback(async (lineId) => {
     // Optimistic update: remove from state immediately
-    dispatch({ type: 'REMOVE_ITEM', payload: lineId });
+    dispatch({ type: 'REMOVE_ITEM', payload: lineId })
 
     try {
-      const data = await removeFromCartApi(lineId);
+      const data = await removeFromCartApi(lineId)
       // Sync state with backend response
-      dispatch({ type: 'CART_LOADED', payload: data });
+      dispatch({ type: 'CART_LOADED', payload: data })
     } catch (err) {
-      dispatch({ type: 'CART_ERROR', payload: err.message });
+      dispatch({ type: 'CART_ERROR', payload: err.message })
       // On error, reload full cart to restore state
-      loadCart();
+      loadCart()
     }
-  }
+  }, [loadCart])
 
-  const clearCart = async () => {
+  const clearCart = useCallback(async () => {
     try {
-      const data = await clearCartApi()
+      await clearCartApi()
       dispatch({ type: 'CART_LOADED', payload: { items: [], count: 0 } })
     } catch (err) {
       dispatch({ type: 'CART_ERROR', payload: err.message })
     }
-  }
+  }, [])
 
   const value = useMemo(
     () => ({
@@ -72,7 +72,7 @@ export function CartProvider({ children }) {
       clearCart,
       refreshCart: loadCart
     }),
-    [state, loadCart]
+    [state, addToCart, updateQty, removeFromCart, clearCart, loadCart]
   )
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>
