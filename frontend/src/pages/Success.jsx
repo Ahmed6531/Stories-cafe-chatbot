@@ -22,7 +22,7 @@ export default function Success() {
     >
       <Box sx={{ marginBottom: '30px' }}>
         <Box sx={{ fontSize: '80px', color: theme.brand.primary, marginBottom: '20px' }}>
-          âœ“
+          {'\u2713'}
         </Box>
         <Typography
           component="h1"
