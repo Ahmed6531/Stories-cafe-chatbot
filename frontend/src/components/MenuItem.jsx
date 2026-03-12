@@ -162,10 +162,10 @@ const ItemBottom = styled(Box)(() => ({
 const StatusPill = styled(Box, {
   shouldForwardProp: (prop) => prop !== 'isAvailable',
 })(({ theme, isAvailable }) => ({
-  padding: '4px 10px',
-  borderRadius: '20px',
+  padding: '6px 14px',
+  borderRadius: '999px',
   fontWeight: 600,
-  fontSize: '11px',
+  fontSize: '12px',
   background: isAvailable ? '#edf3ef' : '#fee2e2',
   color: isAvailable ? '#5b6b62' : '#b91c1c',
   [theme.breakpoints.down('md')]: {
