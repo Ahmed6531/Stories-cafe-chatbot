@@ -9,5 +9,3 @@ export function calculateOrderTotals(items = [], taxRate = 0.08) {
     total,
   }
 }
-
-export const calculateOrderPricing = calculateOrderTotals

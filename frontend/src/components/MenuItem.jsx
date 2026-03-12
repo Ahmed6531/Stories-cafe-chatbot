@@ -1,24 +1,8 @@
 // migrated from menu-item.css
-import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
-import { Box, Typography, styled } from '@mui/material';
-import { menuCardLayout } from '../theme/layoutTokens';
-
-const brand = {
-  primary: '#00704a',
-  primaryHover: '#147d56',
-  primaryActive: '#004a34',
-  primaryDark: '#1e5631',
-  textPrimary: '#2b2b2b',
-  textSecondary: '#79747e',
-  border: '#e0e0e0',
-  bgLight: '#f8f9f8',
-  shadowSm: '0 0 6px rgba(0,0,0,0.06)',
-  shadowMd: '0 2px 12px rgba(0,0,0,0.08)',
-  shadowHover: '0 4px 12px rgba(0,0,0,0.15)',
-  fontBase: "'Montserrat', sans-serif",
-  fontDisplay: "'DIN Alternate Bold', 'Montserrat', sans-serif",
-}
+import { useNavigate } from 'react-router-dom'
+import { useState } from 'react'
+import { Box, Typography, styled } from '@mui/material'
+import { menuCardLayout } from '../theme/layoutTokens'
 
 const ItemCard = styled(Box, {
   shouldForwardProp: (prop) => prop !== 'isAvailable',
@@ -29,26 +13,27 @@ const ItemCard = styled(Box, {
   borderRadius: '12px',
   overflow: 'hidden',
   cursor: isAvailable ? 'pointer' : 'default',
-	  transition: 'all 0.3s cubic-bezier(0.23, 1, 0.32, 1)',
-	  boxShadow: brand.shadowSm,
-	  height: `${menuCardLayout.cardHeight.desktop}px`,
-	  position: 'relative',
-	  border: `1px solid ${brand.border}`,
-	  opacity: isAvailable ? 1 : 0.7,
-
-	...(isAvailable && {
+  transition: 'all 0.3s cubic-bezier(0.23, 1, 0.32, 1)',
+  boxShadow: theme.brand.shadowSm,
+  height: `${menuCardLayout.cardHeight.desktop}px`,
+  position: 'relative',
+  border: `1px solid ${theme.brand.border}`,
+  opacity: isAvailable ? 1 : 0.7,
+  ...(isAvailable && {
     '&:hover': {
-      boxShadow: `${brand.shadowHover}, inset 0 0 0 1px rgba(26, 74, 53, 0.08)`,
+      boxShadow: `${theme.brand.shadowHover}, inset 0 0 0 1px rgba(26, 74, 53, 0.08)`,
       transform: 'translateY(-4px)',
       borderColor: 'rgba(26, 74, 53, 0.35)',
     },
     '&:hover img': {
       transform: 'scale(1.08)',
-    }
+    },
   }),
-
-	  [theme.breakpoints.down('md')]: { height: `${menuCardLayout.cardHeight.mobile}px`, borderRadius: '10px' }
-		}));
+  [theme.breakpoints.down('md')]: {
+    height: `${menuCardLayout.cardHeight.mobile}px`,
+    borderRadius: '10px',
+  },
+}))
 
 const ItemCta = styled('button')(({ theme }) => ({
   position: 'absolute',
@@ -61,45 +46,42 @@ const ItemCta = styled('button')(({ theme }) => ({
   // Glassmorphism effect to be less distracting
   background: 'rgba(255, 255, 255, 0.85)',
   backdropFilter: 'blur(4px)',
-  border: `1px solid ${brand.border}`,
-  borderRadius: '50%', 
+  border: `1px solid ${theme.brand.border}`,
+  borderRadius: '50%',
   width: '32px',
   height: '32px',
   padding: 0,
-  color: brand.primary,
+  color: theme.brand.primary,
   cursor: 'pointer',
   transition: 'all 0.25s ease',
-
   '&:hover:not(:disabled)': {
-    backgroundColor: brand.primary,
+    backgroundColor: theme.brand.primary,
     color: '#ffffff',
-    borderColor: brand.primary,
+    borderColor: theme.brand.primary,
     transform: 'scale(1.1)',
   },
-
   '&:disabled': {
     display: 'none', // Hide the magnifier if item is unavailable
   },
-
   [theme.breakpoints.down('md')]: {
     width: '28px',
     height: '28px',
     top: '8px',
     right: '8px',
-  }
-}));
+  },
+}))
 
 const ItemImageContainer = styled(Box)(({ theme }) => ({
-	  position: 'relative',
-	  width: '100%',
-	  height: `${menuCardLayout.imageHeight.desktop}px`,
-	  overflow: 'hidden',
-	  backgroundColor: '#ffffff',
-	  display: 'flex',
-	  alignItems: 'center',
-	  justifyContent: 'center',
-	  [theme.breakpoints.down('md')]: { height: `${menuCardLayout.imageHeight.mobile}px` }
-		}));
+  position: 'relative',
+  width: '100%',
+  height: `${menuCardLayout.imageHeight.desktop}px`,
+  overflow: 'hidden',
+  backgroundColor: '#ffffff',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  [theme.breakpoints.down('md')]: { height: `${menuCardLayout.imageHeight.mobile}px` },
+}))
 
 const ItemImage = styled('img')(() => ({
   width: '100%',
@@ -111,33 +93,39 @@ const ItemImage = styled('img')(() => ({
 }));
 
 const ImgPlaceholder = styled(Box)(() => ({
-  width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
-  alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#b0b8be',
-}));
+  width: '100%',
+  height: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: '6px',
+  color: '#b0b8be',
+}))
 
 const ItemContent = styled(Box)(({ theme }) => ({
-	  display: 'flex',
-	  flexDirection: 'column',
-	  padding: `${menuCardLayout.contentPadding.desktop}px`,
-	  flex: 1,
-	  gap: '4px',
-	  background: brand.bgLight,
-	  [theme.breakpoints.down('md')]: { padding: `${menuCardLayout.contentPadding.mobile}px` }
-		}));
+  display: 'flex',
+  flexDirection: 'column',
+  padding: `${menuCardLayout.contentPadding.desktop}px`,
+  flex: 1,
+  gap: '4px',
+  background: theme.brand.bgLight,
+  [theme.breakpoints.down('md')]: { padding: `${menuCardLayout.contentPadding.mobile}px` },
+}))
 
 const ItemName = styled(Typography)(({ theme }) => ({
-  fontFamily: brand.fontDisplay,
+  fontFamily: theme.brand.fontDisplay,
   fontSize: '15px',
   fontWeight: 600,
-  color: brand.textPrimary,
+  color: theme.brand.textPrimary,
   lineHeight: 1.2,
-  [theme.breakpoints.down('md')]: { fontSize: '12px' }
-}));
+  [theme.breakpoints.down('md')]: { fontSize: '12px' },
+}))
 
 const ItemDescription = styled(Typography)(({ theme }) => ({
-  fontFamily: brand.fontBase,
+  fontFamily: theme.brand.fontBase,
   fontSize: '12px',
-  color: brand.textSecondary,
+  color: theme.brand.textSecondary,
   lineHeight: 1.4,
   display: '-webkit-box',
   WebkitLineClamp: 2,
@@ -149,7 +137,7 @@ const ItemDescription = styled(Typography)(({ theme }) => ({
     WebkitLineClamp: 1,
     minHeight: '1.4em',
   },
-}));
+}))
 
 const ItemBottom = styled(Box)(() => ({
   marginTop: 'auto',
@@ -162,10 +150,10 @@ const ItemBottom = styled(Box)(() => ({
 const StatusPill = styled(Box, {
   shouldForwardProp: (prop) => prop !== 'isAvailable',
 })(({ theme, isAvailable }) => ({
-  padding: '6px 14px',
+  padding: '5px 10px',
   borderRadius: '999px',
   fontWeight: 600,
-  fontSize: '12px',
+  fontSize: '11px',
   background: isAvailable ? '#edf3ef' : '#fee2e2',
   color: isAvailable ? '#5b6b62' : '#b91c1c',
   [theme.breakpoints.down('md')]: {
@@ -175,28 +163,28 @@ const StatusPill = styled(Box, {
 }));
 
 const ItemPrice = styled(Typography)(({ theme }) => ({
-  fontFamily: brand.fontBase,
+  fontFamily: theme.brand.fontBase,
   fontSize: '17px',
   fontWeight: 700,
-  color: brand.textPrimary,
-  [theme.breakpoints.down('md')]: { fontSize: '14px' }
-}));
+  color: theme.brand.textPrimary,
+  [theme.breakpoints.down('md')]: { fontSize: '14px' },
+}))
 
 export default function MenuItem({ item }) {
-  const navigate = useNavigate();
-  const [imageError, setImageError] = useState(false);
-  const showPlaceholder = !item.hasImage || imageError;
+  const navigate = useNavigate()
+  const [imageError, setImageError] = useState(false)
+  const showPlaceholder = !item.hasImage || imageError
 
   const formatPrice = (p) => (
     <>
       <Box component="span" sx={{ fontSize: '0.72em', fontWeight: 600, opacity: 0.7 }}>LL</Box> {Number(p).toLocaleString()}
     </>
-  );
+  )
 
   const handleAction = (e) => {
-    if (e) e.stopPropagation();
-    if (item.isAvailable) navigate(`/item/${item.id}`);
-  };
+    if (e) e.stopPropagation()
+    if (item.isAvailable) navigate(`/item/${item.id}`)
+  }
 
   return (
     <ItemCard
@@ -206,8 +194,8 @@ export default function MenuItem({ item }) {
       tabIndex={item.isAvailable ? 0 : -1}
     >
       {/* MAGNIFIER CTA */}
-      <ItemCta 
-        disabled={!item.isAvailable} 
+      <ItemCta
+        disabled={!item.isAvailable}
         onClick={handleAction}
         aria-label="View Details"
       >
@@ -241,5 +229,5 @@ export default function MenuItem({ item }) {
         </ItemBottom>
       </ItemContent>
     </ItemCard>
-  );
+  )
 }

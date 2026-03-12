@@ -1,19 +1,13 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { Box, Button, Container, Stack, Typography } from '@mui/material'
+import { useTheme } from '@mui/material/styles'
 import LocalGroceryStoreOutlinedIcon from '@mui/icons-material/LocalGroceryStoreOutlined'
 import { useCart } from '../state/useCart'
 import CartSummary from '../components/CartSummary'
 
-const brand = {
-  primary: '#00704a',
-  primaryDark: '#1e5631',
-  textPrimary: '#2b2b2b',
-  textSecondary: '#79747e',
-  fontBase: "'Montserrat', sans-serif",
-  fontDisplay: "'DIN Alternate Bold', 'Montserrat', sans-serif",
-}
-
 export default function Cart() {
+  const theme = useTheme()
+  const { brand } = theme
   const navigate = useNavigate()
   const { state } = useCart()
   const { items: cartItems, loading } = state

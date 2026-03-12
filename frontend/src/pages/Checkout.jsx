@@ -56,9 +56,7 @@ const orderOptionStyle = {
 
 const checkoutWidths = {
   content: { xs: 420, sm: 760, md: 1200 },
-  receiptMobile: { xs: 420, sm: 560 },
-  buttonMobile: { xs: 420, sm: 520 },
-  receiptDesktop: 360,
+  receipt: { xs: 420, sm: 560, md: 360 },
 }
 
 const centeredWidth = (maxWidth) => ({
@@ -278,37 +276,6 @@ export default function Checkout() {
             />
           </Box>
 
-          <Box sx={{ display: { xs: 'block', md: 'none' }, mt: 2.5 }}>
-            <CartSummary
-              items={items}
-              mode="receipt"
-              sx={centeredWidth(checkoutWidths.receiptMobile)}
-            />
-          </Box>
-
-          <Box sx={{ display: { xs: 'block', md: 'none' }, mt: 1.75 }}>
-            <Button
-              type="submit"
-              form="checkout-form"
-              fullWidth
-              variant="contained"
-              sx={{
-                ...centeredWidth(checkoutWidths.buttonMobile),
-                display: 'flex',
-                py: 1.5,
-                borderRadius: '10px',
-                bgcolor: '#1e5631',
-                fontWeight: 700,
-                textTransform: 'none',
-                fontSize: '1rem',
-                fontFamily: "'Montserrat', sans-serif",
-                '&:hover': { bgcolor: '#143d22' },
-              }}
-            >
-              Place Order
-            </Button>
-          </Box>
-
           <Box sx={{ mt: { xs: 1, md: 0.25 } }}>
             <Button
               component="button"
@@ -332,19 +299,20 @@ export default function Checkout() {
 
         <Box
           sx={{
-            display: { xs: 'none', md: 'flex' },
+            display: 'flex',
             flexDirection: 'column',
             minHeight: '100%',
             py: { xs: 0, md: 2 },
+            mt: { xs: 0.75, md: 0 },
           }}
         >
           <CartSummary
             items={items}
             mode="receipt"
-            sx={centeredWidth(checkoutWidths.receiptDesktop)}
+            sx={centeredWidth(checkoutWidths.receipt)}
           />
 
-          <Stack direction="column" spacing={1.25} sx={{ pt: 1.5, ...centeredWidth(checkoutWidths.receiptDesktop) }}>
+          <Stack direction="column" spacing={1.25} sx={{ pt: 1.5, ...centeredWidth(checkoutWidths.receipt) }}>
             <Button
               type="submit"
               form="checkout-form"

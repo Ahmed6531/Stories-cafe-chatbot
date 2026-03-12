@@ -1,6 +1,26 @@
 import { MenuItem } from "../models/MenuItem.js";
 import { VariantGroup } from "../models/VariantGroup.js";
 
+// GET /menu/categories - Returns distinct top-level categories
+export async function getMenuCategories(req, res) {
+  try {
+    const categories = await MenuItem.distinct("category", {
+      category: { $exists: true, $ne: null },
+    });
+
+    res.status(200).json({
+      success: true,
+      categories: categories.filter(Boolean).sort(),
+    });
+  } catch (error) {
+    console.error("Failed to fetch menu categories:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to load menu categories.",
+    });
+  }
+}
+
 // GET /menu - Returns all menu items with minimal data
 export async function getMenu(req, res) {
   try {
@@ -81,40 +101,20 @@ export async function getMenuItem(req, res) {
   }
 }
 
-// GET /menu/featured - Returns featured items with full data
+// GET /menu/featured - Returns featured items with list-view data
 export async function getFeaturedMenu(req, res) {
   try {
     const featuredItems = await MenuItem.find({
       isFeatured: true,
       isAvailable: true,
-    });
-
-    const itemsWithVariants = await Promise.all(
-      featuredItems.map(async (item) => {
-        let itemObj = item.toObject();
-        if (item.variantGroups && item.variantGroups.length > 0) {
-          const variantGroups = await VariantGroup.find({
-            groupId: { $in: item.variantGroups },
-          });
-
-          const orderedVariantGroups = item.variantGroups
-            .map((groupId) => {
-              const group = variantGroups.find((g) => g.groupId === groupId);
-              return group ? group.toObject() : null;
-            })
-            .filter((group) => group !== null);
-
-          itemObj.variants = orderedVariantGroups;
-          delete itemObj.variantGroups;
-        }
-        return itemObj;
-      }),
+    }).select(
+      "id name slug image category subcategory description basePrice isAvailable isFeatured",
     );
 
     res.status(200).json({
       success: true,
-      count: itemsWithVariants.length,
-      items: itemsWithVariants,
+      count: featuredItems.length,
+      items: featuredItems,
     });
   } catch (error) {
     res.status(500).json({

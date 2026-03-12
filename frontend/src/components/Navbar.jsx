@@ -1,7 +1,7 @@
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useCart } from '../state/useCart'
-import { styled, keyframes } from '@mui/material/styles'
+import { styled, keyframes, useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
@@ -9,21 +9,13 @@ import Tooltip from '@mui/material/Tooltip'
 import VoiceInput from './VoiceInput'
 import '../styles/index.css'
 
-const brand = {
-  primary: '#00704a',
-  primaryHover: '#147d56',
-  textPrimary: '#2b2b2b',
-  borderLight: '#e9e9e9',
-  fontBase: "'Montserrat', sans-serif",
-}
-
-const Topbar = styled('header')(() => ({
+const Topbar = styled('header')(({ theme }) => ({
   padding: '0 20px',
   minHeight: '52px',
   display: 'flex',
   flexDirection: 'row',
   justifyContent: 'space-between',
-  borderBottom: `1px solid ${brand.borderLight}`,
+  borderBottom: `1px solid ${theme.brand.borderLight}`,
   alignItems: 'center',
   position: 'sticky',
   top: 0,
@@ -40,24 +32,17 @@ const TopbarLeft = styled(Box)(() => ({
   flexShrink: 0,
 }))
 
-const TopbarActions = styled(Box)(() => ({
-  display: 'flex',
-  flexDirection: 'row',
-  gap: '8px',
-  alignItems: 'center',
-}))
-
 const TopNavLink = styled(Link, {
   shouldForwardProp: (prop) => prop !== 'isActive',
-})(({ isActive }) => ({
+})(({ theme, isActive }) => ({
   position: 'relative',
   display: 'inline-flex',
   alignItems: 'center',
   height: '52px',
   fontSize: '14px',
   fontWeight: 600,
-  fontFamily: brand.fontBase,
-  color: isActive ? brand.primary : '#4b5563',
+  fontFamily: theme.brand.fontBase,
+  color: isActive ? theme.brand.primary : '#4b5563',
   textDecoration: 'none',
   padding: '0 10px',
   borderRadius: '0',
@@ -70,13 +55,13 @@ const TopNavLink = styled(Link, {
     bottom: 0,
     width: '100%',
     height: '2px',
-    backgroundColor: brand.primary,
+    backgroundColor: theme.brand.primary,
     transformOrigin: 'center',
     transform: isActive ? 'scaleX(1)' : 'scaleX(0)',
     transition: 'transform 0.25s ease',
   },
   '&:hover': {
-    color: brand.primary,
+    color: theme.brand.primary,
   },
   '&:hover::after': {
     transform: 'scaleX(1)',
@@ -85,10 +70,10 @@ const TopNavLink = styled(Link, {
 
 const TopPillBtn = styled('button', {
   shouldForwardProp: (prop) => prop !== 'isAuth',
-})(({ isAuth }) => ({
+})(({ theme, isAuth }) => ({
   backgroundColor: 'transparent',
-  border: `1.5px solid ${brand.primary}`,
-  color: brand.primary,
+  border: `1.5px solid ${theme.brand.primary}`,
+  color: theme.brand.primary,
   borderRadius: '20px',
   height: '32px',
   display: 'flex',
@@ -97,7 +82,7 @@ const TopPillBtn = styled('button', {
   padding: '0 14px',
   gap: '6px',
   fontSize: '13px',
-  fontFamily: brand.fontBase,
+  fontFamily: theme.brand.fontBase,
   fontWeight: 600,
   cursor: 'pointer',
   transition: 'all 0.2s ease',
@@ -108,12 +93,12 @@ const TopPillBtn = styled('button', {
   },
 }))
 
-const CartBadge = styled(Box)(() => ({
+const CartBadge = styled(Box)(({ theme }) => ({
   display: 'inline-grid',
   placeItems: 'center',
   width: '20px',
   height: '20px',
-  backgroundColor: brand.primary,
+  backgroundColor: theme.brand.primary,
   color: '#ffffff',
   borderRadius: '50%',
   fontSize: '11px',
@@ -195,23 +180,23 @@ const MenuPanel = styled('nav', {
 
 const MenuPanelItem = styled('button', {
   shouldForwardProp: (prop) => prop !== 'isActive',
-})(({ isActive }) => ({
+})(({ theme, isActive }) => ({
   display: 'flex',
   alignItems: 'center',
   gap: '14px',
   width: '100%',
   padding: '14px 20px',
   border: 'none',
-  borderLeft: isActive ? `3px solid ${brand.primary}` : '3px solid transparent',
+  borderLeft: isActive ? `3px solid ${theme.brand.primary}` : '3px solid transparent',
   background: isActive ? 'rgba(0, 112, 74, 0.06)' : 'transparent',
-  color: isActive ? brand.primary : '#374151',
-  fontFamily: brand.fontBase,
+  color: isActive ? theme.brand.primary : '#374151',
+  fontFamily: theme.brand.fontBase,
   fontSize: '15px',
   fontWeight: 600,
   cursor: 'pointer',
   textAlign: 'left',
   transition: 'background 0.15s, color 0.15s',
-  '&:hover': { background: 'rgba(0, 112, 74, 0.06)', color: brand.primary },
+  '&:hover': { background: 'rgba(0, 112, 74, 0.06)', color: theme.brand.primary },
 }))
 
 // Hide topbar nav links on mobile
@@ -255,6 +240,8 @@ function Bubble({ msg, prevTime }) {
 }
 
 export default function Navbar() {
+  const theme = useTheme()
+  const { brand } = theme
   const initialMessages = useMemo(() => {
     try {
       const saved = localStorage.getItem(CHAT_STORAGE_KEY)
@@ -727,7 +714,7 @@ export default function Navbar() {
                   <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.95-1.57L23 6H6" />
                 </svg>
                 {cartCount > 0 && (
-                  <Box sx={{ position: 'absolute', top: -5, right: -7, width: 15, height: 15, bgcolor: '#00704a', color: '#fff', borderRadius: '50%', fontSize: '9px', fontWeight: 700, display: 'grid', placeItems: 'center' }}>
+                  <Box sx={{ position: 'absolute', top: -5, right: -7, width: 15, height: 15, bgcolor: brand.primary, color: '#fff', borderRadius: '50%', fontSize: '9px', fontWeight: 700, display: 'grid', placeItems: 'center' }}>
                     {cartCount}
                   </Box>
                 )}

@@ -3,20 +3,10 @@ import { Box, Card, CardContent, Divider, IconButton, Stack, Typography } from '
 import AddIcon from '@mui/icons-material/Add'
 import RemoveIcon from '@mui/icons-material/Remove'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
-import { formatLL } from '../data/variantCatalog'
+import { useTheme } from '@mui/material/styles'
+import { formatLL } from '../utils/currency'
 import { calculateOrderTotals } from '../utils/orderPricing'
 import { useCart } from '../state/useCart'
-
-const brand = {
-  primary: '#00704a',
-  primaryDark: '#1e5631',
-  textPrimary: '#2b2b2b',
-  textSecondary: '#79747e',
-  fontBase: "'Montserrat', sans-serif",
-  paper: '#ffffff',
-  border: '#e5e7eb',
-  borderSoft: '#edf2ef',
-}
 
 const receiptPath =
   'M 2 2 H 98 V 96 L 94 98 L 90 96 L 86 98 L 82 96 L 78 98 L 74 96 L 70 98 L 66 96 L 62 98 L 58 96 L 54 98 L 50 96 L 46 98 L 42 96 L 38 98 L 34 96 L 30 98 L 26 96 L 22 98 L 18 96 L 14 98 L 10 96 L 6 98 L 2 96 Z'
@@ -72,6 +62,8 @@ export default function CartSummary({
   action,
   sx,
 }) {
+  const theme = useTheme()
+  const { brand } = theme
   const receiptId = useId().replace(/:/g, '')
   const { updateQty, removeFromCart } = useCart()
   const { subtotal, tax, total } = calculateOrderTotals(items)
@@ -87,8 +79,8 @@ export default function CartSummary({
       sx={{
         width: '100%',
         borderRadius: isReceipt ? 0 : '14px',
-        borderColor: isReceipt ? 'transparent' : brand.border,
-        bgcolor: isReceipt ? 'transparent' : brand.paper,
+        borderColor: isReceipt ? 'transparent' : brand.borderCard,
+        bgcolor: isReceipt ? 'transparent' : '#ffffff',
         boxShadow: isReceipt ? 'none' : '0 2px 10px rgba(17, 24, 39, 0.04)',
         ...(isReceipt && {
           position: 'relative',
@@ -126,7 +118,7 @@ export default function CartSummary({
             <path
               d={receiptPath}
               fill={`url(#receipt-fill-${receiptId})`}
-              stroke={brand.border}
+              stroke={brand.borderCard}
               strokeWidth="0.6"
               vectorEffect="non-scaling-stroke"
             />

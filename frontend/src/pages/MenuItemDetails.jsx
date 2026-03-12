@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { fetchMenuItemById } from '../API/menuApi'
-import { formatLL } from '../data/variantCatalog'
+import { formatLL } from '../utils/currency'
 import { useCart } from '../state/useCart'
 
 import {
@@ -26,12 +26,8 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Typography,
+  useTheme,
 } from '@mui/material'
-
-const brand = {
-  fontBase: "'Montserrat', sans-serif",
-  fontDisplay: "'DIN Alternate Bold', 'Montserrat', sans-serif",
-}
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n))
@@ -127,24 +123,356 @@ function validate(groups, selections) {
   return errors
 }
 
-const optionHeadingSx = {
-  mb: 0.75,
-  fontSize: { xs: '0.95rem', md: '1.05rem' },
-  lineHeight: 1.15,
-  fontFamily: brand.fontDisplay,
+function sortOptions(options) {
+  return [...options].sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
 }
 
-const optionMetaSx = {
-  mb: 1,
-  display: 'block',
-  fontSize: { xs: '0.72rem', md: '0.75rem' },
-  fontFamily: brand.fontBase,
+function getSortedRenderableOptions(group) {
+  return sortOptions(getRenderableOptions(group))
+}
+
+function formatInlineOptionPrice(additionalPrice) {
+  return Number(additionalPrice || 0) > 0 ? ` (+${formatLL(additionalPrice)})` : ''
+}
+
+function formatSecondaryOptionPrice(additionalPrice) {
+  return Number(additionalPrice || 0) > 0 ? `+ ${formatLL(additionalPrice)}` : ''
+}
+
+function flattenSelectedOptions(selections) {
+  const selectedOptionsArray = []
+
+  for (const gid in selections) {
+    const selection = selections[gid]
+    if (selection.type === 'single') {
+      if (selection.value) selectedOptionsArray.push(selection.value)
+      continue
+    }
+
+    if (selection.type === 'multi' && Array.isArray(selection.values)) {
+      selection.values.forEach((value) => {
+        if (typeof value === 'string') selectedOptionsArray.push(value)
+        else if (value && typeof value === 'object' && value.name) selectedOptionsArray.push(value.name)
+      })
+    }
+  }
+
+  return selectedOptionsArray
+}
+
+const GROUP_KEYWORDS = {
+  size: ['size'],
+  espresso: ['espresso'],
+  milk: ['milk'],
+  addons: ['add-ons', 'add ons', 'addons'],
+  bread: ['bread'],
+  ingredients: ['ingredients'],
+  toppings: ['toppings'],
+  extras: ['extras'],
+}
+
+function matchesGroupKeywords(group, keywords) {
+  const id = String(group?.id || '').toLowerCase()
+  const name = String(group?.name || '').toLowerCase()
+  return keywords.some((keyword) => id.includes(keyword) || name.includes(keyword))
+}
+
+function findNamedGroups(groups) {
+  return Object.fromEntries(
+    Object.entries(GROUP_KEYWORDS).map(([key, keywords]) => [
+      key,
+      groups.find((group) => matchesGroupKeywords(group, keywords)),
+    ])
+  )
+}
+
+function OptionGroupSection({ group, showErrors, errors, children }) {
+  const theme = useTheme()
+  if (!group) return null
+
+  const groupError = showErrors ? errors[group.id] : null
+  const metaText = groupMetaText(group)
+
+  return (
+    <Box>
+      <Typography
+        variant="h6"
+        fontWeight={800}
+        sx={{
+          mb: 0.75,
+          fontSize: { xs: '0.95rem', md: '1.05rem' },
+          lineHeight: 1.15,
+          fontFamily: theme.brand.fontDisplay,
+        }}
+      >
+        {group.name}
+      </Typography>
+      {metaText && (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{
+            mb: 1,
+            display: 'block',
+            fontSize: { xs: '0.72rem', md: '0.75rem' },
+            fontFamily: theme.brand.fontBase,
+          }}
+        >
+          {metaText}
+        </Typography>
+      )}
+      {children}
+      {groupError && (
+        <Alert severity="error" sx={{ mt: 1 }}>
+          {groupError}
+        </Alert>
+      )}
+    </Box>
+  )
+}
+
+function QuantitySelector({
+  qty,
+  onDecrease,
+  onIncrease,
+  buttonSx,
+  countSx,
+  spacing = 1,
+}) {
+  return (
+    <Stack direction="row" spacing={spacing} alignItems="center">
+      <Button variant="contained" onClick={onDecrease} sx={buttonSx}>
+        -
+      </Button>
+      <Typography sx={countSx}>{qty}</Typography>
+      <Button variant="contained" onClick={onIncrease} sx={buttonSx}>
+        +
+      </Button>
+    </Stack>
+  )
+}
+
+function ItemArtwork({ item, showPlaceholder, onImageError, imageSx }) {
+  if (showPlaceholder) {
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#b0b8be',
+          width: '100%',
+          height: '100%',
+        }}
+      >
+        <svg
+          width="32"
+          height="32"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        >
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <circle cx="8.5" cy="8.5" r="1.5" />
+          <path d="m21 15-5-5L5 21" />
+        </svg>
+      </Box>
+    )
+  }
+
+  return (
+    <Box
+      component="img"
+      src={item.image}
+      alt={item.name}
+      onError={onImageError}
+      sx={imageSx}
+    />
+  )
+}
+
+function MenuItemHero({
+  item,
+  unitPrice,
+  qty,
+  onDecrease,
+  onIncrease,
+  showPlaceholder,
+  onImageError,
+}) {
+  const theme = useTheme()
+
+  return (
+    <>
+      <Box
+        sx={{
+          display: { xs: 'block', md: 'none' },
+          bgcolor: 'primary.main',
+          color: 'primary.contrastText',
+          borderRadius: 3,
+          overflow: 'hidden',
+          mb: 3,
+          border: '1px solid rgba(0, 112, 74, 0.32)',
+        }}
+      >
+        <Box
+          sx={{
+            bgcolor: '#fff',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            px: 2,
+            pt: { xs: 1, md: 2.5 },
+            pb: { xs: 0.5, md: 2 },
+          }}
+        >
+          <Box
+            sx={{
+              width: { xs: 108, md: 140 },
+              height: { xs: 108, md: 140 },
+              display: 'grid',
+              placeItems: 'center',
+              overflow: 'hidden',
+              flexShrink: 0,
+            }}
+          >
+            <ItemArtwork
+              item={item}
+              showPlaceholder={showPlaceholder}
+              onImageError={onImageError}
+              imageSx={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            />
+          </Box>
+        </Box>
+
+        <Box sx={{ px: { xs: 1.5, md: 2.5 }, pt: { xs: 1, md: 0 }, pb: { xs: 1.25, md: 2.5 } }}>
+          <Typography
+            sx={{
+              fontFamily: theme.brand.fontDisplay,
+              fontWeight: 900,
+              fontSize: { xs: '1.05rem', md: '1.6rem' },
+              lineHeight: 1.05,
+              mb: { xs: 0.4, md: 0.75 },
+            }}
+          >
+            {item.name}
+          </Typography>
+          {item.description && (
+            <Typography
+              sx={{
+                fontFamily: theme.brand.fontBase,
+                fontSize: { xs: '0.74rem', md: '0.92rem' },
+                lineHeight: { xs: 1.35, md: 1.45 },
+                opacity: 0.95,
+                mb: { xs: 0.75, md: 1.25 },
+                display: '-webkit-box',
+                WebkitLineClamp: { xs: 4, md: 'unset' },
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
+            >
+              {item.description}
+            </Typography>
+          )}
+          <Typography
+            sx={{
+              fontWeight: 900,
+              fontSize: { xs: '1.15rem', md: '1.9rem' },
+              lineHeight: 1,
+              mb: { xs: 0.75, md: 1.25 },
+            }}
+          >
+            {formatLL(unitPrice)}
+          </Typography>
+
+          <QuantitySelector
+            qty={qty}
+            onDecrease={onDecrease}
+            onIncrease={onIncrease}
+            spacing={0.75}
+            buttonSx={{
+              minWidth: { xs: 28, md: 36 },
+              width: { xs: 28, md: 36 },
+              height: { xs: 28, md: 36 },
+              p: 0,
+              borderRadius: { xs: '8px', md: '10px' },
+              fontSize: { xs: '0.9rem', md: '1rem' },
+              bgcolor: '#176946',
+              '&:hover': { bgcolor: '#125438' },
+            }}
+            countSx={{
+              minWidth: { xs: 16, md: 24 },
+              textAlign: 'center',
+              fontWeight: 800,
+              fontSize: { xs: '0.9rem', md: '1rem' },
+            }}
+          />
+        </Box>
+      </Box>
+
+      <Box
+        sx={{
+          display: { xs: 'none', md: 'block' },
+          bgcolor: 'primary.main',
+          color: 'primary.contrastText',
+          borderRadius: 2,
+          p: 2,
+          mb: 3,
+        }}
+      >
+        <Stack direction="row" spacing={2} alignItems="center">
+          <Box
+            sx={{
+              width: 92,
+              height: 92,
+              borderRadius: '50%',
+              bgcolor: 'background.paper',
+              display: 'grid',
+              placeItems: 'center',
+              overflow: 'hidden',
+              flexShrink: 0,
+            }}
+          >
+            <ItemArtwork
+              item={item}
+              showPlaceholder={showPlaceholder}
+              onImageError={onImageError}
+              imageSx={{ width: '75%', height: '75%', objectFit: 'contain' }}
+            />
+          </Box>
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="h5" fontWeight={900} sx={{ fontFamily: theme.brand.fontDisplay }}>
+              {item.name}
+            </Typography>
+            {item.description && (
+              <Typography variant="body2" sx={{ opacity: 0.9, fontFamily: theme.brand.fontBase }}>
+                {item.description}
+              </Typography>
+            )}
+            <Typography variant="h6" fontWeight={900} sx={{ mt: 1, fontFamily: theme.brand.fontBase }}>
+              {formatLL(unitPrice)}
+            </Typography>
+          </Box>
+          <QuantitySelector
+            qty={qty}
+            onDecrease={onDecrease}
+            onIncrease={onIncrease}
+            buttonSx={{ minWidth: 40 }}
+            countSx={{ minWidth: 24, textAlign: 'center', fontWeight: 900 }}
+          />
+        </Stack>
+      </Box>
+    </>
+  )
 }
 
 export default function MenuItemDetails() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { addToCart } = useCart()
+  const theme = useTheme()
 
   const [item, setItem] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -200,97 +528,53 @@ export default function MenuItemDetails() {
   }, [item, groups, selections])
 
   const totalPrice = unitPrice * qty
+  const decrementQty = () => setQty((q) => clamp(q - 1, 1, 99))
+  const incrementQty = () => setQty((q) => clamp(q + 1, 1, 99))
+  const namedGroups = useMemo(() => findNamedGroups(groups), [groups])
 
-  const getFirstGroupMatching = (pred) => groups.find(pred)
-  const sizeGroup = getFirstGroupMatching(
-    (g) => g.id.includes('size') || g.name?.toLowerCase().includes('size')
-  )
-  const espressoGroup = getFirstGroupMatching(
-    (g) => g.id.includes('espresso') || g.name?.toLowerCase().includes('espresso')
-  )
-  const milkGroup = getFirstGroupMatching(
-    (g) => g.id.includes('milk') || g.name?.toLowerCase().includes('milk')
-  )
-  const addonsGroup = getFirstGroupMatching(
-    (g) => g.id.includes('add-ons') || g.name?.toLowerCase().includes('add-ons')
-  )
-  const breadGroup = getFirstGroupMatching(
-    (g) => g.id.includes('bread') || g.name?.toLowerCase().includes('bread')
-  )
-  const ingredientsGroup = getFirstGroupMatching(
-    (g) => g.id.includes('ingredients') || g.name?.toLowerCase().includes('ingredients')
-  )
-  const toppingsGroup = getFirstGroupMatching(
-    (g) => g.id.includes('toppings') || g.name?.toLowerCase().includes('toppings')
-  )
-  const extrasGroup = getFirstGroupMatching(
-    (g) => g.id.includes('extras') || g.name?.toLowerCase().includes('extras')
-  )
+  const setGroupSelection = (groupId, nextSelection) => {
+    setSelections((prev) => ({ ...prev, [groupId]: nextSelection }))
+  }
 
   const renderSizePills = (group) => {
     if (!group) return null
     const value = selections[group.id]?.value || ''
-    const groupError = showErrors ? errors[group.id] : null
 
     return (
-      <Box>
-        <Typography variant="h6" fontWeight={800} sx={optionHeadingSx}>
-          {group.name}
-        </Typography>
-        {groupMetaText(group) && (
-          <Typography variant="caption" color="text.secondary" sx={optionMetaSx}>
-            {groupMetaText(group)}
-          </Typography>
-        )}
+      <OptionGroupSection group={group} showErrors={showErrors} errors={errors}>
         <ToggleButtonGroup
           value={value}
           exclusive
           onChange={(_, v) => {
             if (!v) return
-            setSelections((prev) => ({ ...prev, [group.id]: { type: 'single', value: v } }))
+            setGroupSelection(group.id, { type: 'single', value: v })
           }}
         >
-          {getRenderableOptions(group)
-            .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
-            .map((opt) => (
-              <ToggleButton key={opt.name} value={opt.name} sx={{ px: 2 }}>
-                <Box>
-                  <Typography variant="body2" fontWeight={700}>
-                    {opt.name}
+          {getSortedRenderableOptions(group).map((opt) => (
+            <ToggleButton key={opt.name} value={opt.name} sx={{ px: 2 }}>
+              <Box>
+                <Typography variant="body2" fontWeight={700}>
+                  {opt.name}
+                </Typography>
+                {Number(opt.additionalPrice || 0) > 0 && (
+                  <Typography variant="caption" display="block">
+                    +{formatLL(opt.additionalPrice)}
                   </Typography>
-                  {Number(opt.additionalPrice || 0) > 0 && (
-                    <Typography variant="caption" display="block">
-                      +{formatLL(opt.additionalPrice)}
-                    </Typography>
-                  )}
-                </Box>
-              </ToggleButton>
-            ))}
+                )}
+              </Box>
+            </ToggleButton>
+          ))}
         </ToggleButtonGroup>
-        {groupError && (
-          <Alert severity="error" sx={{ mt: 1 }}>
-            {groupError}
-          </Alert>
-        )}
-      </Box>
+      </OptionGroupSection>
     )
   }
 
   const renderSingleSelect = (group) => {
     if (!group) return null
     const value = selections[group.id]?.value || ''
-    const groupError = showErrors ? errors[group.id] : null
 
     return (
-      <Box>
-        <Typography variant="h6" fontWeight={800} sx={optionHeadingSx}>
-          {group.name}
-        </Typography>
-        {groupMetaText(group) && (
-          <Typography variant="caption" color="text.secondary" sx={optionMetaSx}>
-            {groupMetaText(group)}
-          </Typography>
-        )}
+      <OptionGroupSection group={group} showErrors={showErrors} errors={errors}>
         <FormControl fullWidth size="small">
           <InputLabel id={`${group.id}-label`}>{group.name}</InputLabel>
           <Select
@@ -298,33 +582,21 @@ export default function MenuItemDetails() {
             label={group.name}
             value={value}
             onChange={(e) =>
-              setSelections((prev) => ({
-                ...prev,
-                [group.id]: { type: 'single', value: e.target.value },
-              }))
+              setGroupSelection(group.id, { type: 'single', value: e.target.value })
             }
           >
             <MuiMenuItem value="" disabled={group.isRequired}>
               <em>None</em>
             </MuiMenuItem>
-            {getRenderableOptions(group)
-              .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
-              .map((opt) => (
-                <MuiMenuItem key={opt.name} value={opt.name}>
-                  {opt.name}
-                  {Number(opt.additionalPrice || 0) > 0
-                    ? ` (+${formatLL(opt.additionalPrice)})`
-                    : ''}
-                </MuiMenuItem>
-              ))}
+            {getSortedRenderableOptions(group).map((opt) => (
+              <MuiMenuItem key={opt.name} value={opt.name}>
+                {opt.name}
+                {formatInlineOptionPrice(opt.additionalPrice)}
+              </MuiMenuItem>
+            ))}
           </Select>
         </FormControl>
-        {groupError && (
-          <Alert severity="error" sx={{ mt: 1 }}>
-            {groupError}
-          </Alert>
-        )}
-      </Box>
+      </OptionGroupSection>
     )
   }
 
@@ -333,25 +605,16 @@ export default function MenuItemDetails() {
     const current = selections[group.id]
     const selected = current?.type === 'multi' ? current.values : []
     const selectedStrings = selected.filter((v) => typeof v === 'string')
-    const groupError = showErrors ? errors[group.id] : null
 
     const handleChange = (e) => {
       const value = e.target.value
       const max = group.maxSelections
       const next = max != null && max > 0 ? value.slice(0, max) : value
-      setSelections((prev) => ({ ...prev, [group.id]: { type: 'multi', values: next } }))
+      setGroupSelection(group.id, { type: 'multi', values: next })
     }
 
     return (
-      <Box>
-        <Typography variant="h6" fontWeight={800} sx={optionHeadingSx}>
-          {group.name}
-        </Typography>
-        {groupMetaText(group) && (
-          <Typography variant="caption" color="text.secondary" sx={optionMetaSx}>
-            {groupMetaText(group)}
-          </Typography>
-        )}
+      <OptionGroupSection group={group} showErrors={showErrors} errors={errors}>
         <FormControl fullWidth size="small">
           <InputLabel id={`${group.id}-multi-label`}>{group.name}</InputLabel>
           <Select
@@ -369,7 +632,7 @@ export default function MenuItemDetails() {
               </Box>
             )}
           >
-            {getRenderableOptions(group).map((opt) => (
+            {getSortedRenderableOptions(group).map((opt) => (
               <MuiMenuItem key={opt.name} value={opt.name} dense>
                 <Checkbox
                   checked={selectedStrings.includes(opt.name)}
@@ -378,11 +641,7 @@ export default function MenuItemDetails() {
                 />
                 <ListItemText
                   primary={opt.name}
-                  secondary={
-                    Number(opt.additionalPrice || 0) > 0
-                      ? `+ ${formatLL(opt.additionalPrice)}`
-                      : ''
-                  }
+                  secondary={formatSecondaryOptionPrice(opt.additionalPrice)}
                   primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
                   secondaryTypographyProps={{ variant: 'caption' }}
                   sx={{ m: 0 }}
@@ -391,12 +650,7 @@ export default function MenuItemDetails() {
             ))}
           </Select>
         </FormControl>
-        {groupError && (
-          <Alert severity="error" sx={{ mt: 1 }}>
-            {groupError}
-          </Alert>
-        )}
-      </Box>
+      </OptionGroupSection>
     )
   }
 
@@ -404,29 +658,20 @@ export default function MenuItemDetails() {
     if (!group) return null
     const current = selections[group.id]
     const values = current?.type === 'multi' ? current.values : []
-    const groupError = showErrors ? errors[group.id] : null
 
     const handleToggle = (optName) => {
       const idx = values.indexOf(optName)
       const next = [...values]
       if (idx >= 0) next.splice(idx, 1)
       else next.push(optName)
-      setSelections((prev) => ({ ...prev, [group.id]: { type: 'multi', values: next } }))
+      setGroupSelection(group.id, { type: 'multi', values: next })
     }
 
     return (
-      <Box>
-        <Typography variant="h6" fontWeight={800} sx={optionHeadingSx}>
-          {group.name}
-        </Typography>
-        {groupMetaText(group) && (
-          <Typography variant="caption" color="text.secondary" sx={optionMetaSx}>
-            {groupMetaText(group)}
-          </Typography>
-        )}
+      <OptionGroupSection group={group} showErrors={showErrors} errors={errors}>
         <Card variant="outlined" sx={{ borderRadius: 2 }}>
           <List disablePadding>
-            {getRenderableOptions(group).map((opt) => (
+            {getSortedRenderableOptions(group).map((opt) => (
               <MuiMenuItem key={opt.name} onClick={() => handleToggle(opt.name)} dense>
                 <Checkbox
                   checked={values.includes(opt.name)}
@@ -435,23 +680,14 @@ export default function MenuItemDetails() {
                 />
                 <ListItemText
                   primary={opt.name}
-                  secondary={
-                    Number(opt.additionalPrice || 0) > 0
-                      ? `+ ${formatLL(opt.additionalPrice)}`
-                      : ''
-                  }
+                  secondary={formatSecondaryOptionPrice(opt.additionalPrice)}
                   primaryTypographyProps={{ variant: 'body2' }}
                 />
               </MuiMenuItem>
             ))}
           </List>
         </Card>
-        {groupError && (
-          <Alert severity="error" sx={{ mt: 1 }}>
-            {groupError}
-          </Alert>
-        )}
-      </Box>
+      </OptionGroupSection>
     )
   }
 
@@ -462,23 +698,10 @@ export default function MenuItemDetails() {
       return
     }
 
-    const selectedOptionsArray = []
-    for (const gid in selections) {
-      const s = selections[gid]
-      if (s.type === 'single') {
-        if (s.value) selectedOptionsArray.push(s.value)
-      } else if (s.type === 'multi' && Array.isArray(s.values)) {
-        s.values.forEach((v) => {
-          if (typeof v === 'string') selectedOptionsArray.push(v)
-          else if (v && typeof v === 'object' && v.name) selectedOptionsArray.push(v.name)
-        })
-      }
-    }
-
     const payload = {
       menuItemId: item.mongoId || item.id,
       qty,
-      selectedOptions: selectedOptionsArray,
+      selectedOptions: flattenSelectedOptions(selections),
       instructions: instructions.trim(),
     }
 
@@ -495,7 +718,7 @@ export default function MenuItemDetails() {
 
   if (loading)
     return (
-      <Container sx={{ py: 3, '& .MuiTypography-root': { fontFamily: brand.fontBase } }}>
+      <Container sx={{ py: 3, '& .MuiTypography-root': { fontFamily: theme.brand.fontBase } }}>
         <Typography>Loading...</Typography>
       </Container>
     )
@@ -505,8 +728,8 @@ export default function MenuItemDetails() {
       <Container
         sx={{
           py: 3,
-          '& .MuiTypography-root': { fontFamily: brand.fontBase },
-          '& .MuiButton-root': { fontFamily: brand.fontBase },
+          '& .MuiTypography-root': { fontFamily: theme.brand.fontBase },
+          '& .MuiButton-root': { fontFamily: theme.brand.fontBase },
         }}
       >
         <Typography>Item not found</Typography>
@@ -516,22 +739,36 @@ export default function MenuItemDetails() {
 
   const isSandwich = item.category === 'Sandwiches'
   const showPlaceholder = !item.image || imageError
+  const primaryOptionFields = isSandwich
+    ? [
+        { group: namedGroups.bread, render: renderSingleSelect },
+        { group: namedGroups.ingredients, render: renderMultiSelectDropdown },
+        { group: namedGroups.toppings, render: renderToppingsChecklist },
+      ]
+    : [
+        { group: namedGroups.size, render: renderSizePills },
+        { group: namedGroups.espresso, render: renderSingleSelect },
+        { group: namedGroups.milk, render: renderSingleSelect },
+      ]
+  const secondaryOptionField = isSandwich
+    ? { group: namedGroups.extras, render: renderMultiSelectDropdown }
+    : { group: namedGroups.addons, render: renderMultiSelectDropdown }
 
   return (
     <Container
       sx={{
         py: { xs: 1.5, md: 3 },
         px: { xs: 1.5, md: 2 },
-        '& .MuiTypography-root': { fontFamily: brand.fontBase },
-        '& .MuiButton-root': { fontFamily: brand.fontBase },
-        '& .MuiInputBase-input': { fontFamily: brand.fontBase },
-        '& .MuiInputBase-root': { fontFamily: brand.fontBase },
-        '& .MuiInputLabel-root': { fontFamily: brand.fontBase },
-        '& .MuiFormLabel-root': { fontFamily: brand.fontBase },
-        '& .MuiFormControlLabel-label': { fontFamily: brand.fontBase },
-        '& .MuiMenuItem-root': { fontFamily: brand.fontBase },
-        '& .MuiChip-root': { fontFamily: brand.fontBase },
-        '& .MuiAlert-message': { fontFamily: brand.fontBase },
+        '& .MuiTypography-root': { fontFamily: theme.brand.fontBase },
+        '& .MuiButton-root': { fontFamily: theme.brand.fontBase },
+        '& .MuiInputBase-input': { fontFamily: theme.brand.fontBase },
+        '& .MuiInputBase-root': { fontFamily: theme.brand.fontBase },
+        '& .MuiInputLabel-root': { fontFamily: theme.brand.fontBase },
+        '& .MuiFormLabel-root': { fontFamily: theme.brand.fontBase },
+        '& .MuiFormControlLabel-label': { fontFamily: theme.brand.fontBase },
+        '& .MuiMenuItem-root': { fontFamily: theme.brand.fontBase },
+        '& .MuiChip-root': { fontFamily: theme.brand.fontBase },
+        '& .MuiAlert-message': { fontFamily: theme.brand.fontBase },
       }}
     >
       <Button
@@ -542,255 +779,22 @@ export default function MenuItemDetails() {
           minWidth: 0,
           textTransform: 'none',
           fontSize: { xs: '0.8rem', md: '0.9rem' },
-          fontFamily: brand.fontBase,
+          fontFamily: theme.brand.fontBase,
           justifyContent: 'flex-start',
         }}
       >
         {'<- Back to Menu'}
       </Button>
 
-      <Box
-        sx={{
-          display: { xs: 'block', md: 'none' },
-          bgcolor: 'primary.main',
-          color: 'primary.contrastText',
-          borderRadius: 3,
-          overflow: 'hidden',
-          mb: 3,
-          border: '1px solid rgba(0, 112, 74, 0.32)',
-        }}
-      >
-        <Box
-          sx={{
-            bgcolor: '#fff',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            px: 2,
-            pt: { xs: 1, md: 2.5 },
-            pb: { xs: 0.5, md: 2 },
-          }}
-        >
-          <Box
-            sx={{
-              width: { xs: 108, md: 140 },
-              height: { xs: 108, md: 140 },
-              display: 'grid',
-              placeItems: 'center',
-              overflow: 'hidden',
-              flexShrink: 0,
-            }}
-          >
-            {showPlaceholder ? (
-              <Box
-                sx={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#b0b8be',
-                }}
-              >
-                <svg
-                  width="32"
-                  height="32"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                >
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <circle cx="8.5" cy="8.5" r="1.5" />
-                  <path d="m21 15-5-5L5 21" />
-                </svg>
-              </Box>
-            ) : (
-              <img
-                src={item.image}
-                alt={item.name}
-                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                onError={() => setImageError(true)}
-              />
-            )}
-          </Box>
-        </Box>
-
-        <Box sx={{ px: { xs: 1.5, md: 2.5 }, pt: { xs: 1, md: 0 }, pb: { xs: 1.25, md: 2.5 } }}>
-          <Typography
-            sx={{
-              fontFamily: brand.fontDisplay,
-              fontWeight: 900,
-              fontSize: { xs: '1.05rem', md: '1.6rem' },
-              lineHeight: 1.05,
-              mb: { xs: 0.4, md: 0.75 },
-            }}
-          >
-            {item.name}
-          </Typography>
-            {item.description && (
-              <Typography
-                sx={{
-                  fontFamily: brand.fontBase,
-                  fontSize: { xs: '0.74rem', md: '0.92rem' },
-                  lineHeight: { xs: 1.35, md: 1.45 },
-                  opacity: 0.95,
-                mb: { xs: 0.75, md: 1.25 },
-                display: '-webkit-box',
-                WebkitLineClamp: { xs: 4, md: 'unset' },
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-              }}
-            >
-              {item.description}
-            </Typography>
-          )}
-          <Typography
-            sx={{
-              fontWeight: 900,
-              fontSize: { xs: '1.15rem', md: '1.9rem' },
-              lineHeight: 1,
-              mb: { xs: 0.75, md: 1.25 },
-            }}
-          >
-            {formatLL(unitPrice)}
-          </Typography>
-
-          <Stack direction="row" spacing={0.75} alignItems="center" sx={{ justifyContent: 'flex-start' }}>
-            <Button
-              variant="contained"
-              onClick={() => setQty((q) => clamp(q - 1, 1, 99))}
-              sx={{
-                minWidth: { xs: 28, md: 36 },
-                width: { xs: 28, md: 36 },
-                height: { xs: 28, md: 36 },
-                p: 0,
-                borderRadius: { xs: '8px', md: '10px' },
-                fontSize: { xs: '0.9rem', md: '1rem' },
-                bgcolor: '#176946',
-                '&:hover': { bgcolor: '#125438' },
-              }}
-            >
-              -
-            </Button>
-            <Typography
-              sx={{
-                minWidth: { xs: 16, md: 24 },
-                textAlign: 'center',
-                fontWeight: 800,
-                fontSize: { xs: '0.9rem', md: '1rem' },
-              }}
-            >
-              {qty}
-            </Typography>
-            <Button
-              variant="contained"
-              onClick={() => setQty((q) => clamp(q + 1, 1, 99))}
-              sx={{
-                minWidth: { xs: 28, md: 36 },
-                width: { xs: 28, md: 36 },
-                height: { xs: 28, md: 36 },
-                p: 0,
-                borderRadius: { xs: '8px', md: '10px' },
-                fontSize: { xs: '0.9rem', md: '1rem' },
-                bgcolor: '#176946',
-                '&:hover': { bgcolor: '#125438' },
-              }}
-            >
-              +
-            </Button>
-          </Stack>
-        </Box>
-      </Box>
-
-      <Box
-        sx={{
-          display: { xs: 'none', md: 'block' },
-          bgcolor: 'primary.main',
-          color: 'primary.contrastText',
-          borderRadius: 2,
-          p: 2,
-          mb: 3,
-        }}
-      >
-        <Stack direction="row" spacing={2} alignItems="center">
-          <Box
-            sx={{
-              width: 92,
-              height: 92,
-              borderRadius: '50%',
-              bgcolor: 'background.paper',
-              display: 'grid',
-              placeItems: 'center',
-              overflow: 'hidden',
-              flexShrink: 0,
-            }}
-          >
-            {showPlaceholder ? (
-              <Box
-                sx={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#b0b8be',
-                }}
-              >
-                <svg
-                  width="32"
-                  height="32"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                >
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <circle cx="8.5" cy="8.5" r="1.5" />
-                  <path d="m21 15-5-5L5 21" />
-                </svg>
-              </Box>
-            ) : (
-              <img
-                src={item.image}
-                alt={item.name}
-                style={{ width: '75%', height: '75%', objectFit: 'contain' }}
-                onError={() => setImageError(true)}
-              />
-            )}
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="h5" fontWeight={900} sx={{ fontFamily: brand.fontDisplay }}>
-              {item.name}
-            </Typography>
-            {item.description && (
-              <Typography variant="body2" sx={{ opacity: 0.9, fontFamily: brand.fontBase }}>
-                {item.description}
-              </Typography>
-            )}
-            <Typography variant="h6" fontWeight={900} sx={{ mt: 1, fontFamily: brand.fontBase }}>
-              {formatLL(unitPrice)}
-            </Typography>
-          </Box>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Button
-              variant="contained"
-              onClick={() => setQty((q) => clamp(q - 1, 1, 99))}
-              sx={{ minWidth: 40 }}
-            >
-              -
-            </Button>
-            <Typography fontWeight={900} sx={{ minWidth: 24, textAlign: 'center' }}>
-              {qty}
-            </Typography>
-            <Button
-              variant="contained"
-              onClick={() => setQty((q) => clamp(q + 1, 1, 99))}
-              sx={{ minWidth: 40 }}
-            >
-              +
-            </Button>
-          </Stack>
-        </Stack>
-      </Box>
+      <MenuItemHero
+        item={item}
+        unitPrice={unitPrice}
+        qty={qty}
+        onDecrease={decrementQty}
+        onIncrease={incrementQty}
+        showPlaceholder={showPlaceholder}
+        onImageError={() => setImageError(true)}
+      />
 
       {!item.isAvailable && (
         <Alert severity="warning" sx={{ mb: 2 }}>
@@ -801,25 +805,16 @@ export default function MenuItemDetails() {
       <Card sx={{ borderRadius: 2 }}>
         <CardContent>
           <Stack spacing={{ xs: 2, sm: 3 }}>
-            {!isSandwich ? (
-              <>
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={{ xs: 2, md: 3 }}>
-                  <Box sx={{ flex: 1 }}>{renderSizePills(sizeGroup)}</Box>
-                  <Box sx={{ flex: 1 }}>{renderSingleSelect(espressoGroup)}</Box>
-                  <Box sx={{ flex: 1 }}>{renderSingleSelect(milkGroup)}</Box>
-                </Stack>
-                <Box sx={{ maxWidth: 520 }}>{renderMultiSelectDropdown(addonsGroup)}</Box>
-              </>
-            ) : (
-              <>
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={{ xs: 2, md: 3 }}>
-                  <Box sx={{ flex: 1 }}>{renderSingleSelect(breadGroup)}</Box>
-                  <Box sx={{ flex: 1 }}>{renderMultiSelectDropdown(ingredientsGroup)}</Box>
-                  <Box sx={{ flex: 1 }}>{renderToppingsChecklist(toppingsGroup)}</Box>
-                </Stack>
-                <Box sx={{ maxWidth: 520 }}>{renderMultiSelectDropdown(extrasGroup)}</Box>
-              </>
-            )}
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={{ xs: 2, md: 3 }}>
+              {primaryOptionFields.map(({ group, render }, index) => (
+                <Box key={group?.id || index} sx={{ flex: 1 }}>
+                  {render(group)}
+                </Box>
+              ))}
+            </Stack>
+            <Box sx={{ maxWidth: 520 }}>
+              {secondaryOptionField.render(secondaryOptionField.group)}
+            </Box>
 
             <Divider />
 
@@ -842,7 +837,7 @@ export default function MenuItemDetails() {
               <Typography
                 variant="h6"
                 fontWeight={900}
-                sx={{ fontSize: { xs: '0.98rem', md: '1.15rem' }, fontFamily: brand.fontDisplay }}
+                sx={{ fontSize: { xs: '0.98rem', md: '1.15rem' }, fontFamily: theme.brand.fontDisplay }}
               >
                 Total: {formatLL(totalPrice)}
               </Typography>

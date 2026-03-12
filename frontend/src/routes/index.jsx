@@ -12,11 +12,6 @@ import Dashboard from '../pages/Dashboard.jsx'
 import AdminLayout from "../components/admin/AdminLayout"
 import AdminDashboard from "../pages/admin/AdminDashboard"
 
-// Layout wrapper: Navbar contains sidebar + top header + breadcrumb
-function Layout() {
-  return <Navbar />
-}
-
 export default function AppRoutes() {
   return (
     <Routes>
@@ -28,9 +23,9 @@ export default function AppRoutes() {
       </Route>
 
       {/* Public / customer routes (Navbar layout) */}
-      <Route element={<Layout />}>
+      <Route element={<Navbar />}>
         <Route path="/" element={<Home />} />
-        <Route path="/menu" element={<Menu />} />
+        <Route path="/menu/:category?" element={<Menu />} />
         <Route path="/cart" element={<Cart />} />
         <Route path="/checkout" element={<Checkout />} />
         <Route path="/success" element={<Success />} />

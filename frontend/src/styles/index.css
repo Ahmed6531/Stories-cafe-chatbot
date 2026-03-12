@@ -1,32 +1,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=DIN+Alternate:wght@700&display=swap');
 
-.app-shell{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
 .sidebar{border-right:1px solid #e9e9e9;padding:18px;display:flex;flex-direction:column;justify-content:space-between;background:#fff}
 .side-nav{display:flex;flex-direction:column;gap:10px}
 .side-link{padding:10px 12px;border-radius:12px;font-weight:700}
 .side-link.active{background:rgba(0,112,74,.10);color:#00704a}
-.side-link.past-orders-btn{background:rgba(0,112,74,.10);color:#00704a;border:1px solid rgba(0,112,74,.2);transition:all 0.3s ease}
-.side-link.past-orders-btn:hover{background:rgba(0,112,74,.15);border-color:rgba(0,112,74,.3)}
-.faux-link{background:transparent;border:0;text-align:left;cursor:pointer}
-
-.main{display:flex;flex-direction:column}
-.topbar{padding:14px 18px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e9e9e9;background:#fff}
-.logo-box{background:#fff;border:1px solid #e9e9e9;border-radius:14px;padding:8px 12px;display:flex;align-items:center;min-height:44px}
-.logo-img{height:28px;width:auto}
 
 .top-pill{border:2px solid #00704a;background:#fff;color:#00704a;border-radius:999px;padding:10px 14px;font-weight:900;cursor:pointer}
 .top-pill.auth{background:#00704a;color:#fff;border-color:#00704a;margin-right:12px}
 .top-pill.auth:hover{background:#147d56;border-color:#147d56}
-.cart-badge{display:inline-grid;place-items:center;min-width:22px;height:22px;border-radius:999px;background:#00704a;color:#fff;font-size:12px;margin-left:8px;padding:0 6px}
-
-.breadcrumb{padding:10px 18px;border-bottom:1px solid #e9e9e9;background:#fff;color:#79747e;font-weight:700}
-.crumb-link{color:#79747e;text-decoration:none;transition:all 0.2s ease;padding:2px 4px;border-radius:4px}
-.crumb-link:hover{color:#00704a;background:rgba(0,112,74,.08);text-decoration:underline}
-.crumb-sep{margin:0 8px;opacity:.7}
-.page{padding:18px}
-
-.auth-btn{width:100%;padding:12px 14px;border:0;border-radius:12px;background:#00704a;color:#fff;font-weight:900;cursor:pointer}
-.auth-btn:hover{background:#147d56}
 
 * {
   margin: 0;
@@ -126,22 +107,6 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
 .content-shell { display: flex; flex: 1; min-width: 0; width: 0; position: relative; height: 100vh; overflow: hidden; }
 .main { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; height: 100vh; overflow: hidden; }
 
-/* ==================== TOPBAR LOGO ANIMATION ==================== */
-/* TODO Phase 4: move topbarLogoIn into Navbar.jsx styled() and remove this block */
-.topbar-logo {
-  height: auto;
-  width: auto;
-  max-width: 112px;
-  max-height: 24px;
-  object-fit: contain;
-  opacity: 0;
-  animation: topbarLogoIn 0.25s ease forwards;
-}
-@keyframes topbarLogoIn {
-  from { opacity: 0; transform: translateX(-6px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-
 /* ==================== PAGE ==================== */
 .page {
   padding: 0;
@@ -166,7 +131,7 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
   flex-shrink: 0;
   overflow: hidden;
   width: var(--chat-panel-width);
-  animation: chatUnitPushIn 0.28s ease forwards;
+  animation: chatUnitPushIn 0.35s ease forwards;
   transform: translateZ(0);
   -webkit-font-smoothing: antialiased;
   backface-visibility: hidden;
@@ -237,7 +202,7 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
 }
 
 .chat-unit-closing {
-  animation: chatUnitPushOut 0.26s ease forwards;
+  animation: chatUnitPushOut 0.35s ease forwards;
 }
 
 @keyframes chatMobileFadeIn {
@@ -758,10 +723,6 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
   transition: background .18s, border-color .18s, transform .15s;
 }
 
-p {
-  margin-bottom: 1em;
-}
-
 /* ==================== CHAT INPUT ==================== */
 .chat-input-bar {
   padding: 8px 12px;
@@ -817,57 +778,4 @@ p {
 }
 .chat-input-send:hover { background: #eceff1; color: #4b5563; transform: scale(1.04); }
 
-.chat-input-mic {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
-  border: 1.5px solid #e8f0eb;
-  background: #f4fbf7;
-  color: #1a6b3c;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background .2s, border-color .2s, transform .15s;
-  box-shadow: none;
-}
-.chat-input-mic:hover { background: #eaf5ef; border-color: #b2d9c2; transform: scale(1.05); }
-.chat-input-mic.active { background: #1a6b3c; border-color: #1a6b3c; color: #fff; }
-.chat-input-mic.listening-stop { border-radius: 10px; }
-
-.chat-input-mic-wave {
-  display: inline-flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 2px;
-  height: 12px;
-}
-.chat-input-mic-bar {
-  width: 2px;
-  height: 4px;
-  border-radius: 2px;
-  background: currentColor;
-  animation: input-mic-wave 0.7s ease-in-out infinite;
-}
-.chat-input-mic-bar:nth-child(2) { animation-delay: 0.1s; }
-.chat-input-mic-bar:nth-child(3) { animation-delay: 0.2s; }
-
-@keyframes input-mic-wave {
-  0%, 100% { height: 4px; }
-  50% { height: 10px; }
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
-}
 
