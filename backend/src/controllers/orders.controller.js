@@ -1,7 +1,15 @@
 import { Order } from "../models/Order.js";
 import { MenuItem } from "../models/MenuItem.js";
 import { Cart } from "../models/Cart.js";
+import { VariantGroup } from "../models/VariantGroup.js";
 import { generateOrderNumber } from "../utils/orderNumber.js";
+import {
+  calculateSelectedOptionsDelta,
+  createVariantGroupMap,
+  resolveVariantGroupsForMenuItem,
+} from "../utils/variantPricing.js";
+
+const ORDER_TAX_RATE = 0.08;
 
 export async function createOrder(req, res) {
   const { orderType, customer, items, notesToBarista } = req.body || {};
@@ -41,9 +49,18 @@ export async function createOrder(req, res) {
     }
 
     let optionsDelta = 0;
-    for (const optLabel of selectedOptions) {
-      const found = (menuItem.options || []).find((o) => o.label === optLabel);
-      if (found) optionsDelta += found.priceDelta;
+    if (Array.isArray(menuItem.variantGroups) && menuItem.variantGroups.length > 0) {
+      const variantGroups = await VariantGroup.find({
+        groupId: { $in: menuItem.variantGroups },
+      });
+      const variantGroupsById = createVariantGroupMap(variantGroups);
+      const resolvedVariantGroups = resolveVariantGroupsForMenuItem(menuItem, variantGroupsById);
+      optionsDelta = calculateSelectedOptionsDelta(selectedOptions, resolvedVariantGroups);
+    } else {
+      for (const optLabel of selectedOptions) {
+        const found = (menuItem.options || []).find((o) => o.label === optLabel);
+        if (found) optionsDelta += found.priceDelta;
+      }
     }
 
     const unitPrice = menuItem.basePrice + optionsDelta;
@@ -61,7 +78,8 @@ export async function createOrder(req, res) {
     });
   }
 
-  const total = subtotal;
+  const tax = Math.round(subtotal * ORDER_TAX_RATE);
+  const total = subtotal + tax;
 
   let orderNumber = generateOrderNumber();
   for (let i = 0; i < 3; i++) {

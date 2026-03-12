@@ -160,30 +160,26 @@ function flattenSelectedOptions(selections) {
   return selectedOptionsArray
 }
 
-const GROUP_KEYWORDS = {
-  size: ['size'],
-  espresso: ['espresso'],
-  milk: ['milk'],
-  addons: ['add-ons', 'add ons', 'addons'],
-  bread: ['bread'],
-  ingredients: ['ingredients'],
-  toppings: ['toppings'],
-  extras: ['extras'],
+function chunkGroups(groups, size) {
+  const chunks = []
+  for (let i = 0; i < groups.length; i += size) {
+    chunks.push(groups.slice(i, i + size))
+  }
+  return chunks
 }
 
-function matchesGroupKeywords(group, keywords) {
-  const id = String(group?.id || '').toLowerCase()
-  const name = String(group?.name || '').toLowerCase()
-  return keywords.some((keyword) => id.includes(keyword) || name.includes(keyword))
+function getStableGroupKey(group) {
+  return String(group?.groupId || group?.id || '').toLowerCase()
 }
 
-function findNamedGroups(groups) {
-  return Object.fromEntries(
-    Object.entries(GROUP_KEYWORDS).map(([key, keywords]) => [
-      key,
-      groups.find((group) => matchesGroupKeywords(group, keywords)),
-    ])
-  )
+function shouldUsePillSelector(group, options) {
+  if (group?.maxSelections !== 1) return false
+  return getStableGroupKey(group).includes('size') && options.length <= 4
+}
+
+function shouldUseChecklist(group, options) {
+  if (group?.maxSelections === 1) return false
+  return getStableGroupKey(group).includes('topping') && options.length <= 8
 }
 
 function OptionGroupSection({ group, showErrors, errors, children }) {
@@ -530,13 +526,32 @@ export default function MenuItemDetails() {
   const totalPrice = unitPrice * qty
   const decrementQty = () => setQty((q) => clamp(q - 1, 1, 99))
   const incrementQty = () => setQty((q) => clamp(q + 1, 1, 99))
-  const namedGroups = useMemo(() => findNamedGroups(groups), [groups])
+  const groupedRows = useMemo(() => chunkGroups(groups, 3), [groups])
 
   const setGroupSelection = (groupId, nextSelection) => {
     setSelections((prev) => ({ ...prev, [groupId]: nextSelection }))
   }
 
-  const renderSizePills = (group) => {
+  const renderGroup = (group) => {
+    if (!group) return null
+
+    const options = getSortedRenderableOptions(group)
+    if (shouldUsePillSelector(group, options)) {
+      return renderSizePills(group, options)
+    }
+
+    if (group.maxSelections === 1) {
+      return renderSingleSelect(group, options)
+    }
+
+    if (shouldUseChecklist(group, options)) {
+      return renderToppingsChecklist(group, options)
+    }
+
+    return renderMultiSelectDropdown(group, options)
+  }
+
+  const renderSizePills = (group, options = getSortedRenderableOptions(group)) => {
     if (!group) return null
     const value = selections[group.id]?.value || ''
 
@@ -550,7 +565,7 @@ export default function MenuItemDetails() {
             setGroupSelection(group.id, { type: 'single', value: v })
           }}
         >
-          {getSortedRenderableOptions(group).map((opt) => (
+          {options.map((opt) => (
             <ToggleButton key={opt.name} value={opt.name} sx={{ px: 2 }}>
               <Box>
                 <Typography variant="body2" fontWeight={700}>
@@ -569,7 +584,7 @@ export default function MenuItemDetails() {
     )
   }
 
-  const renderSingleSelect = (group) => {
+  const renderSingleSelect = (group, options = getSortedRenderableOptions(group)) => {
     if (!group) return null
     const value = selections[group.id]?.value || ''
 
@@ -588,7 +603,7 @@ export default function MenuItemDetails() {
             <MuiMenuItem value="" disabled={group.isRequired}>
               <em>None</em>
             </MuiMenuItem>
-            {getSortedRenderableOptions(group).map((opt) => (
+            {options.map((opt) => (
               <MuiMenuItem key={opt.name} value={opt.name}>
                 {opt.name}
                 {formatInlineOptionPrice(opt.additionalPrice)}
@@ -600,7 +615,7 @@ export default function MenuItemDetails() {
     )
   }
 
-  const renderMultiSelectDropdown = (group) => {
+  const renderMultiSelectDropdown = (group, options = getSortedRenderableOptions(group)) => {
     if (!group) return null
     const current = selections[group.id]
     const selected = current?.type === 'multi' ? current.values : []
@@ -632,7 +647,7 @@ export default function MenuItemDetails() {
               </Box>
             )}
           >
-            {getSortedRenderableOptions(group).map((opt) => (
+            {options.map((opt) => (
               <MuiMenuItem key={opt.name} value={opt.name} dense>
                 <Checkbox
                   checked={selectedStrings.includes(opt.name)}
@@ -654,7 +669,7 @@ export default function MenuItemDetails() {
     )
   }
 
-  const renderToppingsChecklist = (group) => {
+  const renderToppingsChecklist = (group, options = getSortedRenderableOptions(group)) => {
     if (!group) return null
     const current = selections[group.id]
     const values = current?.type === 'multi' ? current.values : []
@@ -671,7 +686,7 @@ export default function MenuItemDetails() {
       <OptionGroupSection group={group} showErrors={showErrors} errors={errors}>
         <Card variant="outlined" sx={{ borderRadius: 2 }}>
           <List disablePadding>
-            {getSortedRenderableOptions(group).map((opt) => (
+            {options.map((opt) => (
               <MuiMenuItem key={opt.name} onClick={() => handleToggle(opt.name)} dense>
                 <Checkbox
                   checked={values.includes(opt.name)}
@@ -737,22 +752,7 @@ export default function MenuItemDetails() {
       </Container>
     )
 
-  const isSandwich = item.category === 'Sandwiches'
   const showPlaceholder = !item.image || imageError
-  const primaryOptionFields = isSandwich
-    ? [
-        { group: namedGroups.bread, render: renderSingleSelect },
-        { group: namedGroups.ingredients, render: renderMultiSelectDropdown },
-        { group: namedGroups.toppings, render: renderToppingsChecklist },
-      ]
-    : [
-        { group: namedGroups.size, render: renderSizePills },
-        { group: namedGroups.espresso, render: renderSingleSelect },
-        { group: namedGroups.milk, render: renderSingleSelect },
-      ]
-  const secondaryOptionField = isSandwich
-    ? { group: namedGroups.extras, render: renderMultiSelectDropdown }
-    : { group: namedGroups.addons, render: renderMultiSelectDropdown }
 
   return (
     <Container
@@ -805,16 +805,19 @@ export default function MenuItemDetails() {
       <Card sx={{ borderRadius: 2 }}>
         <CardContent>
           <Stack spacing={{ xs: 2, sm: 3 }}>
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={{ xs: 2, md: 3 }}>
-              {primaryOptionFields.map(({ group, render }, index) => (
-                <Box key={group?.id || index} sx={{ flex: 1 }}>
-                  {render(group)}
-                </Box>
-              ))}
-            </Stack>
-            <Box sx={{ maxWidth: 520 }}>
-              {secondaryOptionField.render(secondaryOptionField.group)}
-            </Box>
+            {groupedRows.map((row, rowIndex) => (
+              <Stack
+                key={row.map((group) => group.id).join('-') || rowIndex}
+                direction={{ xs: 'column', md: 'row' }}
+                spacing={{ xs: 2, md: 3 }}
+              >
+                {row.map((group) => (
+                  <Box key={group.id} sx={{ flex: 1 }}>
+                    {renderGroup(group)}
+                  </Box>
+                ))}
+              </Stack>
+            ))}
 
             <Divider />
 

@@ -9,49 +9,14 @@ import {
   RadioGroup,
   Stack,
   Typography,
+  useTheme,
 } from '@mui/material'
 import { useCart } from '../state/useCart'
 import http from '../API/http'
 import CartSummary from '../components/CartSummary'
 
-const inputStyle = {
-  width: '100%',
-  padding: '10px 12px',
-  border: '1px solid #e0e0e0',
-  borderRadius: '8px',
-  fontSize: '14px',
-  fontFamily: "'Montserrat', sans-serif",
-  boxSizing: 'border-box',
-  backgroundColor: '#fff',
-  outline: 'none',
-}
-
-const labelStyle = {
-  display: 'block',
-  marginBottom: '4px',
-  fontWeight: 700,
-  fontSize: '12px',
-  color: '#444',
-  textTransform: 'uppercase',
-  letterSpacing: '0.02em',
-}
-
 const formGroupSx = {
   marginBottom: '18px',
-}
-
-const orderOptionStyle = {
-  m: 0,
-  minHeight: 36,
-  px: 0,
-  py: 0.15,
-  alignItems: 'center',
-  '.MuiFormControlLabel-label': {
-    fontWeight: 500,
-    color: '#4f4f4f',
-    fontSize: '13px',
-    fontFamily: "'Montserrat', sans-serif",
-  },
 }
 
 const checkoutWidths = {
@@ -66,10 +31,47 @@ const centeredWidth = (maxWidth) => ({
 })
 
 export default function Checkout() {
+  const theme = useTheme()
   const navigate = useNavigate()
   const { state, clearCart } = useCart()
   const { items } = state
   const [orderTypeError, setOrderTypeError] = useState(false)
+
+  const inputStyle = {
+    width: '100%',
+    padding: '10px 12px',
+    border: `1px solid ${theme.brand.border}`,
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontFamily: theme.brand.fontBase,
+    boxSizing: 'border-box',
+    backgroundColor: theme.palette.common.white,
+    outline: 'none',
+  }
+
+  const labelStyle = {
+    display: 'block',
+    marginBottom: '4px',
+    fontWeight: 700,
+    fontSize: '12px',
+    color: theme.brand.textLabel,
+    textTransform: 'uppercase',
+    letterSpacing: '0.02em',
+  }
+
+  const orderOptionStyle = {
+    m: 0,
+    minHeight: 36,
+    px: 0,
+    py: 0.15,
+    alignItems: 'center',
+    '.MuiFormControlLabel-label': {
+      fontWeight: 500,
+      color: theme.brand.textOption,
+      fontSize: '13px',
+      fontFamily: theme.brand.fontBase,
+    },
+  }
 
   const [formData, setFormData] = useState({
     name: '',
@@ -132,18 +134,18 @@ export default function Checkout() {
         pb: { xs: 2, md: 4 },
         maxWidth: '1200px',
         margin: '0 auto',
-        fontFamily: "'Montserrat', sans-serif",
-        '& .MuiTypography-root': { fontFamily: "'Montserrat', sans-serif" },
-        '& .MuiButton-root': { fontFamily: "'Montserrat', sans-serif" },
+        fontFamily: theme.brand.fontBase,
+        '& .MuiTypography-root': { fontFamily: theme.brand.fontBase },
+        '& .MuiButton-root': { fontFamily: theme.brand.fontBase },
       }}
     >
       <Typography
         variant="h5"
         sx={{
-          fontFamily: "'DIN Alternate Bold', 'Montserrat', sans-serif",
+          fontFamily: theme.brand.fontDisplay,
           fontSize: { xs: '1.25rem', sm: '1.5rem' },
           fontWeight: 900,
-          color: '#00704a',
+          color: theme.brand.primary,
           letterSpacing: '0.04em',
           textTransform: 'uppercase',
           textAlign: 'center',
@@ -217,10 +219,10 @@ export default function Checkout() {
                     <Radio
                       size="small"
                       sx={{
-                        color: '#9aa09d',
+                        color: theme.brand.radioInactive,
                         p: 0.5,
                         mr: 0.75,
-                        '&.Mui-checked': { color: '#00704a' },
+                        '&.Mui-checked': { color: theme.brand.primary },
                       }}
                     />
                   }
@@ -233,10 +235,10 @@ export default function Checkout() {
                     <Radio
                       size="small"
                       sx={{
-                        color: '#9aa09d',
+                        color: theme.brand.radioInactive,
                         p: 0.5,
                         mr: 0.75,
-                        '&.Mui-checked': { color: '#00704a' },
+                        '&.Mui-checked': { color: theme.brand.primary },
                       }}
                     />
                   }
@@ -249,9 +251,9 @@ export default function Checkout() {
                   variant="caption"
                   sx={{
                     mt: 0.5,
-                    color: '#cf2e2e',
+                    color: theme.brand.error,
                     fontSize: '0.75rem',
-                    fontFamily: "'Montserrat', sans-serif",
+                    fontFamily: theme.brand.fontBase,
                   }}
                 >
                   Required
@@ -285,11 +287,11 @@ export default function Checkout() {
               sx={{
                 px: 0,
                 minWidth: 0,
-                color: '#6b7a73',
+                color: theme.brand.textMuted,
                 fontWeight: 600,
                 textTransform: 'none',
                 fontSize: '0.95rem',
-                '&:hover': { backgroundColor: 'transparent', color: '#1e5631' },
+                '&:hover': { backgroundColor: 'transparent', color: theme.brand.primaryDark },
               }}
             >
               Back to Cart
@@ -321,12 +323,12 @@ export default function Checkout() {
               sx={{
                 py: 1.5,
                 borderRadius: '10px',
-                bgcolor: '#1e5631',
+                bgcolor: theme.brand.primaryDark,
                 fontWeight: 700,
                 textTransform: 'none',
                 fontSize: '1rem',
-                fontFamily: "'Montserrat', sans-serif",
-                '&:hover': { bgcolor: '#143d22' },
+                fontFamily: theme.brand.fontBase,
+                '&:hover': { bgcolor: theme.brand.primaryDeepHover },
               }}
             >
               Place Order
