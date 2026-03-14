@@ -162,7 +162,8 @@ export async function addToCart(req, res) {
     const payload = await buildCartResponse(cart);
     res.set("x-cart-id", cartId);
     res.status(201).json(payload);
-  } catch {
+  } catch (err) {
+    console.error("Add to cart error:", err);
     res.status(500).json({ error: "Failed to add to cart" });
   }
 }
