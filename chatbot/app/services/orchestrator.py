@@ -2,9 +2,14 @@ from app.schemas.chat import ChatMessageResponse
 from app.utils.normalize import normalize_user_message
 from app.services.tools import (
     fetch_menu_items,
+    fetch_featured_items,
     get_cart,
     add_item_to_cart,
     find_menu_item_by_name,
+)
+from app.services.suggestions import (
+    suggest_popular_items,
+    suggest_complementary_items,
 )
 from app.services.http_client import ExpressAPIError
 
@@ -84,12 +89,11 @@ async def process_chat_message(
                 )
 
             menu_item_id = matched_item.get("id")
-
             if menu_item_id is None:
                 menu_item_id = matched_item.get("_id")
-            
-            print("MATCHED MENU ITEM:", matched_item)
 
+            print("MATCHED MENU ITEM:", matched_item)
+            print("USING MENU ITEM ID:", menu_item_id)
 
             if menu_item_id is None:
                 return ChatMessageResponse(
@@ -115,6 +119,19 @@ async def process_chat_message(
                 cart_id=cart_id,
             )
 
+            featured_items = await fetch_featured_items()
+            popular = suggest_popular_items(featured_items)
+            complementary = suggest_complementary_items(menu_items, matched_item)
+
+            suggestions = popular + complementary
+
+            filtered_suggestions = [
+                suggestion
+                for suggestion in suggestions
+                if suggestion.get("item_name", "").lower()
+                != matched_item.get("name", "").lower()
+            ]
+
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
@@ -123,7 +140,7 @@ async def process_chat_message(
                 cart_updated=True,
                 cart_id=cart_result["cart_id"],
                 defaults_used=[],
-                suggestions=[],
+                suggestions=filtered_suggestions,
                 metadata={
                     "normalized_message": normalized_message,
                     "item_query": item_query,
@@ -134,18 +151,21 @@ async def process_chat_message(
             )
 
         if intent == "recommendation_query":
+            featured_items = await fetch_featured_items()
+            suggestions = suggest_popular_items(featured_items)
+
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
-                reply="I can recommend items next. Suggestions are the next step.",
+                reply="Here are some popular items you might like.",
                 intent=intent,
                 cart_updated=False,
                 cart_id=cart_id,
                 defaults_used=[],
-                suggestions=[],
+                suggestions=suggestions,
                 metadata={
                     "normalized_message": normalized_message,
-                    "pipeline_stage": "recommendation_stub",
+                    "pipeline_stage": "recommendation_done",
                 },
             )
 
