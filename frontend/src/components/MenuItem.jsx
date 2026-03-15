@@ -90,6 +90,8 @@ const ItemImage = styled('img')(() => ({
   padding: '12px',
   transition: 'transform 0.5s cubic-bezier(0.33, 1, 0.68, 1)',
   backgroundColor: '#ffffff',
+  userSelect: 'none',
+  WebkitUserDrag: 'none',
 }));
 
 const ImgPlaceholder = styled(Box)(() => ({
@@ -214,7 +216,12 @@ export default function MenuItem({ item }) {
             </svg>
           </ImgPlaceholder>
         ) : (
-          <ItemImage src={item.image} alt={item.name} onError={() => setImageError(true)} />
+          <ItemImage
+            src={item.image}
+            alt={item.name}
+            draggable={false}
+            onError={() => setImageError(true)}
+          />
         )}
       </ItemImageContainer>
 

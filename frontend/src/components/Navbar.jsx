@@ -291,7 +291,7 @@ export default function Navbar() {
 
   const isChatAllowedRoute =
     location.pathname === '/' ||
-    location.pathname === '/menu' ||
+    location.pathname.startsWith('/menu') ||
     location.pathname === '/cart' ||
     location.pathname.startsWith('/item/')
 
