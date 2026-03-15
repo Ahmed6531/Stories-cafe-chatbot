@@ -15,6 +15,9 @@ import RemoveIcon from '@mui/icons-material/Remove'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import LocalGroceryStoreOutlinedIcon from '@mui/icons-material/LocalGroceryStoreOutlined'
 import { useCart } from '../state/useCart'
+import { useState } from 'react'
+import DeleteSweepOutlinedIcon from '@mui/icons-material/DeleteSweepOutlined'
+import ClearCartModal from '../components/ClearCartModal'
 
 const brand = {
   primary: '#00704a',
@@ -31,8 +34,9 @@ const formatLL = (value) => `L.L ${Number(value || 0).toLocaleString()}`
 
 export default function Cart() {
   const navigate = useNavigate()
-  const { state, updateQty, removeFromCart } = useCart()
+  const { state, updateQty, removeFromCart, clearCart } = useCart()
   const { items: cartItems, loading } = state
+  const [clearModalOpen, setClearModalOpen] = useState(false)
 
   const subtotal = cartItems.reduce((total, item) => total + (item.price || 0) * item.qty, 0)
   const estimatedTax = Math.round(subtotal * 0.08)
@@ -55,20 +59,51 @@ export default function Cart() {
         '& .MuiButton-root': { fontFamily: brand.fontBase },
       }}
     >
-      <Typography
-        variant="h5"
-        fontWeight={900}
-        sx={{
-          fontFamily: brand.fontDisplay,
-          letterSpacing: '0.04em',
-          textTransform: 'uppercase',
-          color: brand.primary,
-          textAlign: 'center',
-          mb: 3,
-        }}
-      >
-        Your Cart
-      </Typography>
+      <ClearCartModal
+  open={clearModalOpen}
+  onClose={() => setClearModalOpen(false)}
+  onConfirm={clearCart}
+  itemCount={cartItems.length}
+/>
+
+<Stack direction="row" alignItems="center" justifyContent="center" sx={{ mb: 3, position: 'relative' }}>
+  <Typography
+    variant="h5"
+    fontWeight={900}
+    sx={{
+      fontFamily: brand.fontDisplay,
+      letterSpacing: '0.04em',
+      textTransform: 'uppercase',
+      color: brand.primary,
+      textAlign: 'center',
+    }}
+  >
+    Your Cart
+  </Typography>
+
+  {cartItems.length > 0 && (
+    <Button
+      variant="outlined"
+      size="small"
+      startIcon={<DeleteSweepOutlinedIcon />}
+      onClick={() => setClearModalOpen(true)}
+      sx={{
+        position: 'absolute',
+        right: 0,
+        borderRadius: '8px',
+        fontFamily: brand.fontBase,
+        fontWeight: 700,
+        textTransform: 'none',
+        fontSize: '0.8rem',
+        borderColor: '#e0b3b3',
+        color: '#c62828',
+        '&:hover': { borderColor: '#c62828', backgroundColor: 'rgba(198,40,40,0.06)' },
+      }}
+    >
+      Clear Cart
+    </Button>
+  )}
+</Stack>
 
       {cartItems.length === 0 ? (
         <Stack spacing={2} alignItems="center" textAlign="center" sx={{ py: 6 }}>

@@ -1,6 +1,7 @@
 // Navbar.jsx (resolved: keep MUI drawer + chat from incoming, keep current's prevCategory tracking logic)
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
 import { useMemo, useState, useEffect, useRef } from 'react'
+import MiniCartPopup from '../components/MiniCartPopup'
 import { useCart } from '../state/useCart'
 import { fetchMenuItemById } from '../API/menuApi'
 import { styled } from '@mui/material/styles'
@@ -8,6 +9,9 @@ import Drawer from '@mui/material/Drawer'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemButton from '@mui/material/ListItemButton'
+import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined'
+import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined'
+import { useThemeMode } from '../state/ThemeContext'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import IconButton from '@mui/material/IconButton'
@@ -41,12 +45,12 @@ const Topbar = styled('header')(() => ({
   display: 'flex',
   flexDirection: 'row',
   justifyContent: 'space-between',
-  borderBottom: `1px solid ${brand.borderLight}`,
+  borderBottom: `1px solid var(--color-border)`,
   alignItems: 'center',
   position: 'sticky',
   top: 0,
   zIndex: 100,
-  backgroundColor: '#fff',
+  backgroundColor: 'var(--color-surface)',
 }))
 
 const TopbarLeft = styled(Box)(() => ({
@@ -134,8 +138,8 @@ const DRAWER_CLOSED_WIDTH = 64
 const CHAT_PANEL_WIDTH = 420
 
 const paperStyles = {
-  borderRight: '1px solid #e9e9e9',
-  backgroundColor: '#fff',
+  borderRight: '1px solid var(--color-border)',
+  backgroundColor: 'var(--color-surface)',
 }
 
 const openedMixin = (theme) => ({
@@ -287,11 +291,29 @@ export default function Navbar() {
   const msgsRef = useRef(null)
   const pendingReplyTimeoutRef = useRef(null)
 
-  const { cartCount } = useCart()
+const { cartCount } = useCart()
+const { mode, toggleMode } = useThemeMode()
+const isDark = mode === 'dark'
+const [miniCartOpen, setMiniCartOpen] = useState(false)
+const cartBtnRef = useRef(null)
+const prevCartCountRef = useRef(cartCount)
   const crumbs = useBreadcrumb()
   const location = useLocation()
   const navigate = useNavigate()
   const hasConversation = messages.length > 0
+  useEffect(() => {
+  const prev = prevCartCountRef.current
+  prevCartCountRef.current = cartCount
+  if (cartCount > prev && prev !== undefined) {
+    setMiniCartOpen(true)
+  }
+}, [cartCount])
+
+useEffect(() => {
+  if (location.pathname === '/cart' || location.pathname === '/checkout') {
+    setMiniCartOpen(false)
+  }
+}, [location.pathname])
 
   const isChatAllowedRoute =
     location.pathname === '/' ||
@@ -471,7 +493,7 @@ export default function Navbar() {
                     my: 0.5,
                     mt: drawerOpen ? 0.5 : 0.75,
                     borderRadius: '20px',
-                    color: isActive ? '#fff' : '#1a4a35',
+                    color: isActive ? '#fff' : 'var(--color-text-primary)',
                     fontFamily: 'Montserrat, sans-serif',
                     fontWeight: 600,
                     position: 'relative',
@@ -491,7 +513,7 @@ export default function Navbar() {
                       },
                       '&:hover': { bgcolor: 'rgba(26,107,58,0.14)' },
                     },
-                    '&:hover': { bgcolor: 'rgba(26,74,53,.08)', color: '#1a4a35' },
+                    '&:hover': { bgcolor: 'rgba(26,74,53,.08)', color: 'var(--color-text-primary)' },
                   }}
                 >
                   <ListItemIcon
@@ -500,7 +522,7 @@ export default function Navbar() {
                       mr: drawerOpen ? 1.5 : 'auto',
                       ml: drawerOpen ? -0.5 : 0,
                       justifyContent: 'center',
-                      color: isActive ? '#fff' : '#555',
+                      color: isActive ? '#fff' : 'var(--color-text-secondary)',
                     }}
                   >
                     {item.icon}
@@ -553,6 +575,24 @@ export default function Navbar() {
             </TopbarLeft>
 
             <TopbarActions sx={{ display: isSuccessRoute ? 'none' : undefined }}>
+              <Tooltip title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
+  <IconButton
+    onClick={toggleMode}
+    aria-label="Toggle dark mode"
+    sx={{
+      width: 36,
+      height: 36,
+      borderRadius: '8px',
+      color: isDark ? '#8fada0' : '#79747e',
+      '&:hover': { bgcolor: 'rgba(0,112,74,0.08)', color: '#00704a' },
+    }}
+  >
+    {isDark
+      ? <LightModeOutlinedIcon sx={{ fontSize: 20 }} />
+      : <DarkModeOutlinedIcon  sx={{ fontSize: 20 }} />
+    }
+  </IconButton>
+</Tooltip>
               {isAuthed ? (
                 <TopPillBtn isAuth type="button" onClick={() => navigate(-1)}>Back</TopPillBtn>
               ) : (
@@ -565,7 +605,7 @@ export default function Navbar() {
                 </TopPillBtn>
               )}
 
-              <TopPillBtn type="button" onClick={() => navigate('/cart')}>
+              <TopPillBtn ref={cartBtnRef} type="button" onClick={() => navigate('/cart')}>
                 <Box component="span" aria-hidden="true" sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <circle cx="9" cy="21" r="1" />
@@ -578,7 +618,11 @@ export default function Navbar() {
               </TopPillBtn>
             </TopbarActions>
           </Topbar>
-
+              <MiniCartPopup
+  open={miniCartOpen}
+  onClose={() => setMiniCartOpen(false)}
+  anchorRef={cartBtnRef}
+/>
           <div ref={pageRef} className="page">
             <Outlet />
           </div>
