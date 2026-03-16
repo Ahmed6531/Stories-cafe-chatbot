@@ -11,6 +11,7 @@ import MenuItemDetails from '../pages/MenuItemDetails.jsx'
 import Dashboard from '../pages/Dashboard.jsx'
 import AdminLayout from "../components/admin/AdminLayout"
 import AdminDashboard from "../pages/admin/AdminDashboard"
+import AdminOrders from "../pages/admin/AdminOrders"; 
 
 // Layout wrapper: Navbar contains sidebar + top header + breadcrumb
 function Layout() {
@@ -25,6 +26,7 @@ export default function AppRoutes() {
         <Route index element={<AdminDashboard />} />
         <Route path="items" element={<div>Admin Items (next ticket)</div>} />
         <Route path="categories" element={<div>Admin Categories (next ticket)</div>} />
+        <Route path="orders" element={<AdminOrders />} />
       </Route>
 
       {/* Public / customer routes (Navbar layout) */}
