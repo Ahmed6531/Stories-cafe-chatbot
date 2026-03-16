@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import axios from "axios";
 import http from "../API/http";
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
@@ -169,16 +170,18 @@ export default function VoiceInput({ active, onTranscript, onListeningChange, on
       const formData = new FormData();
       formData.append('audio', blob, `speech.${ext}`);
 
-      const response = await http.post('/api/stt/transcribe', formData, {
+      // Use chatbot endpoint for transcription
+      const chatbotUrl = import.meta.env.VITE_CHATBOT_URL || "http://localhost:8000";
+      const response = await axios.post(`${chatbotUrl}/voice/transcribe`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 30000,
       });
 
-      const text = (response.data?.text || '').trim();
+      const text = (response.data?.transcript || '').trim();
       if (!text) { onError?.('Could not transcribe. Please try again.'); return; }
       onTranscript?.(text);
     } catch (err) {
-      onError?.(err?.response?.data?.error || err?.message || 'Transcription failed');
+      onError?.(err?.response?.data?.detail || err?.message || 'Transcription failed');
     } finally {
       onProcessingChange?.(false);
     }

@@ -2,12 +2,24 @@ import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useCart } from '../state/useCart'
 import { styled, keyframes, useTheme } from '@mui/material/styles'
+import axios from 'axios'
 import Box from '@mui/material/Box'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
 import Tooltip from '@mui/material/Tooltip'
 import VoiceInput from './VoiceInput'
 import '../styles/index.css'
+
+const CHATBOT_URL = import.meta.env.VITE_CHATBOT_URL || 'http://localhost:8000'
+
+function getChatSessionId() {
+  let id = sessionStorage.getItem('chatSessionId')
+  if (!id) {
+    id = crypto.randomUUID()
+    sessionStorage.setItem('chatSessionId', id)
+  }
+  return id
+}
 
 const Topbar = styled('header')(({ theme }) => ({
   padding: '0 20px',
@@ -427,7 +439,7 @@ export default function Navbar() {
     setMessages((m) => [...m, message])
   }
 
-  const sendMessage = (text) => {
+  const sendMessage = async (text) => {
     const trimmed = text.trim()
     if (!trimmed) return
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -438,18 +450,32 @@ export default function Navbar() {
     setMicMode('thinking')
     setTyping(true)
 
-    if (pendingReplyTimeoutRef.current) window.clearTimeout(pendingReplyTimeoutRef.current)
-    pendingReplyTimeoutRef.current = window.setTimeout(() => {
-      setTyping(false)
+    try {
+      const cartId = localStorage.getItem('cartId') || null
+      const response = await axios.post(`${CHATBOT_URL}/chat/message`, {
+        session_id: getChatSessionId(),
+        message: trimmed,
+        cart_id: cartId,
+      })
+      const data = response.data
+      if (data.cart_id) localStorage.setItem('cartId', data.cart_id)
       appendMessage({
         id: Date.now() + 1,
         role: 'bot',
-        text: "Got it! I'll have that ready for you shortly. Anything else I can add?",
+        text: data.reply,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       })
+    } catch (err) {
+      appendMessage({
+        id: Date.now() + 1,
+        role: 'bot',
+        text: "Sorry, I couldn't reach the assistant. Please try again.",
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      })
+    } finally {
+      setTyping(false)
       setMicMode('idle')
-      pendingReplyTimeoutRef.current = null
-    }, 1400)
+    }
   }
 
   const handleChipClick = (text) => sendMessage(text)
