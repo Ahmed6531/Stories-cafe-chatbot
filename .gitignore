@@ -1,3 +1,7 @@
 .env
 node_modules/
 node_modulesnpm
+chatbot/venv/
+chatbot/.env
+__pycache__/
+*.pyc
