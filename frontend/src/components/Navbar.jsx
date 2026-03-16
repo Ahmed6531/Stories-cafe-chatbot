@@ -602,11 +602,14 @@ export default function Navbar() {
                     if (listening) setMicMode('listening')
                   }}
                   onProcessingChange={(processing) => {
-                    setVoiceActive(false)
                     if (processing) setMicMode('thinking')
                   }}
+                  onPartialTranscript={(text) => {
+                    if (text) setChatInput(text)
+                  }}
                   onTranscript={(text) => {
-                    sendMessage(text)
+                    setChatInput(text)
+                    setTimeout(() => sendMessage(text), 500)
                   }}
                   onError={(message) => {
                     setVoiceActive(false)
