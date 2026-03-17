@@ -13,6 +13,8 @@ import AdminLayout from "../components/admin/AdminLayout"
 import AdminDashboard from "../pages/admin/AdminDashboard"
 import AdminItems from "../pages/admin/AdminItems"
 import AdminOrders from "../pages/admin/AdminOrders"; 
+import AdminLogin from "../pages/admin/AdminLogin"
+import AdminGuard from "../components/admin/AdminGuard";
 
 // Layout wrapper: Navbar contains sidebar + top header + breadcrumb
 function Layout() {
@@ -22,8 +24,17 @@ function Layout() {
 export default function AppRoutes() {
   return (
     <Routes>
+      <Route path="/admin/login" element={<AdminLogin />} />
+      
       {/* Admin routes (separate layout) */}
-      <Route path="/admin" element={<AdminLayout />}>
+        <Route
+        path="/admin"
+        element={
+        <AdminGuard>
+        <AdminLayout />
+        </AdminGuard>
+      }
+    >
         <Route index element={<AdminDashboard />} />
         <Route path="items" element={<AdminItems />} />
         <Route path="categories" element={<div>Admin Categories (later)</div>} />

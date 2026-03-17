@@ -11,6 +11,7 @@ import { sendEmail } from "./utils/mailer.js";
 import { welcomeTemplate } from "./utils/EmailTemplates.js";
 import transcribeRoute from "./routes/transcribe.js";
 import 'dotenv/config';
+import adminRoutes from "./routes/adminRoutes.js";
 
 
 export function createApp() {
@@ -34,6 +35,7 @@ export function createApp() {
   app.use("/cart", cartRoutes);
   app.use("/auth", authRoutes);
   app.use("/api/stt", transcribeRoute);
+  app.use("/admin", adminRoutes);
 
 
   app.get("/api/protected", authenticate, (req, res) => {
