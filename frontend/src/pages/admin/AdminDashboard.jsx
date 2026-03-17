@@ -64,7 +64,7 @@ export default function AdminDashboard() {
             Admin Dashboard
           </Typography>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            Manage menu items, upload images, and manage categories.
+            Manage menu items, upload images, manage categories, and track customer orders.
           </Typography>
         </Box>
         <Button variant="outlined" color="error" size="small" onClick={handleLogout}>
@@ -80,6 +80,10 @@ export default function AdminDashboard() {
         <NavCard to="/admin/categories">
           Manage Categories →
           <CardSubtext>Create and edit the categories that group your menu.</CardSubtext>
+        </NavCard>
+        <NavCard to="/admin/orders">
+          Order History →
+          <CardSubtext>Track all customer orders and monitor their status.</CardSubtext>
         </NavCard>
       </CardGrid>
     </PageWrap>
