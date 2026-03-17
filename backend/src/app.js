@@ -9,7 +9,6 @@ import cartRoutes from "./routes/cart.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import { sendEmail } from "./utils/mailer.js";
 import { welcomeTemplate } from "./utils/EmailTemplates.js";
-import transcribeRoute from "./routes/transcribe.js";
 import 'dotenv/config';
 import adminRoutes from "./routes/adminRoutes.js";
 
@@ -34,7 +33,6 @@ export function createApp() {
   app.use("/orders", ordersRoutes);
   app.use("/cart", cartRoutes);
   app.use("/auth", authRoutes);
-  app.use("/api/stt", transcribeRoute);
   app.use("/admin", adminRoutes);
 
 
