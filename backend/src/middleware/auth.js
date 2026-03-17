@@ -13,6 +13,23 @@ export function authenticate(req, res, next) {
     return res.status(401).json({ message: "Token invalid or expired" });
   }
 }
+
+export function authenticateOptional(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return next();
+  }
+
+  const token = authHeader.split(" ")[1];
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+  } catch {
+    // Ignore invalid optional auth so anonymous checkout continues to work.
+  }
+
+  next();
+}
 export function authorize(...roles) {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {

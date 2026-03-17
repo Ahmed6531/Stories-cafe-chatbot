@@ -15,6 +15,7 @@ const ORDER_TAX_RATE = 0.08;
 export async function createOrder(req, res) {
   const { orderType, customer, items, notesToBarista } = req.body || {};
   const cartId = req.get("x-cart-id") || req.body.cartId;
+  const userId = req.user?.id || null;
 
   if (!orderType || !["pickup", "dine_in", "delivery"].includes(orderType)) {
     return res.status(400).json({ error: "Invalid orderType" });
@@ -94,6 +95,7 @@ export async function createOrder(req, res) {
 
   const order = await Order.create({
     orderNumber,
+    userId,
     orderType,
     customer: {
       name: customer.name,

@@ -24,6 +24,7 @@ const OrderItemSchema = new mongoose.Schema(
 const OrderSchema = new mongoose.Schema(
   {
     orderNumber: { type: String, required: true, unique: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false },
     status: {
       type: String,
       enum: ["received", "in_progress", "completed", "cancelled"],

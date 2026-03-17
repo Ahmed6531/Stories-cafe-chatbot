@@ -18,7 +18,8 @@ describe('createOrder', () => {
   beforeEach(() => {
     req = {
       body: {},
-      get: jest.fn()
+      get: jest.fn(),
+      user: undefined
     };
     res = {
       status: jest.fn().mockReturnThis(),
@@ -71,6 +72,7 @@ describe('createOrder', () => {
       expect(Order.create).toHaveBeenCalledTimes(1);
       expect(Order.create).toHaveBeenCalledWith({
         orderNumber: 'SC-20231201-12345',
+        userId: null,
         orderType: 'pickup',
         customer: { name: 'John Doe', phone: '1234567890', address: '' },
         notesToBarista: '',
@@ -123,6 +125,7 @@ describe('createOrder', () => {
 
       expect(Order.create).toHaveBeenCalledWith(
         expect.objectContaining({
+          userId: null,
           items: [
             expect.objectContaining({
               selectedOptions: [{ optionName: 'Mayo', suboptionName: 'Regular' }]
@@ -164,6 +167,42 @@ describe('createOrder', () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           orderNumber: expect.stringMatching(/^SC-\d{8}-\d{5}$/)
+        })
+      );
+    });
+
+    test('attaches req.user.id when checkout is authenticated', async () => {
+      const mockMenuItem = {
+        id: 101,
+        name: 'Test Item',
+        basePrice: 10,
+        isAvailable: true,
+        options: []
+      };
+      const mockOrder = {
+        _id: 'orderId3',
+        orderNumber: 'SC-20231201-12347',
+        status: 'pending',
+        total: 11
+      };
+
+      req.user = { id: '507f1f77bcf86cd799439011', role: 'user' };
+      req.body = {
+        orderType: 'pickup',
+        customer: { name: 'John Doe', phone: '1234567890' },
+        items: [{ menuItemId: 101, qty: 1 }]
+      };
+
+      MenuItem.findOne.mockResolvedValue(mockMenuItem);
+      generateOrderNumber.mockReturnValue('SC-20231201-12347');
+      Order.findOne.mockResolvedValue(null);
+      Order.create.mockResolvedValue(mockOrder);
+
+      await createOrder(req, res);
+
+      expect(Order.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: '507f1f77bcf86cd799439011'
         })
       );
     });
