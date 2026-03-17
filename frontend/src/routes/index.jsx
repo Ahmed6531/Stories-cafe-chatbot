@@ -12,7 +12,6 @@ import Dashboard from '../pages/Dashboard.jsx'
 import AdminLayout from "../components/admin/AdminLayout"
 import AdminDashboard from "../pages/admin/AdminDashboard"
 import AdminItems from "../pages/admin/AdminItems"
-import Dashboard from '../pages/Dashboard.jsx'
 
 // Layout wrapper: Navbar contains sidebar + top header + breadcrumb
 function Layout() {
@@ -40,8 +39,10 @@ export default function AppRoutes() {
         <Route path="/register" element={<Register />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/item/:id" element={<MenuItemDetails />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
+
+      {/* Catch-all: top-level so it never competes with /admin */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }
