@@ -15,6 +15,7 @@ import AdminItems from "../pages/admin/AdminItems"
 import AdminOrders from "../pages/admin/AdminOrders"; 
 import AdminLogin from "../pages/admin/AdminLogin"
 import AdminGuard from "../components/admin/AdminGuard";
+import AuthGuard from "../components/auth/AuthGuard";
 
 // Layout wrapper: Navbar contains sidebar + top header + breadcrumb
 function Layout() {
@@ -50,7 +51,7 @@ export default function AppRoutes() {
         <Route path="/success" element={<Success />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/dashboard" element={<AuthGuard><Dashboard /></AuthGuard>} />
         <Route path="/item/:id" element={<MenuItemDetails />} />
       </Route>
 
