@@ -1,4 +1,3 @@
-# app/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .api.chat import router as chat_router
@@ -11,8 +10,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
-        "CORS_ORIGIN=https://stories-cafe-chatbot-a.vercel.app",
+        "https://stories-cafe-chatbot-a.vercel.app",
     ],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
