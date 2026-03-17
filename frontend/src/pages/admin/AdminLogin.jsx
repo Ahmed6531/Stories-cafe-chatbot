@@ -35,7 +35,7 @@ export default function AdminLogin() {
 
       localStorage.setItem("adminToken", data.token);
       navigate("/admin");
-    } catch (err) {
+    } catch {
       setError("Invalid email or password");
     }
   };
@@ -44,8 +44,7 @@ export default function AdminLogin() {
     <Box
       sx={{
         minHeight: "100vh",
-        background:
-          "linear-gradient(135deg, #f8fff8 0%, #ffffff 50%, #eef8ef 100%)",
+        background: "#fff",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -56,18 +55,18 @@ export default function AdminLogin() {
         elevation={6}
         sx={{
           width: "100%",
-          maxWidth: 420,
-          p: 4,
-          borderRadius: 4,
-          boxShadow: "0 10px 30px rgba(46,125,50,0.12)",
-          border: "1px solid #e6f2e6"
+          maxWidth: 400,
+          p: "20px",
+          borderRadius: "12px",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+          border: "1px solid #e0e0e0"
         }}
       >
-        <Box sx={{ textAlign: "center", mb: 3 }}>
+        <Box sx={{ textAlign: "center", mb: "50px" }}>
           <Typography
             variant="h3"
             sx={{
-              fontWeight: 800,
+              fontWeight: 700,
               color: "#1b5e20",
               mb: 1
             }}
@@ -87,7 +86,7 @@ export default function AdminLogin() {
 
           <Typography
             variant="body2"
-            sx={{ color: "#5f6f65" }}
+            sx={{ color: "#5f6f65", mt: "10px" }}
           >
             Sign in to access the admin dashboard
           </Typography>
@@ -135,14 +134,17 @@ export default function AdminLogin() {
             variant="contained"
             size="large"
             sx={{
-              mt: 1,
-              py: 1.4,
-              borderRadius: "14px",
-              fontWeight: 700,
+              mt: "12px",
+              padding: "1rem 2rem",
+              borderRadius: "8px",
+              fontWeight: 600,
               textTransform: "none",
-              background: "linear-gradient(90deg, #2e7d32 0%, #43a047 100%)",
+              letterSpacing: "0.5px",
+              backgroundColor: (theme) => theme.brand.primaryDark,
+              transition: "all 0.3s ease",
               "&:hover": {
-                background: "linear-gradient(90deg, #256a2a 0%, #388e3c 100%)"
+                backgroundColor: (theme) => theme.brand.primaryDark,
+                transform: "translateY(-2px)",
               }
             }}
           >
