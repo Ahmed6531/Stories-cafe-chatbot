@@ -8,6 +8,7 @@ import Success from '../pages/Success.jsx'
 import Login from '../pages/Login.jsx'
 import Register from '../pages/Register.jsx'
 import MenuItemDetails from '../pages/MenuItemDetails.jsx'
+import Dashboard from '../pages/Dashboard.jsx'
 import AdminLayout from "../components/admin/AdminLayout"
 import AdminDashboard from "../pages/admin/AdminDashboard"
 import AdminItems from "../pages/admin/AdminItems"
@@ -29,19 +30,16 @@ export default function AppRoutes() {
       </Route>
 
       {/* Public / customer routes (Navbar layout) */}
-      <Route element={<Layout />}>
+      <Route element={<Navbar />}>
         <Route path="/" element={<Home />} />
-        <Route path="/menu" element={<Menu />} />
+        <Route path="/menu/:category?" element={<Menu />} />
         <Route path="/cart" element={<Cart />} />
         <Route path="/checkout" element={<Checkout />} />
         <Route path="/success" element={<Success />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/dashboard" element={<Dashboard /> } />
-
-        {/* Item selected page */}
+        <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/item/:id" element={<MenuItemDetails />} />
-
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

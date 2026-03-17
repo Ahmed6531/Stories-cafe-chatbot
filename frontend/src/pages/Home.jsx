@@ -1,92 +1,150 @@
-import { useMemo, useState, useEffect } from 'react'
+// migrated from menu.css
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import FeaturedItems from '../components/FeaturedItems'
-import { fetchMenu } from '../API/menuApi'
-import '../styles/menu.css'
+import { Box, Typography, styled } from '@mui/material'
+import CategoryRail from '../components/menu/CategoryRail'
+import CategoryChipsSkeleton from '../components/CategoryChipsSkeleton'
+import MenuSkeleton from '../components/MenuSkeleton'
+import MenuList from '../components/MenuList'
+import { fetchFeaturedMenu, fetchMenuCategories } from '../API/menuApi'
+
+// .page-wrap
+const PageWrap = styled(Box)(() => ({
+  width: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '10px',
+}));
+
+// .section-heading
+const SectionHeading = styled(Box)(() => ({
+  marginTop: '4px',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  gap: '4px',
+}));
+
+// .section-title
+const SectionLabel = styled(Typography)(({ theme }) => ({
+  fontFamily: theme.brand.fontDisplay,
+  fontSize: '1.5rem',
+  fontWeight: 900,
+  letterSpacing: '0.04em',
+  textTransform: 'uppercase',
+  color: theme.brand.primary,
+  margin: 0,
+  textAlign: 'center',
+  position: 'relative',
+  paddingBottom: '8px',
+
+  [theme.breakpoints.down('md')]: {
+    fontSize: '1.25rem',
+    letterSpacing: '0.04em',
+    paddingBottom: '4px',
+  },
+}));
+
+// .state-text
+const StatusText = styled(Typography, {
+  shouldForwardProp: (prop) => prop !== 'isError',
+})(({ theme, isError }) => ({
+  fontFamily: theme.brand.fontBase,
+  fontSize: '16px',
+  fontWeight: 500,
+  color: isError ? '#b91c1c' : theme.brand.textSecondary,
+  margin: 0,
+}));
 
 export default function Home() {
   const navigate = useNavigate()
-  const [items, setItems] = useState([])
   const [categories, setCategories] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [featuredItems, setFeaturedItems] = useState([])
+  const [categoriesLoading, setCategoriesLoading] = useState(true)
+  const [featuredLoading, setFeaturedLoading] = useState(true)
+  const [categoriesError, setCategoriesError] = useState(null)
+  const [featuredError, setFeaturedError] = useState(null)
 
-  // Category image mapping
-  const categoryImages = {
-    'Coffee': '/images/coffee.png',
-    'Mixed Beverages': '/images/mixedbev.png',
-    'Pastries': '/images/pastries.png',
-    'Salad': '/images/salad.jpg',
-    'Sandwiches': '/images/sandwiches.png',
-    'Soft Drinks': '/images/soft-drinks.png',
-    'Tea': '/images/tea.png',
-    'Yogurts': '/images/yogurt.png'
-  }
-
-  // Fetch menu data on component mount
   useEffect(() => {
-    const loadMenu = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const data = await fetchMenu()
-        setItems(data.items)
-        setCategories(data.categories)
-      } catch {
-        setError('Failed to load menu. Please try again later.')
-        setItems([])
-        setCategories([])
-      } finally {
-        setLoading(false)
-      }
+    let active = true
+
+    const loadHomeMenu = async () => {
+      setCategoriesLoading(true)
+      setFeaturedLoading(true)
+
+      fetchMenuCategories()
+        .then((nextCategories) => {
+          if (!active) return
+          setCategories(nextCategories)
+          setCategoriesError(null)
+        })
+        .catch(() => {
+          if (!active) return
+          setCategories([])
+          setCategoriesError('Failed to load menu. Please try again later.')
+        })
+        .finally(() => {
+          if (active) {
+            setCategoriesLoading(false)
+          }
+        })
+
+      fetchFeaturedMenu()
+        .then((nextFeaturedItems) => {
+          if (!active) return
+          setFeaturedItems(nextFeaturedItems)
+          setFeaturedError(null)
+        })
+        .catch(() => {
+          if (!active) return
+          setFeaturedItems([])
+          setFeaturedError('Failed to load menu. Please try again later.')
+        })
+        .finally(() => {
+          if (active) {
+            setFeaturedLoading(false)
+          }
+        })
     }
-    loadMenu()
+
+    loadHomeMenu()
+
+    return () => {
+      active = false
+    }
   }, [])
 
-  const featured = useMemo(() => {
-    return items.filter((i) => i.isFeatured)
-  }, [items])
-
   const pickCategory = (c) => {
-    navigate(`/menu?category=${encodeURIComponent(c)}`)
+    navigate(`/menu/${encodeURIComponent(c)}`)
   }
 
   return (
-    <div className="page-wrap">
-      <h2 className="section-title">CATEGORIES</h2>
-      <div className="catbar">
-        {loading ? (
-          <span>Loading categories...</span>
-        ) : error ? (
-          <span className="error">{error}</span>
-        ) : categories.length > 0 ? (
-          categories.map((c) => (
-            <button key={c} type="button" className="cat-chip" onClick={() => pickCategory(c)}>
-              <div className="cat-chip-content">
-                <img 
-                  src={categoryImages[c] || '/images/placeholder.png'} 
-                  alt={c} 
-                  className="cat-chip-image" 
-                />
-                <span className="cat-chip-text">{c}</span>
-              </div>
-            </button>
-          ))
-        ) : (
-          <span>No categories found.</span>
-        )}
-      </div>
+    <PageWrap>
+      <SectionHeading>
+        <SectionLabel component="h2">Categories</SectionLabel>
+      </SectionHeading>
 
-      <h2 className="section-title">FEATURED ITEMS</h2>
-      {loading ? (
-        <p>Loading featured items...</p>
-      ) : error ? (
-        <p className="error">{error}</p>
-      ) : featured.length > 0 ? (
-        <FeaturedItems items={featured} />
+      {categoriesLoading ? (
+        <CategoryChipsSkeleton />
+      ) : categoriesError ? (
+        <StatusText isError>{categoriesError}</StatusText>
+      ) : (
+        <CategoryRail categories={categories} onCategorySelect={pickCategory} />
+      )}
+
+      <SectionHeading>
+        <SectionLabel component="h2">Featured items</SectionLabel>
+      </SectionHeading>
+
+      {featuredLoading ? (
+        <MenuSkeleton />
+      ) : featuredError ? (
+        <StatusText isError>{featuredError}</StatusText>
+      ) : featuredItems.length > 0 ? (
+        <MenuList items={featuredItems} />
       ) : (
         <p>No featured items available.</p>
       )}
-    </div>
+    </PageWrap>
   )
 }

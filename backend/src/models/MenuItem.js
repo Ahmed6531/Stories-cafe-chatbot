@@ -10,6 +10,7 @@ const OptionSchema = new mongoose.Schema(
 
 const MenuItemSchema = new mongoose.Schema(
   {
+    id: { type: Number, unique: true },
     slug: { type: String, unique: true },
     name: String,
     description: String,
@@ -52,6 +53,10 @@ const menuItemSchema = new mongoose.Schema(
     category: {
       type: String,
       required: true,
+    },
+    subcategory: {
+      type: String,
+      default: null,
     },
     description: {
       type: String,

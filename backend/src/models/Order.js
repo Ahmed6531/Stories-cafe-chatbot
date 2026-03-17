@@ -7,6 +7,7 @@ const OrderItemSchema = new mongoose.Schema(
     qty: { type: Number, required: true, min: 1 },
     unitPrice: { type: Number, required: true },
     selectedOptions: { type: [String], default: [] },
+    instructions: { type: String, default: "" },
     lineTotal: { type: Number, required: true }
   },
   { _id: false }

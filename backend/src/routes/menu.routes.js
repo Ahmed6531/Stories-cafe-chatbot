@@ -1,28 +1,32 @@
-import express from "express";
+import { Router } from "express";
 import { protect } from "../middleware/protect.js";
 import { authorize } from "../middleware/auth.js";
 import {
   getMenu,
+  getMenuCategories,
   getMenuItem,
   getFeaturedMenu,
-  getMenuByCategory, // Add this import
+  getMenuByCategory,
   createMenuItem,
   updateMenuItem,
   deleteMenuItem,
 } from "../controllers/menu.controller.js";
 
-const router = express.Router();
+const router = Router();
 
-// GET /api/menu - All menu items (minimal data)
+// GET /menu - All menu items (minimal data)
 router.get("/", getMenu);
 
-// GET /api/menu/featured - Featured items with full variant data
+// GET /menu/featured - Featured items
 router.get("/featured", getFeaturedMenu);
 
-// GET /api/menu/category/:category - Items by category with full variant data
-router.get("/category/:category", getMenuByCategory); // Add this line
+// GET /menu/categories - Distinct top-level categories
+router.get("/categories", getMenuCategories);
 
-// GET /api/menu/:id - Single item with full variant data
+// GET /menu/category/:category - Items by category
+router.get("/category/:category", getMenuByCategory);
+
+// GET /menu/:id - Single item by numeric ID
 router.get("/:id", getMenuItem);
 
 router.post("/", protect, authorize("admin"), createMenuItem);

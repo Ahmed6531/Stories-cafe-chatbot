@@ -1,9 +1,19 @@
 import { Order } from "../models/Order.js";
 import { MenuItem } from "../models/MenuItem.js";
+import { Cart } from "../models/Cart.js";
+import { VariantGroup } from "../models/VariantGroup.js";
 import { generateOrderNumber } from "../utils/orderNumber.js";
+import {
+  calculateSelectedOptionsDelta,
+  createVariantGroupMap,
+  resolveVariantGroupsForMenuItem,
+} from "../utils/variantPricing.js";
+
+const ORDER_TAX_RATE = 0.08;
 
 export async function createOrder(req, res) {
   const { orderType, customer, items, notesToBarista } = req.body || {};
+  const cartId = req.get("x-cart-id") || req.body.cartId;
 
   if (!orderType || !["pickup", "dine_in", "delivery"].includes(orderType)) {
     return res.status(400).json({ error: "Invalid orderType" });
@@ -22,20 +32,35 @@ export async function createOrder(req, res) {
   let subtotal = 0;
 
   for (const line of items) {
-    const { menuItemId, qty, selectedOptions = [] } = line || {};
+    const { menuItemId, qty, selectedOptions = [], instructions = "" } = line || {};
     if (!menuItemId || !qty || qty < 1) {
       return res.status(400).json({ error: "Each item must include menuItemId and qty >= 1" });
     }
 
     const menuItem = await MenuItem.findById(menuItemId);
-    if (!menuItem || !menuItem.isAvailable) {
+    if (!menuItem) {
+      if (!isNaN(menuItemId)) {
+        return res.status(400).json({ error: `Invalid menuItemId: ${menuItemId}. Backend expects Mongo _id (ObjectId), not numeric id.` });
+      }
+      return res.status(400).json({ error: "Menu item not found" });
+    }
+    if (!menuItem.isAvailable) {
       return res.status(400).json({ error: "Menu item not available" });
     }
 
     let optionsDelta = 0;
-    for (const optLabel of selectedOptions) {
-      const found = (menuItem.options || []).find((o) => o.label === optLabel);
-      if (found) optionsDelta += found.priceDelta;
+    if (Array.isArray(menuItem.variantGroups) && menuItem.variantGroups.length > 0) {
+      const variantGroups = await VariantGroup.find({
+        groupId: { $in: menuItem.variantGroups },
+      });
+      const variantGroupsById = createVariantGroupMap(variantGroups);
+      const resolvedVariantGroups = resolveVariantGroupsForMenuItem(menuItem, variantGroupsById);
+      optionsDelta = calculateSelectedOptionsDelta(selectedOptions, resolvedVariantGroups);
+    } else {
+      for (const optLabel of selectedOptions) {
+        const found = (menuItem.options || []).find((o) => o.label === optLabel);
+        if (found) optionsDelta += found.priceDelta;
+      }
     }
 
     const unitPrice = menuItem.basePrice + optionsDelta;
@@ -48,11 +73,13 @@ export async function createOrder(req, res) {
       qty,
       unitPrice,
       selectedOptions,
+      instructions: instructions || "",
       lineTotal
     });
   }
 
-  const total = subtotal;
+  const tax = Math.round(subtotal * ORDER_TAX_RATE);
+  const total = subtotal + tax;
 
   let orderNumber = generateOrderNumber();
   for (let i = 0; i < 3; i++) {
@@ -74,6 +101,10 @@ export async function createOrder(req, res) {
     subtotal,
     total
   });
+
+  if (cartId) {
+    await Cart.findOneAndDelete({ cartId });
+  }
 
   res.status(201).json({
     orderId: order._id,

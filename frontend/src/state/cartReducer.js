@@ -1,11 +1,33 @@
 export const initialCartState = {
-  items: [], // {id, name, price, image, qty, selectedOption}
-}
+  cartId: null,
+  count: 0,
+  items: [],
+  loading: false,
+  error: null
+};
 
-// TODO: Revert to full cart reducer logic
-// Original reducer handled ADD_TO_CART, REMOVE_FROM_CART, CLEAR_CART with state mutations
-// Missing: All cart item management logic (adding, removing, clearing items)
-export function cartReducer(state, _action) { // eslint-disable-line no-unused-vars
-  // Static: no state changes, just return current state
-  return state
+export function cartReducer(state, action) {
+  switch (action.type) {
+    case "CART_LOADING":
+      return { ...state, loading: true, error: null };
+    case "CART_LOADED":
+      return {
+        ...state,
+        loading: false,
+        error: null,
+        cartId: action.payload.cartId,
+        count: action.payload.count || 0,
+        items: action.payload.items || []
+      };
+    case "CART_ERROR":
+      return { ...state, loading: false, error: action.payload || "Cart error" };
+    case "REMOVE_ITEM":
+      return {
+        ...state,
+        items: state.items.filter(item => item.lineId !== action.payload),
+        count: state.items.reduce((acc, item) => item.lineId === action.payload ? acc : acc + item.qty, 0)
+      };
+    default:
+      return state;
+  }
 }
