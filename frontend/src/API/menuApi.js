@@ -1,5 +1,8 @@
 import http from './http'
 
+let categoriesCache = null
+let categoriesRequest = null
+
 /**
  * Transform backend menu item to frontend format
  */
@@ -29,42 +32,74 @@ function transformMenuItem(item) {
   }
 }
 
+export async function fetchMenuCategories() {
+  if (categoriesCache) {
+    return categoriesCache
+  }
+
+  if (!categoriesRequest) {
+    categoriesRequest = http.get('/menu/categories')
+      .then((response) => {
+        categoriesCache = response.data.categories || []
+        return categoriesCache
+      })
+      .finally(() => {
+        categoriesRequest = null
+      })
+  }
+
+  return categoriesRequest
+}
+
 /**
- * Fetch menu items from backend API
- * @returns {Promise<Object>} Menu data with items and extracted categories
+ * Fetch menu items plus backend-provided category metadata.
+ * @returns {Promise<Object>} Menu data with items and categories
  */
 export async function fetchMenu(category) {
   try {
-    let itemsUrl = '/menu';
-    if (category) {
-      itemsUrl = `/menu/category/${encodeURIComponent(category)}`;
-    }
-    // Always fetch all categories for the category bar
-    const categoriesResponse = await http.get('/menu');
-    const allItems = categoriesResponse.data.items || [];
-    const categoriesSet = new Set(
-      allItems.map((item) => item.category).filter(Boolean)
-    );
-    const categories = Array.from(categoriesSet).sort();
+    if (!category) {
+      const [categories, response] = await Promise.all([
+        fetchMenuCategories(),
+        http.get('/menu'),
+      ])
+      const allItems = response.data.items || []
 
-    // Fetch filtered items if category is selected, else use all
-    let items = allItems;
-    if (category) {
-      const filteredResponse = await http.get(itemsUrl);
-      items = filteredResponse.data.items || [];
+      return {
+        items: allItems.map(transformMenuItem).filter(Boolean),
+        categories,
+      }
     }
-    const transformedItems = items.map(transformMenuItem).filter(Boolean);
+
+    const [categories, response] = await Promise.all([
+      fetchMenuCategories(),
+      http.get(`/menu/category/${encodeURIComponent(category)}`),
+    ])
+    const items = (response.data.items || []).map(transformMenuItem).filter(Boolean)
+
     return {
-      items: transformedItems,
+      items,
       categories,
-    };
+    }
   } catch (error) {
-    console.error('Failed to fetch menu:', error);
+    console.error('Failed to fetch menu:', error)
     throw new Error(error.response?.data?.error || 'Failed to load menu');
   }
 }
 
 /**
+ * Fetch featured menu items from backend API.
+ * @returns {Promise<Array>} Featured menu items
+ */
+export async function fetchFeaturedMenu() {
+  try {
+    const response = await http.get('/menu/featured')
+    return (response.data.items || []).map(transformMenuItem).filter(Boolean)
+  } catch (error) {
+    console.error('Failed to fetch featured menu:', error)
+    throw new Error(error.response?.data?.error || 'Failed to load featured menu')
+  }
+}
+
 /**
  * Get a single menu item by ID
  * @param {string} id - Menu item ID

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   getMenu,
+  getMenuCategories,
   getMenuItem,
   getFeaturedMenu,
   getMenuByCategory,
@@ -13,6 +14,9 @@ router.get("/", getMenu);
 
 // GET /menu/featured - Featured items
 router.get("/featured", getFeaturedMenu);
+
+// GET /menu/categories - Distinct top-level categories
+router.get("/categories", getMenuCategories);
 
 // GET /menu/category/:category - Items by category
 router.get("/category/:category", getMenuByCategory);

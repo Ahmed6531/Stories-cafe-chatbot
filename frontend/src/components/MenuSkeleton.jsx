@@ -1,47 +1,108 @@
+import { Box } from '@mui/material'
 import Skeleton from '@mui/material/Skeleton'
-import Box from '@mui/material/Box'
+import { menuCardLayout } from '../theme/layoutTokens'
 
 const PLACEHOLDER_COUNT = 13
+const brand = {
+  border: '#e0e0e0',
+  bgLight: '#f8f9f8',
+  shadowSm: '0 0 6px rgba(0,0,0,0.06)',
+}
 
 export default function MenuSkeleton() {
   return (
     <Box sx={{ width: '100%' }}>
-      <div
-        style={{
+      <Box
+        sx={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-          gap: '24px',
+          gridTemplateColumns: menuCardLayout.grid.lg,
+          gap: menuCardLayout.gap.lg,
           padding: '24px 0',
+          '@media (max-width: 1200px)': {
+            gridTemplateColumns: menuCardLayout.grid.md,
+            gap: menuCardLayout.gap.md,
+          },
+          '@media (max-width: 850px)': {
+            gridTemplateColumns: menuCardLayout.grid.xs,
+            gap: menuCardLayout.gap.xs,
+            padding: '10px 0 16px',
+          },
+          '@media (orientation: landscape) and (max-width: 900px)': {
+            gridTemplateColumns: menuCardLayout.grid.landscape,
+            gap: menuCardLayout.gap.landscape,
+          },
         }}
       >
         {Array.from({ length: PLACEHOLDER_COUNT }).map((_, index) => (
-          <div
+          <Box
             key={`menu-skeleton-${index}`}
-            style={{
+            sx={{
               display: 'flex',
               flexDirection: 'column',
-              height: 280,
-              borderRadius: 12,
+              position: 'relative',
+              height: `${menuCardLayout.cardHeight.desktop}px`,
+              borderRadius: '12px',
               overflow: 'hidden',
-              border: '1px solid #e0e0e0',
+              border: `1px solid ${brand.border}`,
               backgroundColor: '#fff',
+              boxShadow: brand.shadowSm,
+              '@media (max-width: 850px)': {
+                height: `${menuCardLayout.cardHeight.mobile}px`,
+                borderRadius: '10px',
+              },
             }}
           >
-            <Skeleton animation="wave" variant="rectangular" width="100%" height={180} />
-            <div
-              style={{
+            <Skeleton
+              animation="wave"
+              variant="circular"
+              width={32}
+              height={32}
+              sx={{
+                position: 'absolute',
+                top: '12px',
+                right: '12px',
+                zIndex: 2,
+                bgcolor: 'rgba(255,255,255,0.9)',
+                '@media (max-width: 850px)': {
+                  width: 28,
+                  height: 28,
+                  top: '8px',
+                  right: '8px',
+                },
+              }}
+            />
+            <Skeleton
+              animation="wave"
+              variant="rectangular"
+              width="100%"
+              height={menuCardLayout.imageHeight.desktop}
+              sx={{
+                transform: 'none',
+                transformOrigin: 'center',
+                bgcolor: '#eceff1',
+                '@media (max-width: 850px)': {
+                  height: `${menuCardLayout.imageHeight.mobile}px`,
+                },
+              }}
+            />
+            <Box
+              sx={{
                 display: 'flex',
                 flexDirection: 'column',
                 flex: 1,
-                gap: 6,
-                padding: 12,
-                background: '#f8f9f8',
+                gap: '4px',
+                padding: `${menuCardLayout.contentPadding.desktop}px`,
+                background: brand.bgLight,
+                '@media (max-width: 850px)': {
+                  padding: `${menuCardLayout.contentPadding.mobile}px`,
+                },
               }}
             >
-              <Skeleton animation="wave" variant="text" width="58%" height={24} />
-              <Skeleton animation="wave" variant="text" width="72%" height={18} />
-              <div
-                style={{
+              <Skeleton animation="wave" variant="text" width="62%" height={22} />
+              <Skeleton animation="wave" variant="text" width="88%" height={16} />
+              <Skeleton animation="wave" variant="text" width="74%" height={16} />
+              <Box
+                sx={{
                   marginTop: 'auto',
                   display: 'flex',
                   alignItems: 'center',
@@ -49,13 +110,19 @@ export default function MenuSkeleton() {
                   gap: 8,
                 }}
               >
-                <Skeleton animation="wave" variant="rounded" width={88} height={24} />
-                <Skeleton animation="wave" variant="text" width={78} height={28} />
-              </div>
-            </div>
-          </div>
+                <Skeleton
+                  animation="wave"
+                  variant="rounded"
+                  width={92}
+                  height={26}
+                  sx={{ borderRadius: '20px' }}
+                />
+                <Skeleton animation="wave" variant="text" width={90} height={30} />
+              </Box>
+            </Box>
+          </Box>
         ))}
-      </div>
+      </Box>
     </Box>
   )
 }

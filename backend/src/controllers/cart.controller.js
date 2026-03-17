@@ -2,22 +2,17 @@ import crypto from "crypto";
 import { Cart } from "../models/Cart.js";
 import { MenuItem } from "../models/MenuItem.js";
 import { VariantGroup } from "../models/VariantGroup.js";
+import {
+  calculateSelectedOptionsDelta,
+  createVariantGroupMap,
+  resolveVariantGroupsForMenuItem,
+  sanitizeSelectedOptions,
+  sameSelectedOptions,
+  sortSelectedOptionsForDisplay,
+} from "../utils/variantPricing.js";
 
 function makeCartId() {
   return crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex");
-}
-
-function normalizeOptions(opts) {
-  if (!Array.isArray(opts)) return [];
-  return opts.map(String).sort();
-}
-
-function sameOptions(a, b) {
-  const A = normalizeOptions(a);
-  const B = normalizeOptions(b);
-  if (A.length !== B.length) return false;
-  for (let i = 0; i < A.length; i++) if (A[i] !== B[i]) return false;
-  return true;
 }
 
 async function getOrCreateCart(req) {
@@ -61,19 +56,7 @@ async function buildCartResponse(cart) {
   const variantGroups = await VariantGroup.find({
     groupId: { $in: Array.from(allVariantGroupIds) }
   });
-
-  // Create a flat map of all possible variant options for easy price lookup
-  // This is a bit brute-force but works without changing architecture
-  const optionPriceMap = new Map();
-  variantGroups.forEach(group => {
-    if (group.options) {
-      group.options.forEach(opt => {
-        // Warning: if two options have same name across different groups, this might collision
-        // but for now it's the simplest way to integrate
-        optionPriceMap.set(opt.name, opt.additionalPrice);
-      });
-    }
-  });
+  const variantGroupsById = createVariantGroupMap(variantGroups);
 
   const items = cart.items.map((line) => {
     let menuItem = byMongoId.get(String(line.menuItemId))
@@ -81,20 +64,19 @@ async function buildCartResponse(cart) {
       || byStringId.get(String(line.menuItemId));
 
     let price = menuItem ? menuItem.basePrice : 0;
+    const resolvedVariantGroups = menuItem
+      ? resolveVariantGroupsForMenuItem(menuItem, variantGroupsById)
+      : [];
 
     // Support legacy "options" if they exist
-    if (menuItem && menuItem.options) {
+    if (menuItem && menuItem.options && resolvedVariantGroups.length === 0) {
       line.selectedOptions.forEach(optLabel => {
         const opt = menuItem.options.find(o => o.label === optLabel);
         if (opt) price += opt.priceDelta;
       });
     }
 
-    // Support new "variantGroups"
-    line.selectedOptions.forEach(optName => {
-      const extra = optionPriceMap.get(optName);
-      if (extra) price += extra;
-    });
+    price += calculateSelectedOptionsDelta(line.selectedOptions, resolvedVariantGroups);
 
     return {
       lineId: line._id,
@@ -103,7 +85,7 @@ async function buildCartResponse(cart) {
       image: menuItem ? menuItem.image : undefined,
       qty: line.qty,
       price: price,
-      selectedOptions: normalizeOptions(line.selectedOptions),
+      selectedOptions: sortSelectedOptionsForDisplay(line.selectedOptions, resolvedVariantGroups),
       instructions: line.instructions || "",
       isAvailable: menuItem ? !!menuItem.isAvailable : false
     };
@@ -145,12 +127,12 @@ export async function addToCart(req, res) {
       return res.status(400).json({ error: "Menu item not available" });
     }
 
-    const opts = normalizeOptions(selectedOptions);
+    const opts = sanitizeSelectedOptions(selectedOptions);
     const inst = (instructions || "").trim();
 
     const existing = cart.items.find(
       (l) => String(l.menuItemId) === String(menuItemId) &&
-        sameOptions(l.selectedOptions, opts) &&
+        sameSelectedOptions(l.selectedOptions, opts) &&
         (l.instructions || "").trim() === inst
     );
 

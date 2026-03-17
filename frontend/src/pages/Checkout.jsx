@@ -1,48 +1,99 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import Box from '@mui/material/Box';
-import { useCart } from '../state/useCart';
-import http from '../API/http';
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import {
+  Box,
+  Button,
+  FormControl,
+  FormControlLabel,
+  Radio,
+  RadioGroup,
+  Stack,
+  Typography,
+  useTheme,
+} from '@mui/material'
+import { useCart } from '../state/useCart'
+import http from '../API/http'
+import CartSummary from '../components/CartSummary'
 
-const inputStyle = {
+const formGroupSx = {
+  marginBottom: '18px',
+}
+
+const checkoutWidths = {
+  content: { xs: 420, sm: 760, md: 1200 },
+  receipt: { xs: 420, sm: 560, md: 360 },
+}
+
+const centeredWidth = (maxWidth) => ({
   width: '100%',
-  padding: '12px',
-  border: '1px solid #e0e0e0',
-  borderRadius: '8px',
-  fontSize: '14px',
-  fontFamily: 'inherit',
-  boxSizing: 'border-box',
-};
-
-const labelStyle = {
-  display: 'block',
-  marginBottom: '8px',
-  fontWeight: 'bold',
-};
+  maxWidth,
+  mx: 'auto',
+})
 
 export default function Checkout() {
-  const navigate = useNavigate();
-  const { state, cartCount, clearCart } = useCart();
-  const { items } = state;
+  const theme = useTheme()
+  const navigate = useNavigate()
+  const { state, clearCart } = useCart()
+  const { items } = state
+  const [orderTypeError, setOrderTypeError] = useState(false)
+
+  const inputStyle = {
+    width: '100%',
+    padding: '10px 12px',
+    border: `1px solid ${theme.brand.border}`,
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontFamily: theme.brand.fontBase,
+    boxSizing: 'border-box',
+    backgroundColor: theme.palette.common.white,
+    outline: 'none',
+  }
+
+  const labelStyle = {
+    display: 'block',
+    marginBottom: '4px',
+    fontWeight: 700,
+    fontSize: '12px',
+    color: theme.brand.textLabel,
+    textTransform: 'uppercase',
+    letterSpacing: '0.02em',
+  }
+
+  const orderOptionStyle = {
+    m: 0,
+    minHeight: 36,
+    px: 0,
+    py: 0.15,
+    alignItems: 'center',
+    '.MuiFormControlLabel-label': {
+      fontWeight: 500,
+      color: theme.brand.textOption,
+      fontSize: '13px',
+      fontFamily: theme.brand.fontBase,
+    },
+  }
 
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
-    address: '',
-    orderType: 'pickup',
+    orderType: '',
     notes: '',
-  });
+  })
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
+    const { name, value } = e.target
+    setFormData((prev) => ({ ...prev, [name]: value }))
+    if (name === 'orderType' && value) {
+      setOrderTypeError(false)
+    }
+  }
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!formData.name || !formData.phone) {
-      alert('Please fill in all required fields');
-      return;
+    e.preventDefault()
+
+    if (!formData.orderType) {
+      setOrderTypeError(true)
+      return
     }
 
     const payload = {
@@ -50,7 +101,7 @@ export default function Checkout() {
       customer: {
         name: formData.name,
         phone: formData.phone,
-        address: formData.orderType === 'delivery' ? formData.address : '',
+        address: '',
       },
       notesToBarista: formData.notes,
       items: items.map((item) => ({
@@ -60,49 +111,70 @@ export default function Checkout() {
         instructions: item.instructions || '',
       })),
       cartId: localStorage.getItem('cartId'),
-    };
+    }
 
     try {
-      const response = await http.post('/orders', payload);
+      const response = await http.post('/orders', payload)
       if (response.data.orderNumber) {
-        localStorage.removeItem('cartId');
-        await clearCart();
-        navigate('/success', { state: { orderNumber: response.data.orderNumber } });
+        localStorage.removeItem('cartId')
+        await clearCart()
+        navigate('/success', { state: { orderNumber: response.data.orderNumber } })
       }
     } catch (err) {
-      console.error(err);
-      alert('Failed to place order: ' + (err.response?.data?.error || err.message));
+      console.error(err)
+      alert('Failed to place order: ' + (err.response?.data?.error || err.message))
     }
-  };
+  }
 
   return (
     <Box
       sx={{
-        width: '100%',
-        display: 'grid',
-        gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
-        gap: '30px',
+        px: { xs: 2, md: 4 },
+        pt: { xs: 1, md: 2 },
+        pb: { xs: 2, md: 4 },
+        maxWidth: '1200px',
+        margin: '0 auto',
+        fontFamily: theme.brand.fontBase,
+        '& .MuiTypography-root': { fontFamily: theme.brand.fontBase },
+        '& .MuiButton-root': { fontFamily: theme.brand.fontBase },
       }}
     >
-      {/* ---------- Form Column ---------- */}
-      <div>
-        <h1
-          style={{
-            fontFamily: "'DIN Alternate Bold', 'Montserrat', sans-serif",
-            fontSize: '28px',
-            fontWeight: 700,
-            color: '#00704a',
-            margin: '0 0 20px 0',
+      <Typography
+        variant="h5"
+        sx={{
+          fontFamily: theme.brand.fontDisplay,
+          fontSize: { xs: '1.25rem', sm: '1.5rem' },
+          fontWeight: 900,
+          color: theme.brand.primary,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
+          textAlign: 'center',
+          mb: { xs: 2.5, md: 3 },
+        }}
+      >
+        Checkout
+      </Typography>
+
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: '1fr 360px' },
+            gap: { xs: '24px', md: '32px' },
+            alignItems: 'stretch',
+            ...centeredWidth(checkoutWidths.content),
           }}
         >
-          Checkout
-        </h1>
-
-        <form
+        <Box
+          component="form"
+          id="checkout-form"
           onSubmit={handleSubmit}
-          style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: '100%',
+          }}
         >
-          <div>
+          <Box sx={formGroupSx}>
             <label style={labelStyle}>Full Name *</label>
             <input
               type="text"
@@ -111,10 +183,11 @@ export default function Checkout() {
               onChange={handleChange}
               required
               style={inputStyle}
+              placeholder="Your name"
             />
-          </div>
+          </Box>
 
-          <div>
+          <Box sx={formGroupSx}>
             <label style={labelStyle}>Phone Number *</label>
             <input
               type="tel"
@@ -123,95 +196,146 @@ export default function Checkout() {
               onChange={handleChange}
               required
               style={inputStyle}
+              placeholder="70 000 000"
             />
-          </div>
+          </Box>
 
-          <div>
-            <label style={labelStyle}>Order Type</label>
-            <select
-              name="orderType"
-              value={formData.orderType}
-              onChange={handleChange}
-              style={inputStyle}
-            >
-              <option value="pickup">Pickup</option>
-              <option value="dine_in">Dine In</option>
-            </select>
-          </div>
+          <Box sx={formGroupSx}>
+            <label style={labelStyle}>Order Type *</label>
+            <FormControl component="fieldset" fullWidth error={orderTypeError}>
+              <RadioGroup
+                name="orderType"
+                value={formData.orderType}
+                onChange={handleChange}
+                row
+                sx={{
+                  gap: 3,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <FormControlLabel
+                  value="pickup"
+                  control={
+                    <Radio
+                      size="small"
+                      sx={{
+                        color: theme.brand.radioInactive,
+                        p: 0.5,
+                        mr: 0.75,
+                        '&.Mui-checked': { color: theme.brand.primary },
+                      }}
+                    />
+                  }
+                  label="Pickup"
+                  sx={orderOptionStyle}
+                />
+                <FormControlLabel
+                  value="dine_in"
+                  control={
+                    <Radio
+                      size="small"
+                      sx={{
+                        color: theme.brand.radioInactive,
+                        p: 0.5,
+                        mr: 0.75,
+                        '&.Mui-checked': { color: theme.brand.primary },
+                      }}
+                    />
+                  }
+                  label="Dine In"
+                  sx={orderOptionStyle}
+                />
+              </RadioGroup>
+              {orderTypeError && (
+                <Typography
+                  variant="caption"
+                  sx={{
+                    mt: 0.5,
+                    color: theme.brand.error,
+                    fontSize: '0.75rem',
+                    fontFamily: theme.brand.fontBase,
+                  }}
+                >
+                  Required
+                </Typography>
+              )}
+            </FormControl>
+          </Box>
 
-          <div>
+          <Box sx={formGroupSx}>
             <label style={labelStyle}>Special Notes</label>
             <textarea
               name="notes"
               value={formData.notes}
               onChange={handleChange}
-              rows="4"
-              style={inputStyle}
+              rows="3"
+              style={{
+                ...inputStyle,
+                resize: 'none',
+                minHeight: '140px',
+              }}
+              placeholder="Any specific requests?"
             />
-          </div>
-
-          <Box
-            component="button"
-            type="submit"
-            sx={{
-              marginTop: '12px',
-              border: 'none',
-              backgroundColor: '#1e5631',
-              color: '#fff',
-              fontWeight: 600,
-              borderRadius: '8px',
-              padding: '1rem 2rem',
-              cursor: 'pointer',
-              width: '100%',
-              fontSize: '1rem',
-              fontFamily: "'Montserrat', sans-serif",
-              letterSpacing: '0.5px',
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                backgroundColor: '#1e5631',
-                transform: 'translateY(-2px)',
-              },
-            }}
-          >
-            Place Order
           </Box>
-        </form>
-      </div>
 
-      {/* ---------- Summary Column ---------- */}
-      <div>
-        <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '20px' }}>
-          Order Summary
-        </h2>
-        <div
-          style={{
-            padding: '20px',
-            border: '1px solid #e0e0e0',
-            borderRadius: '12px',
-            backgroundColor: '#f5f5f5',
+          <Box sx={{ mt: { xs: 1, md: 0.25 } }}>
+            <Button
+              component="button"
+              type="button"
+              onClick={() => navigate('/cart')}
+              variant="text"
+              sx={{
+                px: 0,
+                minWidth: 0,
+                color: theme.brand.textMuted,
+                fontWeight: 600,
+                textTransform: 'none',
+                fontSize: '0.95rem',
+                '&:hover': { backgroundColor: 'transparent', color: theme.brand.primaryDark },
+              }}
+            >
+              Back to Cart
+            </Button>
+          </Box>
+        </Box>
+
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: '100%',
+            py: { xs: 0, md: 2 },
+            mt: { xs: 0.75, md: 0 },
           }}
         >
-          {items.length === 0 ? (
-            <p style={{ color: '#6b6b6b' }}>Your cart is empty.</p>
-          ) : (
-            items.map((item) => (
-              <div
-                key={item.lineId}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginBottom: '10px',
-                }}
-              >
-                <span>
-                  {item.qty}x {item.name}
-                </span>
-                <span>L.L {Number((item.price || 0) * item.qty).toLocaleString()}</span>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
+          <CartSummary
+            items={items}
+            mode="receipt"
+            sx={centeredWidth(checkoutWidths.receipt)}
+          />
+
+          <Stack direction="column" spacing={1.25} sx={{ pt: 1.5, ...centeredWidth(checkoutWidths.receipt) }}>
+            <Button
+              type="submit"
+              form="checkout-form"
+              fullWidth
+              variant="contained"
+              sx={{
+                py: 1.5,
+                borderRadius: '10px',
+                bgcolor: theme.brand.primaryDark,
+                fontWeight: 700,
+                textTransform: 'none',
+                fontSize: '1rem',
+                fontFamily: theme.brand.fontBase,
+                '&:hover': { bgcolor: theme.brand.primaryDeepHover },
+              }}
+            >
+              Place Order
+            </Button>
+          </Stack>
+        </Box>
+      </Box>
     </Box>
-  );
+  )
 }
