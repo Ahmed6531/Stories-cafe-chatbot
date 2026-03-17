@@ -293,7 +293,6 @@ export default function Navbar() {
       if (!saved) return []
       const savedAtRaw = localStorage.getItem(CHAT_STORAGE_TS_KEY)
       const savedAt = Number(savedAtRaw)
-      // eslint-disable-next-line react-hooks/purity
       if (!Number.isFinite(savedAt) || Date.now() - savedAt > CHAT_TTL_MS) {
         localStorage.removeItem(CHAT_STORAGE_KEY)
         localStorage.removeItem(CHAT_STORAGE_TS_KEY)
@@ -511,7 +510,7 @@ export default function Navbar() {
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         suggestions: data.suggestions || [],
       })
-    } catch (err) {
+    } catch {
       appendMessage({
         id: Date.now() + 1,
         role: 'bot',

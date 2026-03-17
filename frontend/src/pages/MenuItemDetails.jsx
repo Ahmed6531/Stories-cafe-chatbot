@@ -854,7 +854,7 @@ export default function MenuItemDetails() {
     }
 
     const payload = {
-      menuItemId: item.mongoId || item.id,
+      menuItemId: item.id,
       qty,
       selectedOptions: serializeSelectedOptions(selections),
       instructions: instructions.trim(),

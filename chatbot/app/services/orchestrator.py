@@ -147,12 +147,12 @@ async def process_chat_message(
                     },
                 )
 
-            menu_item_id = matched_item.get("id") or matched_item.get("_id")
+            menu_item_id = matched_item.get("id")
             if menu_item_id is None:
                 return ChatMessageResponse(
                     session_id=session_id,
                     status="error",
-                    reply="I found the menu item, but its ID is missing.",
+                    reply="I found the menu item, but its numeric ID is missing.",
                     intent=intent,
                     cart_updated=False,
                     cart_id=cart_id,

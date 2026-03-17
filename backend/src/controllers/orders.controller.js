@@ -34,17 +34,18 @@ export async function createOrder(req, res) {
 
   for (const line of items) {
     const { menuItemId, qty, selectedOptions = [], instructions = "" } = line || {};
+    const numericMenuItemId = Number(menuItemId);
     if (!menuItemId || !qty || qty < 1) {
       return res.status(400).json({ error: "Each item must include menuItemId and qty >= 1" });
+    }
+    if (!Number.isFinite(numericMenuItemId)) {
+      return res.status(400).json({ error: `Invalid menuItemId: ${menuItemId}. Backend expects numeric id.` });
     }
 
     const normalizedSelectedOptions = sanitizeSelectedOptions(selectedOptions);
 
-    const menuItem = await MenuItem.findById(menuItemId);
+    const menuItem = await MenuItem.findOne({ id: numericMenuItemId });
     if (!menuItem) {
-      if (!isNaN(menuItemId)) {
-        return res.status(400).json({ error: `Invalid menuItemId: ${menuItemId}. Backend expects Mongo _id (ObjectId), not numeric id.` });
-      }
       return res.status(400).json({ error: "Menu item not found" });
     }
     if (!menuItem.isAvailable) {
@@ -71,7 +72,7 @@ export async function createOrder(req, res) {
     subtotal += lineTotal;
 
     orderLines.push({
-      menuItemId: menuItem._id,
+      menuItemId: numericMenuItemId,
       name: menuItem.name,
       qty,
       unitPrice,

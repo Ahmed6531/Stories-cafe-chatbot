@@ -31,19 +31,15 @@ async function getOrCreateCart(req) {
 }
 
 async function buildCartResponse(cart) {
-  const ids = cart.items.map((x) => x.menuItemId);
+  const ids = cart.items
+    .map((x) => Number(x.menuItemId))
+    .filter((id) => Number.isFinite(id));
 
-  // Lookup by both MongoDB _id and numeric id
   const menuItems = await MenuItem.find({
-    $or: [
-      { _id: { $in: ids.filter(id => id && String(id).match(/^[0-9a-fA-F]{24}$/)) } },
-      { id: { $in: ids.filter(id => id && !isNaN(Number(id))).map(Number) } }
-    ]
+    id: { $in: ids }
   });
 
-  const byMongoId = new Map(menuItems.map((m) => [String(m._id), m]));
-  const byNumericId = new Map(menuItems.map((m) => [String(m.id), m]));
-  const byStringId = new Map(menuItems.map((m) => [String(m.id), m]));
+  const byNumericId = new Map(menuItems.map((m) => [Number(m.id), m]));
 
   // Fetch all variant groups referenced by these menu items
   const allVariantGroupIds = new Set();
@@ -59,9 +55,7 @@ async function buildCartResponse(cart) {
   const variantGroupsById = createVariantGroupMap(variantGroups);
 
   const items = cart.items.map((line) => {
-    let menuItem = byMongoId.get(String(line.menuItemId))
-      || byNumericId.get(Number(line.menuItemId))
-      || byStringId.get(String(line.menuItemId));
+    const menuItem = byNumericId.get(Number(line.menuItemId));
 
     let price = menuItem ? menuItem.basePrice : 0;
     const resolvedVariantGroups = menuItem
@@ -114,15 +108,13 @@ export async function addToCart(req, res) {
 
     const { menuItemId, qty = 1, selectedOptions = [], instructions = "" } = req.body || {};
     const nQty = Number(qty);
+    const normalizedMenuItemId = Number(menuItemId);
 
-    if (!menuItemId || !Number.isFinite(nQty) || nQty < 1) {
+    if (!Number.isFinite(normalizedMenuItemId) || !Number.isFinite(nQty) || nQty < 1) {
       return res.status(400).json({ error: "menuItemId and qty >= 1 are required" });
     }
 
-    const isMongoId = String(menuItemId).match(/^[0-9a-fA-F]{24}$/);
-    const menuItem = isMongoId
-      ? await MenuItem.findById(menuItemId)
-      : await MenuItem.findOne({ id: Number(menuItemId) });
+    const menuItem = await MenuItem.findOne({ id: normalizedMenuItemId });
 
     if (!menuItem || !menuItem.isAvailable) {
       return res.status(400).json({ error: "Menu item not available" });
@@ -132,13 +124,13 @@ export async function addToCart(req, res) {
     const inst = (instructions || "").trim();
 
     const existing = cart.items.find(
-      (l) => String(l.menuItemId) === String(menuItemId) &&
+      (l) => Number(l.menuItemId) === normalizedMenuItemId &&
         sameSelectedOptions(l.selectedOptions, opts) &&
         (l.instructions || "").trim() === inst
     );
 
     if (existing) existing.qty += nQty;
-    else cart.items.push({ menuItemId, qty: nQty, selectedOptions: opts, instructions: inst });
+    else cart.items.push({ menuItemId: normalizedMenuItemId, qty: nQty, selectedOptions: opts, instructions: inst });
 
     await cart.save();
 

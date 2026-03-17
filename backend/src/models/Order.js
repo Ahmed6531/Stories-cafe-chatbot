@@ -10,7 +10,7 @@ const SelectedOptionSchema = new mongoose.Schema(
 
 const OrderItemSchema = new mongoose.Schema(
   {
-    menuItemId: { type: mongoose.Schema.Types.ObjectId, ref: "MenuItem", required: true },
+    menuItemId: { type: Number, required: true },
     name: { type: String, required: true },
     qty: { type: Number, required: true, min: 1 },
     unitPrice: { type: Number, required: true },

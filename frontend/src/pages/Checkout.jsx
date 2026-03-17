@@ -105,7 +105,7 @@ export default function Checkout() {
       },
       notesToBarista: formData.notes,
       items: items.map((item) => ({
-        menuItemId: item.menuItemId || item.id,
+        menuItemId: Number(item.menuItemId ?? item.id),
         qty: item.qty,
         selectedOptions: Array.isArray(item.selectedOptions) ? item.selectedOptions : [],
         instructions: item.instructions || '',
