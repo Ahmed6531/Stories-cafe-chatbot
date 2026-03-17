@@ -71,6 +71,7 @@ export default function CartSummary({
   mode = 'cartSummary',
   title = 'Order Summary',
   action,
+  itemsContent,
   sx,
 }) {
   const theme = useTheme()
@@ -78,11 +79,12 @@ export default function CartSummary({
   const receiptId = useId().replace(/:/g, '')
   const { updateQty, removeFromCart } = useCart()
   const { subtotal, tax, total } = calculateOrderTotals(items)
-  
+
   const isReceipt = mode === 'receipt'
   const resolvedTitle = isReceipt ? 'Order Summary' : title
   const displayTotal = isReceipt ? total : subtotal
   const totalLabel = isReceipt ? 'TOTAL' : 'SUBTOTAL'
+  const showSummaryBreakdown = Boolean(itemsContent) || items.length > 0
 
   return (
     <Card
@@ -136,6 +138,7 @@ export default function CartSummary({
           </svg>
         </Box>
       )}
+
       <CardContent
         sx={{
           position: 'relative',
@@ -152,7 +155,7 @@ export default function CartSummary({
             fontFamily: brand.fontBase,
             fontWeight: 800,
             textAlign: isReceipt ? 'center' : 'left',
-            mb: isReceipt ? 2.25 : 2.25,
+            mb: 2.25,
             letterSpacing: '0.08em',
             textTransform: 'uppercase',
             color: isReceipt ? brand.textPrimary : brand.primary,
@@ -162,188 +165,197 @@ export default function CartSummary({
           {resolvedTitle}
         </Typography>
 
-        {items.length === 0 ? (
-          <Typography variant="body2" sx={{ color: brand.textSecondary, py: 2, fontFamily: brand.fontBase }}>
+        {!showSummaryBreakdown ? (
+          <Typography
+            variant="body2"
+            sx={{ color: brand.textSecondary, py: 2, fontFamily: brand.fontBase }}
+          >
             Your cart is empty.
           </Typography>
         ) : (
           <>
-            {/* ITEM LISTING SECTION */}
-            <Stack spacing={isReceipt ? 1.4 : 0}>
-              {items.map((item, index) => {
-                if (isReceipt) {
-                  // --- RECEIPT MODE UI ---
-                  return (
-                    <Stack key={item.lineId || index} direction="row" justifyContent="space-between" alignItems="baseline">
-                      <Typography
-                        variant="body2"
-                        sx={{ fontSize: '0.85rem', color: brand.textPrimary, fontFamily: brand.fontBase }}
+            {itemsContent ? (
+              itemsContent
+            ) : (
+              <Stack spacing={isReceipt ? 1.4 : 0}>
+                {items.map((item, index) => {
+                  if (isReceipt) {
+                    return (
+                      <Stack
+                        key={item.lineId || index}
+                        direction="row"
+                        justifyContent="space-between"
+                        alignItems="baseline"
                       >
-                        <Box component="span" sx={{ fontWeight: 700, mr: 0.5, opacity: 0.7 }}>
-                          {item.qty}x
-                        </Box>
-                        {item.name}
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        sx={{ fontSize: '0.85rem', fontWeight: 600, fontFamily: brand.fontBase }}
-                      >
-                        {formatLL((item.price || 0) * item.qty)}
-                      </Typography>
-                    </Stack>
-                  )
-                }
-
-                // --- CART MODE UI (Rich Layout) ---
-                return (
-                  <Box key={item.lineId || index}>
-                    <Stack direction="row" alignItems="center" spacing={{ xs: 0.75, sm: 1.25 }} sx={{ py: { xs: 0.75, sm: 1 } }}>
-                      <Box
-                        sx={{
-                          width: { xs: 48, sm: 56 },
-                          height: { xs: 48, sm: 56 },
-                          borderRadius: '8px',
-                          overflow: 'hidden',
-                          flexShrink: 0,
-                          bgcolor: '#fff',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <SummaryItemImage image={item.image} name={item.name} />
-                      </Box>
-
-                      <Box sx={{ flex: 1, minWidth: 0 }}>
-                        {(() => {
-                          const optionSummary = Array.isArray(item.selectedOptions)
-                            ? item.selectedOptions.filter(Boolean).join(' · ')
-                            : ''
-                          const instructions = item.instructions?.trim()
-                          const displayOptionSummary = Array.isArray(item.selectedOptions)
-                            ? item.selectedOptions
-                                .map(formatSelectedOptionLabel)
-                                .filter(Boolean)
-                                .join(' · ')
-                            : optionSummary
-
-                          return (
-                            <>
                         <Typography
-                          variant="body1"
-                          sx={{
-                            color: brand.textPrimary,
-                            fontWeight: 600,
-                            fontSize: { xs: '0.9rem', sm: '0.95rem' },
-                            lineHeight: { xs: 1.15, sm: 1.2 },
-                            fontFamily: brand.fontBase,
-                            mb: { xs: 0.3, sm: 0.2 },
-                          }}
+                          variant="body2"
+                          sx={{ fontSize: '0.85rem', color: brand.textPrimary, fontFamily: brand.fontBase }}
                         >
+                          <Box component="span" sx={{ fontWeight: 700, mr: 0.5, opacity: 0.7 }}>
+                            {item.qty}x
+                          </Box>
                           {item.name}
                         </Typography>
                         <Typography
                           variant="body2"
-                          sx={{
-                            color: brand.textSecondary,
-                            fontWeight: 600,
-                            fontFamily: brand.fontBase,
-                            fontSize: { xs: '0.8rem', sm: '0.875rem' },
-                            lineHeight: 1.2,
-                          }}
+                          sx={{ fontSize: '0.85rem', fontWeight: 600, fontFamily: brand.fontBase }}
                         >
-                          {formatLL(item.qty > 1 ? (item.price || 0) * item.qty : item.price || 0)}
+                          {formatLL((item.price || 0) * item.qty)}
                         </Typography>
-                              {displayOptionSummary && (
-                                <Typography
-                                  variant="body2"
-                                  sx={{
-                                    color: brand.textSecondary,
-                                    fontWeight: 500,
-                                    fontFamily: brand.fontBase,
-                                    fontSize: { xs: '0.74rem', sm: '0.8rem' },
-                                    lineHeight: 1.35,
-                                    mt: 0.45,
-                                  }}
-                                >
-                                  {displayOptionSummary}
-                                </Typography>
-                              )}
-                              {instructions && (
-                                <Typography
-                                  variant="body2"
-                                  sx={{
-                                    color: brand.textSecondary,
-                                    fontWeight: 500,
-                                    fontFamily: brand.fontBase,
-                                    fontSize: { xs: '0.72rem', sm: '0.78rem' },
-                                    lineHeight: 1.35,
-                                    mt: 0.25,
-                                    fontStyle: 'italic',
-                                    opacity: 0.9,
-                                  }}
-                                >
-                                  Note: {instructions}
-                                </Typography>
-                              )}
-                            </>
-                          )
-                        })()}
-                      </Box>
+                      </Stack>
+                    )
+                  }
 
-                      <Stack direction="row" alignItems="center" spacing={{ xs: 0.5, sm: 0.75 }}>
-                        <Stack
-                          direction="row"
-                          alignItems="center"
+                  const optionSummary = Array.isArray(item.selectedOptions)
+                    ? item.selectedOptions.filter(Boolean).join(' \u00B7 ')
+                    : ''
+                  const instructions = item.instructions?.trim()
+                  const displayOptionSummary = Array.isArray(item.selectedOptions)
+                    ? item.selectedOptions
+                        .map(formatSelectedOptionLabel)
+                        .filter(Boolean)
+                        .join(' \u00B7 ')
+                    : optionSummary
+
+                  return (
+                    <Box key={item.lineId || index}>
+                      <Stack
+                        direction="row"
+                        alignItems="center"
+                        spacing={{ xs: 0.75, sm: 1.25 }}
+                        sx={{ py: { xs: 0.75, sm: 1 } }}
+                      >
+                        <Box
                           sx={{
-                            border: `1px solid ${brand.border}`,
-                            borderRadius: '999px',
-                            height: { xs: 28, sm: 30 },
-                            px: { xs: 0.25, sm: 0.5 },
+                            width: { xs: 48, sm: 56 },
+                            height: { xs: 48, sm: 56 },
+                            borderRadius: '8px',
+                            overflow: 'hidden',
+                            flexShrink: 0,
                             bgcolor: '#fff',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
                           }}
                         >
-                          <IconButton
-                            size="small"
-                            onClick={() => updateQty(item.lineId, item.qty - 1)}
-                            disabled={item.qty <= 1}
-                            sx={{ width: { xs: 22, sm: 24 }, height: { xs: 22, sm: 24 }, p: 0 }}
-                          >
-                            <RemoveIcon sx={{ fontSize: { xs: '0.95rem', sm: '1.05rem' } }} />
-                          </IconButton>
+                          <SummaryItemImage image={item.image} name={item.name} />
+                        </Box>
+
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
                           <Typography
+                            variant="body1"
                             sx={{
-                              minWidth: { xs: 18, sm: 20 },
-                              textAlign: 'center',
-                              fontWeight: 700,
-                              fontSize: { xs: '0.8rem', sm: '0.85rem' },
+                              color: brand.textPrimary,
+                              fontWeight: 600,
+                              fontSize: { xs: '0.9rem', sm: '0.95rem' },
+                              lineHeight: { xs: 1.15, sm: 1.2 },
                               fontFamily: brand.fontBase,
+                              mb: { xs: 0.3, sm: 0.2 },
                             }}
                           >
-                            {item.qty}
+                            {item.name}
                           </Typography>
-                          <IconButton
-                            size="small"
-                            onClick={() => updateQty(item.lineId, item.qty + 1)}
-                            sx={{ width: { xs: 22, sm: 24 }, height: { xs: 22, sm: 24 }, p: 0 }}
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              color: brand.textSecondary,
+                              fontWeight: 600,
+                              fontFamily: brand.fontBase,
+                              fontSize: { xs: '0.8rem', sm: '0.875rem' },
+                              lineHeight: 1.2,
+                            }}
                           >
-                            <AddIcon sx={{ fontSize: { xs: '0.95rem', sm: '1.05rem' } }} />
+                            {formatLL(item.qty > 1 ? (item.price || 0) * item.qty : item.price || 0)}
+                          </Typography>
+                          {displayOptionSummary && (
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                color: brand.textSecondary,
+                                fontWeight: 500,
+                                fontFamily: brand.fontBase,
+                                fontSize: { xs: '0.74rem', sm: '0.8rem' },
+                                lineHeight: 1.35,
+                                mt: 0.45,
+                              }}
+                            >
+                              {displayOptionSummary}
+                            </Typography>
+                          )}
+                          {instructions && (
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                color: brand.textSecondary,
+                                fontWeight: 500,
+                                fontFamily: brand.fontBase,
+                                fontSize: { xs: '0.72rem', sm: '0.78rem' },
+                                lineHeight: 1.35,
+                                mt: 0.25,
+                                fontStyle: 'italic',
+                                opacity: 0.9,
+                              }}
+                            >
+                              Note: {instructions}
+                            </Typography>
+                          )}
+                        </Box>
+
+                        <Stack direction="row" alignItems="center" spacing={{ xs: 0.5, sm: 0.75 }}>
+                          <Stack
+                            direction="row"
+                            alignItems="center"
+                            sx={{
+                              border: `1px solid ${brand.border}`,
+                              borderRadius: '999px',
+                              height: { xs: 28, sm: 30 },
+                              px: { xs: 0.25, sm: 0.5 },
+                              bgcolor: '#fff',
+                            }}
+                          >
+                            <IconButton
+                              size="small"
+                              onClick={() => updateQty(item.lineId, item.qty - 1)}
+                              disabled={item.qty <= 1}
+                              sx={{ width: { xs: 22, sm: 24 }, height: { xs: 22, sm: 24 }, p: 0 }}
+                            >
+                              <RemoveIcon sx={{ fontSize: { xs: '0.95rem', sm: '1.05rem' } }} />
+                            </IconButton>
+                            <Typography
+                              sx={{
+                                minWidth: { xs: 18, sm: 20 },
+                                textAlign: 'center',
+                                fontWeight: 700,
+                                fontSize: { xs: '0.8rem', sm: '0.85rem' },
+                                fontFamily: brand.fontBase,
+                              }}
+                            >
+                              {item.qty}
+                            </Typography>
+                            <IconButton
+                              size="small"
+                              onClick={() => updateQty(item.lineId, item.qty + 1)}
+                              sx={{ width: { xs: 22, sm: 24 }, height: { xs: 22, sm: 24 }, p: 0 }}
+                            >
+                              <AddIcon sx={{ fontSize: { xs: '0.95rem', sm: '1.05rem' } }} />
+                            </IconButton>
+                          </Stack>
+                          <IconButton
+                            onClick={() => removeFromCart(item.lineId)}
+                            sx={{ color: '#cf2e2e', width: { xs: 24, sm: 28 }, height: { xs: 24, sm: 28 } }}
+                            size="small"
+                          >
+                            <DeleteOutlineIcon fontSize="small" />
                           </IconButton>
                         </Stack>
-                        <IconButton
-                          onClick={() => removeFromCart(item.lineId)}
-                          sx={{ color: '#cf2e2e', width: { xs: 24, sm: 28 }, height: { xs: 24, sm: 28 } }}
-                          size="small"
-                        >
-                          <DeleteOutlineIcon fontSize="small" />
-                        </IconButton>
                       </Stack>
-                    </Stack>
-                    {index < items.length - 1 && <Divider sx={{ borderColor: brand.borderSoft }} />}
-                  </Box>
-                )
-              })}
-            </Stack>
+
+                      {index < items.length - 1 && <Divider sx={{ borderColor: brand.borderSoft }} />}
+                    </Box>
+                  )
+                })}
+              </Stack>
+            )}
 
             <Divider
               sx={{
@@ -354,7 +366,6 @@ export default function CartSummary({
               }}
             />
 
-            {/* TOTALS SECTION */}
             <Stack spacing={1}>
               {isReceipt && (
                 <>
@@ -382,13 +393,21 @@ export default function CartSummary({
               )}
 
               <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Typography variant="body2" fontWeight={800} sx={{ letterSpacing: '0.05em', fontFamily: brand.fontBase }}>
+                <Typography
+                  variant="body2"
+                  fontWeight={800}
+                  sx={{ letterSpacing: '0.05em', fontFamily: brand.fontBase }}
+                >
                   {totalLabel}
                 </Typography>
                 <Typography
                   variant="h6"
                   fontWeight={900}
-                  sx={{ color: brand.primaryDark, fontSize: isReceipt ? '1.25rem' : '1.2rem', fontFamily: brand.fontBase }}
+                  sx={{
+                    color: brand.primaryDark,
+                    fontSize: isReceipt ? '1.25rem' : '1.2rem',
+                    fontFamily: brand.fontBase,
+                  }}
                 >
                   {formatLL(displayTotal)}
                 </Typography>
@@ -398,7 +417,6 @@ export default function CartSummary({
         )}
 
         {action && <Box sx={{ mt: 2.5 }}>{action}</Box>}
-
       </CardContent>
     </Card>
   )

@@ -17,11 +17,6 @@ import AdminLogin from "../pages/admin/AdminLogin"
 import AdminGuard from "../components/admin/AdminGuard";
 import AuthGuard from "../components/auth/AuthGuard";
 
-// Layout wrapper: Navbar contains sidebar + top header + breadcrumb
-function Layout() {
-  return <Navbar />
-}
-
 export default function AppRoutes() {
   return (
     <Routes>

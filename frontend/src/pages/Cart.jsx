@@ -4,6 +4,7 @@ import { useTheme } from '@mui/material/styles'
 import LocalGroceryStoreOutlinedIcon from '@mui/icons-material/LocalGroceryStoreOutlined'
 import { useCart } from '../state/useCart'
 import CartSummary from '../components/CartSummary'
+import CartItemsSkeleton from '../components/CartItemsSkeleton'
 
 export default function Cart() {
   const theme = useTheme()
@@ -11,14 +12,7 @@ export default function Cart() {
   const navigate = useNavigate()
   const { state } = useCart()
   const { items: cartItems, loading } = state
-
-  if (loading) {
-    return (
-      <Container sx={{ py: 3, textAlign: 'center' }}>
-        <Typography sx={{ fontFamily: brand.fontBase }}>Loading your cart...</Typography>
-      </Container>
-    )
-  }
+  const showCartSummary = loading || cartItems.length > 0
 
   return (
     <Container
@@ -47,7 +41,7 @@ export default function Cart() {
         Your Cart
       </Typography>
 
-      {cartItems.length === 0 ? (
+      {!showCartSummary ? (
         <Stack spacing={2} alignItems="center" textAlign="center" sx={{ py: 8 }}>
           <LocalGroceryStoreOutlinedIcon sx={{ fontSize: 50, color: brand.primary, opacity: 0.3 }} />
           <Typography variant="h6" fontWeight={800} sx={{ color: brand.textPrimary }}>
@@ -80,6 +74,7 @@ export default function Cart() {
             items={cartItems}
             mode="cartSummary"
             title="Review Order"
+            itemsContent={loading ? <CartItemsSkeleton /> : null}
             action={
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
                 <Button
