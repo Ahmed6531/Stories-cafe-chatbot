@@ -16,8 +16,7 @@ http.interceptors.request.use((config) => {
   return config;
 });
 http.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
- console.log("Sending request to:", config.url, "with token:", token)
+  const token = localStorage.getItem('token') || localStorage.getItem('adminToken')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
