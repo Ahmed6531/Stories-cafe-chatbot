@@ -296,7 +296,7 @@ export default function Navbar() {
   const msgsRef = useRef(null)
   const pendingReplyTimeoutRef = useRef(null)
 
-  const { cartCount } = useCart()
+  const { cartCount, refreshCart } = useCart()
   const location = useLocation()
   const navigate = useNavigate()
   const hasConversation = messages.length > 0
@@ -459,6 +459,7 @@ export default function Navbar() {
       })
       const data = response.data
       if (data.cart_id) localStorage.setItem('cartId', data.cart_id)
+      if (data.cart_updated) refreshCart()
       appendMessage({
         id: Date.now() + 1,
         role: 'bot',

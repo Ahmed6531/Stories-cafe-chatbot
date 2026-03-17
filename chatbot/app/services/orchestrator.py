@@ -62,7 +62,7 @@ async def find_menu_item_by_name(menu_items: list[dict], item_query: str) -> dic
     normalized_query = normalize_item_name(item_query)
     for item in menu_items:
         menu_item_name = normalize_item_name(item.get("name", item.get("title", "")))
-        if normalized_query == menu_item_name:
+        if normalized_query in menu_item_name or menu_item_name in normalized_query:
             return item
     return None
 
