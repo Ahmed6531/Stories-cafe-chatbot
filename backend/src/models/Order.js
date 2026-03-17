@@ -1,12 +1,20 @@
 import mongoose from "mongoose";
 
+const SelectedOptionSchema = new mongoose.Schema(
+  {
+    optionName: { type: String, required: true, trim: true },
+    suboptionName: { type: String, trim: true, default: undefined },
+  },
+  { _id: false },
+);
+
 const OrderItemSchema = new mongoose.Schema(
   {
     menuItemId: { type: mongoose.Schema.Types.ObjectId, ref: "MenuItem", required: true },
     name: { type: String, required: true },
     qty: { type: Number, required: true, min: 1 },
     unitPrice: { type: Number, required: true },
-    selectedOptions: { type: [String], default: [] },
+    selectedOptions: { type: [SelectedOptionSchema], default: [] },
     instructions: { type: String, default: "" },
     lineTotal: { type: Number, required: true }
   },

@@ -7,6 +7,7 @@ import {
   calculateSelectedOptionsDelta,
   createVariantGroupMap,
   resolveVariantGroupsForMenuItem,
+  sanitizeSelectedOptions,
 } from "../utils/variantPricing.js";
 
 const ORDER_TAX_RATE = 0.08;
@@ -37,6 +38,8 @@ export async function createOrder(req, res) {
       return res.status(400).json({ error: "Each item must include menuItemId and qty >= 1" });
     }
 
+    const normalizedSelectedOptions = sanitizeSelectedOptions(selectedOptions);
+
     const menuItem = await MenuItem.findById(menuItemId);
     if (!menuItem) {
       if (!isNaN(menuItemId)) {
@@ -55,10 +58,10 @@ export async function createOrder(req, res) {
       });
       const variantGroupsById = createVariantGroupMap(variantGroups);
       const resolvedVariantGroups = resolveVariantGroupsForMenuItem(menuItem, variantGroupsById);
-      optionsDelta = calculateSelectedOptionsDelta(selectedOptions, resolvedVariantGroups);
+      optionsDelta = calculateSelectedOptionsDelta(normalizedSelectedOptions, resolvedVariantGroups);
     } else {
-      for (const optLabel of selectedOptions) {
-        const found = (menuItem.options || []).find((o) => o.label === optLabel);
+      for (const selection of normalizedSelectedOptions) {
+        const found = (menuItem.options || []).find((o) => o.label === selection.optionName);
         if (found) optionsDelta += found.priceDelta;
       }
     }
@@ -72,7 +75,7 @@ export async function createOrder(req, res) {
       name: menuItem.name,
       qty,
       unitPrice,
-      selectedOptions,
+      selectedOptions: normalizedSelectedOptions,
       instructions: instructions || "",
       lineTotal
     });

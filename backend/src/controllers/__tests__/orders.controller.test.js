@@ -41,7 +41,7 @@ describe('createOrder', () => {
         _id: 'orderId1',
         orderNumber: 'SC-20231201-12345',
         status: 'pending',
-        total: 10
+        total: 11
       };
 
       req.body = {
@@ -66,7 +66,7 @@ describe('createOrder', () => {
         orderId: 'orderId1',
         orderNumber: 'SC-20231201-12345',
         status: 'pending',
-        total: 10
+        total: 11
       });
       expect(Order.create).toHaveBeenCalledTimes(1);
       expect(Order.create).toHaveBeenCalledWith({
@@ -84,9 +84,52 @@ describe('createOrder', () => {
           lineTotal: 10
         }],
         subtotal: 10,
-        total: 10
+        total: 11
       });
       expect(Cart.findOneAndDelete).toHaveBeenCalledWith({ cartId: 'cartId123' });
+    });
+
+    test('persists structured selectedOptions without flattening them', async () => {
+      const mockMenuItem = {
+        _id: 'menuId1',
+        name: 'Test Item',
+        basePrice: 10,
+        isAvailable: true,
+        options: [{ label: 'Mayo', priceDelta: 0 }]
+      };
+      const mockOrder = {
+        _id: 'orderId2',
+        orderNumber: 'SC-20231201-12346',
+        status: 'pending',
+        total: 11
+      };
+
+      req.body = {
+        orderType: 'pickup',
+        customer: { name: 'John Doe', phone: '1234567890' },
+        items: [{
+          menuItemId: 'menuId1',
+          qty: 1,
+          selectedOptions: [{ optionName: 'Mayo', suboptionName: 'Regular' }]
+        }]
+      };
+
+      MenuItem.findById.mockResolvedValue(mockMenuItem);
+      generateOrderNumber.mockReturnValue('SC-20231201-12346');
+      Order.findOne.mockResolvedValue(null);
+      Order.create.mockResolvedValue(mockOrder);
+
+      await createOrder(req, res);
+
+      expect(Order.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          items: [
+            expect.objectContaining({
+              selectedOptions: [{ optionName: 'Mayo', suboptionName: 'Regular' }]
+            })
+          ]
+        })
+      );
     });
 
     test('ensures orderNumber exists and matches expected format', async () => {

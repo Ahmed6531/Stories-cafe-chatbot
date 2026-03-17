@@ -107,7 +107,7 @@ export default function Checkout() {
       items: items.map((item) => ({
         menuItemId: item.menuItemId || item.id,
         qty: item.qty,
-        selectedOptions: item.selectedOptions || [],
+        selectedOptions: Array.isArray(item.selectedOptions) ? item.selectedOptions : [],
         instructions: item.instructions || '',
       })),
       cartId: localStorage.getItem('cartId'),

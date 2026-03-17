@@ -70,8 +70,9 @@ async function buildCartResponse(cart) {
 
     // Support legacy "options" if they exist
     if (menuItem && menuItem.options && resolvedVariantGroups.length === 0) {
-      line.selectedOptions.forEach(optLabel => {
-        const opt = menuItem.options.find(o => o.label === optLabel);
+      line.selectedOptions.forEach((selection) => {
+        const optionName = selection?.optionName || selection;
+        const opt = menuItem.options.find((entry) => entry.label === optionName);
         if (opt) price += opt.priceDelta;
       });
     }

@@ -11,6 +11,17 @@ import { useCart } from '../state/useCart'
 const receiptPath =
   'M 2 2 H 98 V 96 L 94 98 L 90 96 L 86 98 L 82 96 L 78 98 L 74 96 L 70 98 L 66 96 L 62 98 L 58 96 L 54 98 L 50 96 L 46 98 L 42 96 L 38 98 L 34 96 L 30 98 L 26 96 L 22 98 L 18 96 L 14 98 L 10 96 L 6 98 L 2 96 Z'
 
+function formatSelectedOptionLabel(selection) {
+  if (!selection) return ''
+  if (typeof selection === 'string') return selection
+
+  const optionName = String(selection.optionName || selection.name || '').trim()
+  if (!optionName) return ''
+
+  const suboptionName = String(selection.suboptionName || selection.sub || '').trim()
+  return suboptionName ? `${optionName} (${suboptionName})` : optionName
+}
+
 function SummaryItemImage({ image, name }) {
   const [imageError, setImageError] = useState(false)
   const showPlaceholder = !image || imageError
@@ -209,6 +220,12 @@ export default function CartSummary({
                             ? item.selectedOptions.filter(Boolean).join(' · ')
                             : ''
                           const instructions = item.instructions?.trim()
+                          const displayOptionSummary = Array.isArray(item.selectedOptions)
+                            ? item.selectedOptions
+                                .map(formatSelectedOptionLabel)
+                                .filter(Boolean)
+                                .join(' · ')
+                            : optionSummary
 
                           return (
                             <>
@@ -237,7 +254,7 @@ export default function CartSummary({
                         >
                           {formatLL(item.qty > 1 ? (item.price || 0) * item.qty : item.price || 0)}
                         </Typography>
-                              {optionSummary && (
+                              {displayOptionSummary && (
                                 <Typography
                                   variant="body2"
                                   sx={{
@@ -249,7 +266,7 @@ export default function CartSummary({
                                     mt: 0.45,
                                   }}
                                 >
-                                  {optionSummary}
+                                  {displayOptionSummary}
                                 </Typography>
                               )}
                               {instructions && (
