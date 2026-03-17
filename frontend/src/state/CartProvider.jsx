@@ -3,6 +3,14 @@ import { CartContext } from './CartContext'
 import { cartReducer, initialCartState } from './cartReducer'
 import { fetchCart, addToCartApi, updateCartItemApi, removeFromCartApi, clearCartApi } from '../API/cartApi'
 
+function normalizeCartPayload(data) {
+  return {
+    cartId: data?.cartId ?? null,
+    count: data?.count ?? 0,
+    items: Array.isArray(data?.items) ? data.items : [],
+  }
+}
+
 export function CartProvider({ children }) {
   const [state, dispatch] = useReducer(cartReducer, initialCartState)
 
@@ -10,7 +18,7 @@ export function CartProvider({ children }) {
     dispatch({ type: 'CART_LOADING' })
     try {
       const data = await fetchCart()
-      dispatch({ type: 'CART_LOADED', payload: data })
+      dispatch({ type: 'CART_LOADED', payload: normalizeCartPayload(data) })
     } catch (err) {
       dispatch({ type: 'CART_ERROR', payload: err.message })
     }
@@ -23,7 +31,7 @@ export function CartProvider({ children }) {
   const addToCart = useCallback(async (item) => {
     try {
       const data = await addToCartApi(item)
-      dispatch({ type: 'CART_LOADED', payload: data })
+      dispatch({ type: 'CART_LOADED', payload: normalizeCartPayload(data) })
     } catch (err) {
       dispatch({ type: 'CART_ERROR', payload: err.message })
     }
@@ -32,7 +40,7 @@ export function CartProvider({ children }) {
   const updateQty = useCallback(async (lineId, qty) => {
     try {
       const data = await updateCartItemApi(lineId, qty)
-      dispatch({ type: 'CART_LOADED', payload: data })
+      dispatch({ type: 'CART_LOADED', payload: normalizeCartPayload(data) })
     } catch (err) {
       dispatch({ type: 'CART_ERROR', payload: err.message })
     }
@@ -54,10 +62,14 @@ export function CartProvider({ children }) {
   const clearCart = useCallback(async () => {
     try {
       await clearCartApi()
-      dispatch({ type: 'CART_LOADED', payload: { items: [], count: 0 } })
+      dispatch({ type: 'CART_LOADED', payload: normalizeCartPayload({ cartId: null, items: [], count: 0 }) })
     } catch (err) {
       dispatch({ type: 'CART_ERROR', payload: err.message })
     }
+  }, [])
+
+  const resetCart = useCallback(() => {
+    dispatch({ type: 'CART_RESET' })
   }, [])
 
   const value = useMemo(
@@ -68,9 +80,10 @@ export function CartProvider({ children }) {
       updateQty,
       removeFromCart,
       clearCart,
+      resetCart,
       refreshCart: loadCart
     }),
-    [state, addToCart, updateQty, removeFromCart, clearCart, loadCart]
+    [state, addToCart, updateQty, removeFromCart, clearCart, resetCart, loadCart]
   )
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>

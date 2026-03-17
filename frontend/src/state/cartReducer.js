@@ -19,6 +19,8 @@ export function cartReducer(state, action) {
         count: action.payload.count || 0,
         items: action.payload.items || []
       };
+    case "CART_RESET":
+      return { ...initialCartState };
     case "CART_ERROR":
       return { ...state, loading: false, error: action.payload || "Cart error" };
     case "REMOVE_ITEM":

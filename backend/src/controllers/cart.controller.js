@@ -15,8 +15,24 @@ function makeCartId() {
   return crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex");
 }
 
-async function getOrCreateCart(req) {
-  let cartId = req.get("x-cart-id") || req.query.cartId;
+function getCartIdFromRequest(req) {
+  return req.get("x-cart-id") || req.query.cartId || null;
+}
+
+function emptyCartResponse() {
+  return { cartId: null, count: 0, items: [] };
+}
+
+async function getExistingCart(req) {
+  const cartId = getCartIdFromRequest(req);
+  if (!cartId) return { cart: null, cartId: null };
+
+  const cart = await Cart.findOne({ cartId });
+  return { cart, cartId: cart ? cartId : null };
+}
+
+async function getOrCreateWritableCart(req) {
+  let cartId = getCartIdFromRequest(req);
 
   if (!cartId) {
     cartId = makeCartId();
@@ -93,7 +109,11 @@ async function buildCartResponse(cart) {
 
 export async function getCart(req, res) {
   try {
-    const { cart, cartId } = await getOrCreateCart(req);
+    const { cart, cartId } = await getExistingCart(req);
+    if (!cart) {
+      return res.json(emptyCartResponse());
+    }
+
     const payload = await buildCartResponse(cart);
     res.set("x-cart-id", cartId);
     res.json(payload);
@@ -104,7 +124,7 @@ export async function getCart(req, res) {
 
 export async function addToCart(req, res) {
   try {
-    const { cart, cartId } = await getOrCreateCart(req);
+    const { cart, cartId } = await getOrCreateWritableCart(req);
 
     const { menuItemId, qty = 1, selectedOptions = [], instructions = "" } = req.body || {};
     const nQty = Number(qty);
@@ -144,7 +164,9 @@ export async function addToCart(req, res) {
 }
 export async function updateCartItem(req, res) {
   try {
-    const { cart, cartId } = await getOrCreateCart(req);
+    const { cart, cartId } = await getExistingCart(req);
+    if (!cart) return res.status(404).json({ error: "Cart not found" });
+
     const { lineId } = req.params;
     const { qty } = req.body;
 
@@ -153,6 +175,11 @@ export async function updateCartItem(req, res) {
 
     if (qty <= 0) cart.items.pull(lineId);
     else item.qty = qty;
+
+    if (cart.items.length === 0) {
+      await Cart.findOneAndDelete({ cartId });
+      return res.json(emptyCartResponse());
+    }
 
     await cart.save();
     const payload = await buildCartResponse(cart);
@@ -165,11 +192,21 @@ export async function updateCartItem(req, res) {
 
 export async function removeFromCart(req, res) {
   try {
-    const { cart, cartId } = await getOrCreateCart(req);
+    const { cart, cartId } = await getExistingCart(req);
+    if (!cart) {
+      return res.json(emptyCartResponse());
+    }
+
     const { lineId } = req.params;
 
     // Use pull to remove item by its subdocument _id
     cart.items.pull(lineId);
+
+    if (cart.items.length === 0) {
+      await Cart.findOneAndDelete({ cartId });
+      return res.json(emptyCartResponse());
+    }
+
     await cart.save();
 
     const payload = await buildCartResponse(cart);
@@ -183,13 +220,13 @@ export async function removeFromCart(req, res) {
 
 export async function clearCart(req, res) {
   try {
-    const { cart, cartId } = await getOrCreateCart(req);
-    cart.items = [];
-    await cart.save();
+    const { cart, cartId } = await getExistingCart(req);
+    if (!cart) {
+      return res.json(emptyCartResponse());
+    }
 
-    const payload = await buildCartResponse(cart);
-    res.set("x-cart-id", cartId);
-    res.json(payload);
+    await Cart.findOneAndDelete({ cartId });
+    res.json(emptyCartResponse());
   } catch (err) {
     res.status(500).json({ error: "Failed to clear cart" });
   }

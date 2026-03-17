@@ -11,8 +11,9 @@ export default function Cart() {
   const { brand } = theme
   const navigate = useNavigate()
   const { state } = useCart()
-  const { items: cartItems, loading } = state
-  const showCartSummary = loading || cartItems.length > 0
+  const { cartId, items: cartItems, loading } = state
+  const hasItems = cartItems.length > 0
+  const showEmptyState = !loading && !hasItems && cartId === null
 
   return (
     <Container
@@ -41,7 +42,7 @@ export default function Cart() {
         Your Cart
       </Typography>
 
-      {!showCartSummary ? (
+      {showEmptyState ? (
         <Stack spacing={2} alignItems="center" textAlign="center" sx={{ py: 8 }}>
           <LocalGroceryStoreOutlinedIcon sx={{ fontSize: 50, color: brand.primary, opacity: 0.3 }} />
           <Typography variant="h6" fontWeight={800} sx={{ color: brand.textPrimary }}>

@@ -9,6 +9,10 @@ const http = axios.create({
   headers: { "Content-Type": "application/json" }
 });
 
+function isCartRequest(url) {
+  return typeof url === "string" && url.includes("/cart");
+}
+
 // Request interceptor for cart session management
 http.interceptors.request.use((config) => {
   const cartId = localStorage.getItem("cartId");
@@ -27,8 +31,19 @@ http.interceptors.request.use((config) => {
 // Response interceptor for cart ID capturing and error handling
 http.interceptors.response.use(
   (res) => {
-    const cartId = res.headers?.["x-cart-id"];
-    if (cartId) localStorage.setItem("cartId", cartId);
+    const cartIdFromHeader = res.headers?.["x-cart-id"];
+    const cartIdFromBody = Object.prototype.hasOwnProperty.call(res.data || {}, "cartId")
+      ? res.data.cartId
+      : undefined;
+
+    if (cartIdFromHeader) {
+      localStorage.setItem("cartId", cartIdFromHeader);
+    } else if (isCartRequest(res.config?.url) && cartIdFromBody === null) {
+      localStorage.removeItem("cartId");
+    } else if (isCartRequest(res.config?.url) && cartIdFromBody) {
+      localStorage.setItem("cartId", cartIdFromBody);
+    }
+
     return res;
   },
   (error) => {

@@ -33,7 +33,7 @@ const centeredWidth = (maxWidth) => ({
 export default function Checkout() {
   const theme = useTheme()
   const navigate = useNavigate()
-  const { state, clearCart } = useCart()
+  const { state, resetCart } = useCart()
   const { items } = state
   const [orderTypeError, setOrderTypeError] = useState(false)
 
@@ -117,7 +117,7 @@ export default function Checkout() {
       const response = await http.post('/orders', payload)
       if (response.data.orderNumber) {
         localStorage.removeItem('cartId')
-        await clearCart()
+        resetCart()
         navigate('/success', { state: { orderNumber: response.data.orderNumber } })
       }
     } catch (err) {
