@@ -78,6 +78,7 @@ export default function CartSummary({
   const { brand } = theme
   const receiptId = useId().replace(/:/g, '')
   const { updateQty, removeFromCart } = useCart()
+  const [pendingRemove, setPendingRemove] = useState(() => new Set())
   const { subtotal, tax, total } = calculateOrderTotals(items)
 
   const isReceipt = mode === 'receipt'
@@ -85,6 +86,24 @@ export default function CartSummary({
   const displayTotal = isReceipt ? total : subtotal
   const totalLabel = isReceipt ? 'TOTAL' : 'SUBTOTAL'
   const showSummaryBreakdown = Boolean(itemsContent) || items.length > 0
+
+  const handleRemove = (lineId) => {
+    if (pendingRemove.has(lineId)) return
+
+    setPendingRemove((prev) => {
+      const next = new Set(prev)
+      next.add(lineId)
+      return next
+    })
+
+    Promise.resolve(removeFromCart(lineId)).finally(() => {
+      setPendingRemove((prev) => {
+        const next = new Set(prev)
+        next.delete(lineId)
+        return next
+      })
+    })
+  }
 
   return (
     <Card
@@ -341,7 +360,8 @@ export default function CartSummary({
                             </IconButton>
                           </Stack>
                           <IconButton
-                            onClick={() => removeFromCart(item.lineId)}
+                            onClick={() => handleRemove(item.lineId)}
+                            disabled={pendingRemove.has(item.lineId)}
                             sx={{ color: '#cf2e2e', width: { xs: 24, sm: 28 }, height: { xs: 24, sm: 28 } }}
                             size="small"
                           >

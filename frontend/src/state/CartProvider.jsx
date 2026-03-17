@@ -43,13 +43,11 @@ export function CartProvider({ children }) {
     dispatch({ type: 'REMOVE_ITEM', payload: lineId })
 
     try {
-      const data = await removeFromCartApi(lineId)
-      // Sync state with backend response
-      dispatch({ type: 'CART_LOADED', payload: data })
+      await removeFromCartApi(lineId)
     } catch (err) {
       dispatch({ type: 'CART_ERROR', payload: err.message })
       // On error, reload full cart to restore state
-      loadCart()
+      await loadCart()
     }
   }, [loadCart])
 
