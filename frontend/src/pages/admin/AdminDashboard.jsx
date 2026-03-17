@@ -1,32 +1,37 @@
-import { Link } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import { styled } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
+import Button from '@mui/material/Button'
 
 const PageWrap = styled(Box)(() => ({
   display: 'flex',
   flexDirection: 'column',
-  gap: 20,
-  maxWidth: 600,
+  gap: 24,
+  maxWidth: 700,
 }))
 
 const CardGrid = styled(Box)(() => ({
   display: 'grid',
-  gap: 12,
-  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+  gap: 16,
+  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
 }))
 
 const NavCard = styled(Link)(({ theme }) => ({
-  display: 'block',
-  padding: '16px 20px',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+  padding: '20px 24px',
   borderRadius: 14,
   border: `1.5px solid ${theme.brand.border}`,
   background: '#fff',
   color: theme.brand.primary,
   fontFamily: theme.brand.fontBase,
   fontWeight: 700,
-  fontSize: 14,
+  fontSize: 15,
   textDecoration: 'none',
+  minHeight: 110,
+  justifyContent: 'center',
   transition: 'border-color 0.2s, box-shadow 0.2s, background 0.2s',
   '&:hover': {
     borderColor: theme.brand.primary,
@@ -36,21 +41,46 @@ const NavCard = styled(Link)(({ theme }) => ({
   },
 }))
 
+const CardSubtext = styled(Typography)(({ theme }) => ({
+  fontSize: 13,
+  fontWeight: 400,
+  color: theme.palette.text.secondary,
+  fontFamily: theme.brand.fontBase,
+}))
+
 export default function AdminDashboard() {
+  const navigate = useNavigate()
+
+  const handleLogout = () => {
+    localStorage.removeItem("adminToken")
+    navigate("/admin/login")
+  }
+
   return (
     <PageWrap>
-      <Box>
-        <Typography variant="h5" sx={{ fontWeight: 700, mb: 0.5 }}>
-          Admin Dashboard
-        </Typography>
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          Manage menu items, upload images, and manage categories.
-        </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 1.5 }}>
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 700, mb: 0.5 }}>
+            Admin Dashboard
+          </Typography>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            Manage menu items, upload images, and manage categories.
+          </Typography>
+        </Box>
+        <Button variant="outlined" color="error" size="small" onClick={handleLogout}>
+          Logout
+        </Button>
       </Box>
 
       <CardGrid>
-        <NavCard to="/admin/items">Manage Menu Items →</NavCard>
-        <NavCard to="/admin/categories">Manage Categories →</NavCard>
+        <NavCard to="/admin/items">
+          Manage Menu Items →
+          <CardSubtext>Add, update, and organize products shown to customers.</CardSubtext>
+        </NavCard>
+        <NavCard to="/admin/categories">
+          Manage Categories →
+          <CardSubtext>Create and edit the categories that group your menu.</CardSubtext>
+        </NavCard>
       </CardGrid>
     </PageWrap>
   )
