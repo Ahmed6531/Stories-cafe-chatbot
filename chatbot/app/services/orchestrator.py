@@ -32,6 +32,12 @@ def extract_item_query(normalized_message: str) -> tuple[str, int]:
     Extracts item name and quantity from normalized message.
     Returns (item_name, quantity)
     """
+    word_to_number = {
+        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+        "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+        "eleven": 11, "twelve": 12, "dozen": 12
+    }
+    
     filler_words = {"add", "a", "an", "the", "i", "want", "get", "order", "please", "me"}
     tokens = normalized_message.split()
     quantity = 1
@@ -40,6 +46,8 @@ def extract_item_query(normalized_message: str) -> tuple[str, int]:
     for token in tokens:
         if token.isdigit():
             quantity = int(token)
+        elif token in word_to_number:
+            quantity = word_to_number[token]
         elif token not in filler_words:
             item_tokens.append(token)
 

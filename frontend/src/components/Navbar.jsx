@@ -233,9 +233,11 @@ const CHAT_STORAGE_KEY = 'chatMessages'
 const CHAT_STORAGE_TS_KEY = 'chatMessagesSavedAt'
 const CHAT_TTL_MS = 24 * 60 * 60 * 1000
 
-function Bubble({ msg, prevTime }) {
+function Bubble({ msg, prevTime, onSuggestionClick }) {
   const isUser = msg.role === 'user'
   const showTime = msg.time !== prevTime
+  const hasSuggestions = msg.suggestions && msg.suggestions.length > 0
+  
   return (
     <div className={`msg-row ${isUser ? 'msg-row-user' : 'msg-row-bot'}`}>
       <div className={`msg-bubble ${isUser ? 'msg-bubble-user' : 'msg-bubble-bot'}`}>
@@ -245,6 +247,37 @@ function Bubble({ msg, prevTime }) {
             {i < arr.length - 1 && <br />}
           </span>
         ))}
+        {hasSuggestions && (
+          <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {msg.suggestions.map((s, idx) => (
+              <button
+                key={idx}
+                onClick={() => onSuggestionClick(`add ${s.item_name}`)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '16px',
+                  border: '1px solid #e5e7eb',
+                  background: '#f3f4f6',
+                  color: '#374151',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = '#e5e7eb'
+                  e.target.style.borderColor = '#d1d5db'
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = '#f3f4f6'
+                  e.target.style.borderColor = '#e5e7eb'
+                }}
+              >
+                {s.item_name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       {showTime && <span className="msg-time">{msg.time}</span>}
     </div>
@@ -465,6 +498,7 @@ export default function Navbar() {
         role: 'bot',
         text: data.reply,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        suggestions: data.suggestions || [],
       })
     } catch (err) {
       appendMessage({
@@ -632,7 +666,12 @@ export default function Navbar() {
                   {(hasConversation || micMode === 'thinking') && (
                     <div ref={msgsRef} className="chat-msgs" role="log" aria-live="polite" aria-relevant="additions text">
                       {messages.map((msg, i) => (
-                        <Bubble key={msg.id} msg={msg} prevTime={i > 0 ? messages[i - 1].time : null} />
+                        <Bubble 
+                          key={msg.id} 
+                          msg={msg} 
+                          prevTime={i > 0 ? messages[i - 1].time : null}
+                          onSuggestionClick={sendMessage}
+                        />
                       ))}
                       {typing && (
                         <div className="msg-row msg-row-bot">
