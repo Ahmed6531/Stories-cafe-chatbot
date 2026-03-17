@@ -2,7 +2,9 @@ import mongoose from "mongoose";
 
 const CartItemSchema = new mongoose.Schema(
   {
-    menuItemId: { type: mongoose.Schema.Types.ObjectId, ref: "MenuItem", required: true },
+    // menuItemId can be either the numeric `id` from MenuItem or the MongoDB _id.
+    // Using Mixed allows storing both without casting failures.
+    menuItemId: { type: mongoose.Schema.Types.Mixed, required: true },
     qty: { type: Number, required: true, min: 1 },
     selectedOptions: { type: [String], default: [] },
     instructions: { type: String, default: "" }

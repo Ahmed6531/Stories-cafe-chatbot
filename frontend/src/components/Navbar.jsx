@@ -2,12 +2,24 @@ import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useCart } from '../state/useCart'
 import { styled, keyframes, useTheme } from '@mui/material/styles'
+import axios from 'axios'
 import Box from '@mui/material/Box'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
 import Tooltip from '@mui/material/Tooltip'
 import VoiceInput from './VoiceInput'
 import '../styles/index.css'
+
+const CHATBOT_URL = import.meta.env.VITE_CHATBOT_URL || 'http://localhost:8000'
+
+function getChatSessionId() {
+  let id = sessionStorage.getItem('chatSessionId')
+  if (!id) {
+    id = crypto.randomUUID()
+    sessionStorage.setItem('chatSessionId', id)
+  }
+  return id
+}
 
 const Topbar = styled('header')(({ theme }) => ({
   padding: '0 20px',
@@ -221,9 +233,11 @@ const CHAT_STORAGE_KEY = 'chatMessages'
 const CHAT_STORAGE_TS_KEY = 'chatMessagesSavedAt'
 const CHAT_TTL_MS = 24 * 60 * 60 * 1000
 
-function Bubble({ msg, prevTime }) {
+function Bubble({ msg, prevTime, onSuggestionClick }) {
   const isUser = msg.role === 'user'
   const showTime = msg.time !== prevTime
+  const hasSuggestions = msg.suggestions && msg.suggestions.length > 0
+  
   return (
     <div className={`msg-row ${isUser ? 'msg-row-user' : 'msg-row-bot'}`}>
       <div className={`msg-bubble ${isUser ? 'msg-bubble-user' : 'msg-bubble-bot'}`}>
@@ -233,6 +247,37 @@ function Bubble({ msg, prevTime }) {
             {i < arr.length - 1 && <br />}
           </span>
         ))}
+        {hasSuggestions && (
+          <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {msg.suggestions.map((s, idx) => (
+              <button
+                key={idx}
+                onClick={() => onSuggestionClick(`add ${s.item_name}`)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '16px',
+                  border: '1px solid #e5e7eb',
+                  background: '#f3f4f6',
+                  color: '#374151',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = '#e5e7eb'
+                  e.target.style.borderColor = '#d1d5db'
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = '#f3f4f6'
+                  e.target.style.borderColor = '#e5e7eb'
+                }}
+              >
+                {s.item_name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       {showTime && <span className="msg-time">{msg.time}</span>}
     </div>
@@ -284,7 +329,7 @@ export default function Navbar() {
   const msgsRef = useRef(null)
   const pendingReplyTimeoutRef = useRef(null)
 
-  const { cartCount } = useCart()
+  const { cartCount, refreshCart } = useCart()
   const location = useLocation()
   const navigate = useNavigate()
   const hasConversation = messages.length > 0
@@ -427,7 +472,7 @@ export default function Navbar() {
     setMessages((m) => [...m, message])
   }
 
-  const sendMessage = (text) => {
+  const sendMessage = async (text) => {
     const trimmed = text.trim()
     if (!trimmed) return
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -438,18 +483,34 @@ export default function Navbar() {
     setMicMode('thinking')
     setTyping(true)
 
-    if (pendingReplyTimeoutRef.current) window.clearTimeout(pendingReplyTimeoutRef.current)
-    pendingReplyTimeoutRef.current = window.setTimeout(() => {
-      setTyping(false)
+    try {
+      const cartId = localStorage.getItem('cartId') || null
+      const response = await axios.post(`${CHATBOT_URL}/chat/message`, {
+        session_id: getChatSessionId(),
+        message: trimmed,
+        cart_id: cartId,
+      })
+      const data = response.data
+      if (data.cart_id) localStorage.setItem('cartId', data.cart_id)
+      if (data.cart_updated) refreshCart()
       appendMessage({
         id: Date.now() + 1,
         role: 'bot',
-        text: "Got it! I'll have that ready for you shortly. Anything else I can add?",
+        text: data.reply,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        suggestions: data.suggestions || [],
+      })
+    } catch (err) {
+      appendMessage({
+        id: Date.now() + 1,
+        role: 'bot',
+        text: "Sorry, I couldn't reach the assistant. Please try again.",
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       })
+    } finally {
+      setTyping(false)
       setMicMode('idle')
-      pendingReplyTimeoutRef.current = null
-    }, 1400)
+    }
   }
 
   const handleChipClick = (text) => sendMessage(text)
@@ -605,7 +666,12 @@ export default function Navbar() {
                   {(hasConversation || micMode === 'thinking') && (
                     <div ref={msgsRef} className="chat-msgs" role="log" aria-live="polite" aria-relevant="additions text">
                       {messages.map((msg, i) => (
-                        <Bubble key={msg.id} msg={msg} prevTime={i > 0 ? messages[i - 1].time : null} />
+                        <Bubble 
+                          key={msg.id} 
+                          msg={msg} 
+                          prevTime={i > 0 ? messages[i - 1].time : null}
+                          onSuggestionClick={sendMessage}
+                        />
                       ))}
                       {typing && (
                         <div className="msg-row msg-row-bot">

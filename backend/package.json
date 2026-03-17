@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "seed:menu": "node src/seed/seedMenu.js"
+    "seed:menu": "node src/seed/seedMenu.js",
+    "test": "jest"
   },
   "keywords": [],
   "author": "",
@@ -25,6 +26,15 @@
     "resend": "^6.9.2"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.0",
+    "babel-jest": "^30.2.0",
+    "jest": "^30.2.0",
     "nodemon": "^3.1.11"
+  },
+  "jest": {
+    "transform": {
+      "^.+\\.js$": "babel-jest"
+    }
   }
 }

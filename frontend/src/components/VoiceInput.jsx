@@ -1,11 +1,11 @@
 import { useEffect, useRef } from "react";
-import http from "../API/http";
+import axios from "axios";
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 // THRESHOLD : raise if background noise falsely triggers; lower for quiet speakers (range 5–20)
 // DURATION  : raise if pauses mid-order cut speech early; 1400ms is snappy for short orders
 // MIN_MS    : clips shorter than this are noise/coughs and get dropped
-const SILENCE_THRESHOLD = 6;
+const SILENCE_THRESHOLD = 12;
 const SILENCE_DURATION  = 2200; // ms
 const MIN_SPEECH_MS     = 350;  // ms
 const SAMPLE_RATE       = 16000; // Whisper is trained on 16 kHz mono
@@ -47,11 +47,12 @@ function pickMimeType() {
 }
 
 export default function VoiceInput({ active, onTranscript, onListeningChange, onProcessingChange, onError }) {
-  const stopped   = useRef(false);
-  const streamRef = useRef(null);
-  const ctxRef    = useRef(null);
-  const recRef    = useRef(null);
-  const rafRef    = useRef(null);
+  const stopped    = useRef(false);
+  const streamRef  = useRef(null);
+  const ctxRef     = useRef(null);
+  const recRef     = useRef(null);
+  const rafRef     = useRef(null);
+  const maxTimerRef = useRef(null);
 
   useEffect(() => {
     if (active) {
@@ -127,6 +128,15 @@ export default function VoiceInput({ active, onTranscript, onListeningChange, on
       rec.start();
       onListeningChange?.(true);
 
+      // Hard cap — mic always stops after 15 s regardless of silence detection
+      maxTimerRef.current = setTimeout(() => {
+        if (rec.state === 'recording') {
+          onListeningChange?.(false);
+          onProcessingChange?.(true);
+          rec.stop();
+        }
+      }, 15000);
+
       // Silence-detection loop — RMS deviation from 128 (waveform midpoint)
       const buf = new Uint8Array(analyser.fftSize);
       let hasSpeech    = false;
@@ -146,6 +156,7 @@ export default function VoiceInput({ active, onTranscript, onListeningChange, on
           if (!silenceStart) {
             silenceStart = Date.now();
           } else if (Date.now() - silenceStart > SILENCE_DURATION) {
+            if (maxTimerRef.current) clearTimeout(maxTimerRef.current);
             onListeningChange?.(false);
             onProcessingChange?.(true);
             rec.stop(); // triggers onstop → WAV encode → transcribe
@@ -169,22 +180,25 @@ export default function VoiceInput({ active, onTranscript, onListeningChange, on
       const formData = new FormData();
       formData.append('audio', blob, `speech.${ext}`);
 
-      const response = await http.post('/api/stt/transcribe', formData, {
+      // Use chatbot endpoint for transcription
+      const chatbotUrl = import.meta.env.VITE_CHATBOT_URL || "http://localhost:8000";
+      const response = await axios.post(`${chatbotUrl}/voice/transcribe`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 30000,
       });
 
-      const text = (response.data?.text || '').trim();
+      const text = (response.data?.transcript || '').trim();
       if (!text) { onError?.('Could not transcribe. Please try again.'); return; }
       onTranscript?.(text);
     } catch (err) {
-      onError?.(err?.response?.data?.error || err?.message || 'Transcription failed');
+      onError?.(err?.response?.data?.detail || err?.message || 'Transcription failed');
     } finally {
       onProcessingChange?.(false);
     }
   }
 
   function cleanup() {
+    if (maxTimerRef.current) clearTimeout(maxTimerRef.current);
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     if (recRef.current?.state === 'recording') recRef.current.stop();
     streamRef.current?.getTracks().forEach((t) => t.stop());

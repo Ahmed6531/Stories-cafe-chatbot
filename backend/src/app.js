@@ -7,7 +7,6 @@ import menuRoutes from "./routes/menu.routes.js";
 import ordersRoutes from "./routes/orders.routes.js";
 import cartRoutes from "./routes/cart.routes.js";
 import authRoutes from "./routes/auth.routes.js";
-import transcribeRoute from "./routes/transcribe.js";
 import 'dotenv/config';
 
 
@@ -31,7 +30,6 @@ export function createApp() {
   app.use("/orders", ordersRoutes);
   app.use("/cart", cartRoutes);
   app.use("/auth", authRoutes);
-  app.use("/api/stt", transcribeRoute);
 
 
   app.get("/api/protected", authenticate, (req, res) => {
