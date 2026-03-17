@@ -11,7 +11,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
-        "https://stories-cafe-chatbot-5nksmz3gx-ahmed6531s-projects.vercel.app",
+        "CORS_ORIGIN=https://stories-cafe-chatbot-a.vercel.app",
     ],
     allow_methods=["*"],
     allow_headers=["*"],
