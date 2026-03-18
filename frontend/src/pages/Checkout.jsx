@@ -12,7 +12,7 @@ import {
   useTheme,
 } from '@mui/material'
 import { useCart } from '../state/useCart'
-import http from '../API/http'
+import { submitOrder } from '../API/ordersApi'
 import CartSummary from '../components/CartSummary'
 
 const formGroupSx = {
@@ -114,7 +114,7 @@ export default function Checkout() {
     }
 
     try {
-      const response = await http.post('/orders', payload)
+      const response = await submitOrder(payload)
       if (response.data.orderNumber) {
         localStorage.removeItem('cartId')
         resetCart()

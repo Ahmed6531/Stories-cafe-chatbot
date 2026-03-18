@@ -73,13 +73,13 @@ async function buildCartResponse(cart) {
   const items = cart.items.map((line) => {
     const menuItem = byNumericId.get(Number(line.menuItemId));
 
-    let price = menuItem ? menuItem.basePrice : 0;
-    const resolvedVariantGroups = menuItem
-      ? resolveVariantGroupsForMenuItem(menuItem, variantGroupsById)
-      : [];
+    if (!menuItem) return null; // ghost item — menu item no longer exists
+
+    let price = menuItem.basePrice;
+    const resolvedVariantGroups = resolveVariantGroupsForMenuItem(menuItem, variantGroupsById);
 
     // Support legacy "options" if they exist
-    if (menuItem && menuItem.options && resolvedVariantGroups.length === 0) {
+    if (menuItem.options && resolvedVariantGroups.length === 0) {
       line.selectedOptions.forEach((selection) => {
         const optionName = selection?.optionName || selection;
         const opt = menuItem.options.find((entry) => entry.label === optionName);
@@ -92,15 +92,15 @@ async function buildCartResponse(cart) {
     return {
       lineId: line._id,
       menuItemId: line.menuItemId,
-      name: menuItem ? menuItem.name : "Unknown item",
-      image: menuItem ? menuItem.image : undefined,
+      name: menuItem.name,
+      image: menuItem.image,
       qty: line.qty,
       price: price,
       selectedOptions: sortSelectedOptionsForDisplay(line.selectedOptions, resolvedVariantGroups),
       instructions: line.instructions || "",
-      isAvailable: menuItem ? !!menuItem.isAvailable : false
+      isAvailable: !!menuItem.isAvailable,
     };
-  });
+  }).filter(Boolean);
 
   const count = items.reduce((sum, x) => sum + (x.qty || 0), 0);
 
@@ -115,6 +115,22 @@ export async function getCart(req, res) {
     }
 
     const payload = await buildCartResponse(cart);
+
+    // Prune ghost items (menu items that no longer exist) from the DB
+    if (payload.items.length < cart.items.length) {
+      const validLineIds = new Set(payload.items.map((i) => String(i.lineId)));
+      const ghostIds = cart.items
+        .filter((l) => !validLineIds.has(String(l._id)))
+        .map((l) => l._id);
+      ghostIds.forEach((id) => cart.items.pull(id));
+
+      if (cart.items.length === 0) {
+        await Cart.findOneAndDelete({ cartId });
+        return res.json(emptyCartResponse());
+      }
+      await cart.save();
+    }
+
     res.set("x-cart-id", cartId);
     res.json(payload);
   } catch {
