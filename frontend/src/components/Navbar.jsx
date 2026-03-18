@@ -486,6 +486,8 @@ export default function Navbar() {
     const trimmed = text.trim()
     if (!trimmed) return
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    const session_id = getChatSessionId()
+    const cart_id = localStorage.getItem('cartId') || null
 
     setVoiceActive(false)
     appendMessage({ id: Date.now(), role: 'user', text: trimmed, time: now })
@@ -494,13 +496,33 @@ export default function Navbar() {
     setTyping(true)
 
     try {
-      const cartId = localStorage.getItem('cartId') || null
-      const response = await axios.post(`${CHATBOT_URL}/chat/message`, {
-        session_id: getChatSessionId(),
+      console.log("[CHAT REQUEST]", {
+        session_id,
+        cart_id,
         message: trimmed,
-        cart_id: cartId,
+        timestamp: Date.now(),
+      })
+
+      const response = await axios.post(`${CHATBOT_URL}/chat/message`, {
+        session_id,
+        message: trimmed,
+        cart_id,
       })
       const data = response.data
+
+      console.log("[CHAT RESPONSE]", {
+        status: response.status,
+        session_id: data.session_id,
+        cart_updated: data.cart_updated,
+        returned_cart_id: data.cart_id,
+        intent: data.intent,
+        suggestions: data.suggestions?.length,
+      })
+
+      if (cart_id !== data.cart_id) {
+        console.warn("[CHAT CART SYNC]", { previous: cart_id, new: data.cart_id })
+      }
+
       if (data.cart_id) localStorage.setItem('cartId', data.cart_id)
       if (data.cart_updated) refreshCart()
       appendMessage({

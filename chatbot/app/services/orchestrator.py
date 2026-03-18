@@ -1,4 +1,6 @@
 # orchestrator.py
+import logging
+
 from app.schemas.chat import ChatMessageResponse
 from app.utils.normalize import normalize_user_message
 from app.services.tools import (
@@ -14,6 +16,7 @@ from app.services.http_client import ExpressAPIError
 # Default options for smart defaults (SCRUM-91)
 DEFAULT_SIZE = "Medium"
 DEFAULT_MILK = "Regular"
+logger = logging.getLogger(__name__)
 
 def detect_intent(normalized_message: str) -> str:
     """Detects the intent of the user message"""
@@ -105,6 +108,11 @@ async def process_chat_message(
 
     normalized_message = normalize_user_message(message)
     intent = detect_intent(normalized_message)
+    logger.info({
+        "stage": "intent_detection",
+        "normalized_message": normalized_message,
+        "intent": intent,
+    })
 
     try:
         if intent == "view_cart":
@@ -129,8 +137,21 @@ async def process_chat_message(
             menu_items = await fetch_menu_items()
             item_query, quantity = extract_item_query(normalized_message)
             matched_item = await find_menu_item_by_name(menu_items, item_query)
+            item_id = matched_item.get("id") if matched_item else None
+            confidence = 1.0 if matched_item else 0.0
+
+            logger.info({
+                "stage": "menu_lookup",
+                "item_query": item_query,
+                "matched_item_id": item_id,
+                "confidence": confidence,
+            })
 
             if not matched_item:
+                logger.warning({
+                    "stage": "menu_lookup_failed",
+                    "query": item_query,
+                })
                 return ChatMessageResponse(
                     session_id=session_id,
                     status="ok",
@@ -147,7 +168,7 @@ async def process_chat_message(
                     },
                 )
 
-            menu_item_id = matched_item.get("id")
+            menu_item_id = item_id
             if menu_item_id is None:
                 return ChatMessageResponse(
                     session_id=session_id,
@@ -164,6 +185,13 @@ async def process_chat_message(
                     },
                 )
 
+            logger.info({
+                "stage": "cart_operation",
+                "operation": "add_item",
+                "menu_item_id": menu_item_id,
+                "qty": quantity,
+                "session_id": session_id,
+            })
             cart_result = await add_item_to_cart(
                 menu_item_id=menu_item_id,
                 qty=quantity,

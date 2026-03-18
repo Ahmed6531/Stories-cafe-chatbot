@@ -17,6 +17,12 @@ export async function createOrder(req, res) {
   const cartId = req.get("x-cart-id") || req.body.cartId;
   const userId = req.user?.id || null;
 
+  console.log("[ORDER CREATE]", {
+    orderType,
+    itemCount: Array.isArray(items) ? items.length : 0,
+    cartId,
+  });
+
   if (!orderType || !["pickup", "dine_in", "delivery"].includes(orderType)) {
     return res.status(400).json({ error: "Invalid orderType" });
   }
@@ -85,6 +91,11 @@ export async function createOrder(req, res) {
 
   const tax = Math.round(subtotal * ORDER_TAX_RATE);
   const total = subtotal + tax;
+  console.log("[ORDER TOTALS]", {
+    subtotal,
+    tax,
+    total,
+  });
 
   let orderNumber = generateOrderNumber();
   for (let i = 0; i < 3; i++) {
@@ -109,7 +120,11 @@ export async function createOrder(req, res) {
   });
 
   if (cartId) {
-    await Cart.findOneAndDelete({ cartId });
+    const deletedCart = await Cart.findOneAndDelete({ cartId });
+    console.log("[CART DELETE]", {
+      cartId,
+      success: !!deletedCart,
+    });
   }
 
   res.status(201).json({

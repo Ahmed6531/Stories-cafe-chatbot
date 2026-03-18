@@ -143,6 +143,12 @@ export async function addToCart(req, res) {
     const { cart, cartId } = await getOrCreateWritableCart(req);
 
     const { menuItemId, qty = 1, selectedOptions = [], instructions = "" } = req.body || {};
+    console.log("[CART ADD REQUEST]", {
+      cartId,
+      menuItemId,
+      qty,
+      rawOptions: req.body?.selectedOptions,
+    });
     const nQty = Number(qty);
     const normalizedMenuItemId = Number(menuItemId);
 
@@ -157,6 +163,7 @@ export async function addToCart(req, res) {
     }
 
     const opts = sanitizeSelectedOptions(selectedOptions);
+    console.log("[CART SANITIZED OPTIONS]", opts);
     const inst = (instructions || "").trim();
 
     const existing = cart.items.find(
@@ -164,6 +171,11 @@ export async function addToCart(req, res) {
         sameSelectedOptions(l.selectedOptions, opts) &&
         (l.instructions || "").trim() === inst
     );
+    const shouldMerge = Boolean(existing);
+    console.log("[CART LINE DECISION]", {
+      merge: shouldMerge,
+      existingLineId: existing?._id ?? null,
+    });
 
     if (existing) existing.qty += nQty;
     else cart.items.push({ menuItemId: normalizedMenuItemId, qty: nQty, selectedOptions: opts, instructions: inst });
@@ -171,6 +183,15 @@ export async function addToCart(req, res) {
     await cart.save();
 
     const payload = await buildCartResponse(cart);
+    const cartTotal = payload.items.reduce(
+      (sum, item) => sum + (Number(item.price || 0) * Number(item.qty || 0)),
+      0,
+    );
+    console.log("[CART STATE]", {
+      lines: cart.items.length,
+      totalItems: cart.items.reduce((a,i)=>a+i.qty,0),
+      cartTotal,
+    });
     res.set("x-cart-id", cartId);
     res.status(201).json(payload);
   } catch (err) {

@@ -32,8 +32,10 @@ export function CartProvider({ children }) {
     try {
       const data = await addToCartApi(item)
       dispatch({ type: 'CART_LOADED', payload: normalizeCartPayload(data) })
+      return data
     } catch (err) {
       dispatch({ type: 'CART_ERROR', payload: err.message })
+      throw err
     }
   }, [])
 

@@ -1,9 +1,19 @@
 # app/services/tools.py
+import logging
+
 from app.services.http_client import ExpressHttpClient, ExpressAPIError
+
+logger = logging.getLogger(__name__)
 
 async def fetch_menu_items():
     try:
         client = ExpressHttpClient()
+        logger.info({
+            "service": "express",
+            "method": "GET",
+            "path": "/menu",
+            "cart_id": None,
+        })
         data, _ = await client.get("/menu")
         return data.get("items", [])
     except ExpressAPIError:
@@ -12,6 +22,12 @@ async def fetch_menu_items():
 async def fetch_featured_items():
     try:
         client = ExpressHttpClient()
+        logger.info({
+            "service": "express",
+            "method": "GET",
+            "path": "/menu/featured",
+            "cart_id": None,
+        })
         data, _ = await client.get("/menu/featured")
         return data.get("items", [])
     except ExpressAPIError:
@@ -21,8 +37,19 @@ async def get_cart(cart_id=None):
     try:
         client = ExpressHttpClient()
         headers = {"x-cart-id": cart_id} if cart_id else {}
+        logger.info({
+            "service": "express",
+            "method": "GET",
+            "path": "/cart",
+            "cart_id": cart_id,
+        })
         data, resp_headers = await client.get("/cart", headers=headers)
         resolved_cart_id = resp_headers.get("x-cart-id") or cart_id or data.get("cartId")
+        logger.info({
+            "service": "express",
+            "status": 200,
+            "returned_cart_id": resp_headers.get("x-cart-id"),
+        })
         return {"cart_id": resolved_cart_id, "cart": data.get("items", [])}
     except ExpressAPIError:
         return {"cart_id": cart_id, "cart": []}
@@ -37,8 +64,19 @@ async def add_item_to_cart(menu_item_id, qty, selected_options, instructions, ca
             "selectedOptions": selected_options or [],
             "instructions": instructions or "",
         }
+        logger.info({
+            "service": "express",
+            "method": "POST",
+            "path": "/cart/items",
+            "cart_id": cart_id,
+        })
         data, resp_headers = await client.post("/cart/items", json=payload, headers=headers)
         resolved_cart_id = resp_headers.get("x-cart-id") or cart_id or data.get("cartId")
+        logger.info({
+            "service": "express",
+            "status": 201,
+            "returned_cart_id": resp_headers.get("x-cart-id"),
+        })
         return {"cart_id": resolved_cart_id, "cart": data.get("items", [])}
     except ExpressAPIError:
         return {"cart_id": cart_id, "cart": []}
