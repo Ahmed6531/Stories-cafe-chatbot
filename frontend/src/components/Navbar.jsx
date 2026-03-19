@@ -327,6 +327,7 @@ export default function Navbar() {
   const pageRef = useRef(null)
   const msgsRef = useRef(null)
   const pendingReplyTimeoutRef = useRef(null)
+  const pendingCheckoutRef = useRef(false)
 
   const { cartCount, refreshCart } = useCart()
   const location = useLocation()
@@ -383,6 +384,10 @@ export default function Navbar() {
       setVoiceActive(false)
       setMicMode('idle')
       setTyping(false)
+      if (pendingCheckoutRef.current) {
+        pendingCheckoutRef.current = false
+        navigate('/checkout')
+      }
     }
   }
 
@@ -536,8 +541,11 @@ export default function Navbar() {
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         suggestions: data.suggestions || [],
       })
-      if (data.intent === 'checkout') {
-        setTimeout(() => navigate('/checkout'), 2000)
+      if (data.intent === 'checkout' && data.metadata?.pipeline_stage === 'checkout_redirect') {
+        setTimeout(() => {
+          pendingCheckoutRef.current = true
+          closeChat()
+        }, 1500)
       }
     } catch {
       appendMessage({
@@ -648,7 +656,7 @@ export default function Navbar() {
           </div>
         </main>
 
-        {(chatClosing || (isChatAllowedRoute && chatOpen) || chatRouteClosing) && (
+        {(chatOpen || chatClosing || chatRouteClosing) && (
           <div
             className={`chat-unit${chatClosing ? ' chat-unit-closing' : ''}`}
             style={
