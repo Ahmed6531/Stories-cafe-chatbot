@@ -532,6 +532,9 @@ export default function Navbar() {
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         suggestions: data.suggestions || [],
       })
+      if (data.intent === 'checkout') {
+        setTimeout(() => navigate('/checkout'), 2000)
+      }
     } catch {
       appendMessage({
         id: Date.now() + 1,
@@ -751,8 +754,8 @@ export default function Navbar() {
                       <button className="chat-suggestion-chip" type="button" onClick={() => handleChipClick("What's good today?")}>
                         &quot;What&apos;s good today?&quot;
                       </button>
-                      <button className="chat-suggestion-chip" type="button" onClick={() => handleChipClick('Repeat my last order')}>
-                        &quot;Repeat my last order&quot;
+                      <button className="chat-suggestion-chip" type="button" onClick={() => handleChipClick("What's in my cart?")}>
+                        &quot;What&apos;s in my cart?&quot;
                       </button>
                       <button className="chat-suggestion-chip" type="button" onClick={() => handleChipClick('Surprise me')}>
                         &quot;Surprise me&quot;

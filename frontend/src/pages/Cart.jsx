@@ -11,9 +11,9 @@ export default function Cart() {
   const { brand } = theme
   const navigate = useNavigate()
   const { state } = useCart()
-  const { cartId, items: cartItems, loading } = state
+  const { items: cartItems, loading } = state
   const hasItems = cartItems.length > 0
-  const showEmptyState = !loading && !hasItems && cartId === null
+  const showEmptyState = !loading && !hasItems
 
   return (
     <Container
