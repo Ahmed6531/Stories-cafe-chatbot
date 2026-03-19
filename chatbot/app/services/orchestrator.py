@@ -8,7 +8,6 @@ from app.services.tools import (
     fetch_featured_items,
     get_cart,
     add_item_to_cart,
-    find_menu_item_by_name,
     remove_from_cart,
     clear_cart,
 )
@@ -268,13 +267,43 @@ async def process_chat_message(
                 "qty": quantity,
                 "session_id": session_id,
             })
-            cart_result = await add_item_to_cart(
-                menu_item_id=menu_item_id,
-                qty=quantity,
-                selected_options=[],
-                instructions="",
-                cart_id=cart_id,
-            )
+            try:
+                cart_result = await add_item_to_cart(
+                    menu_item_id=menu_item_id,
+                    qty=quantity,
+                    selected_options=[],
+                    instructions="",
+                    cart_id=cart_id,
+                )
+            except ExpressAPIError as add_err:
+                err_lower = str(add_err).lower()
+                is_unavailable = "unavailable" in err_lower or "not available" in err_lower
+                featured_items = await fetch_featured_items()
+                err_suggestions = suggest_popular_items(featured_items)
+                if is_unavailable:
+                    err_reply = (
+                        f"Sorry, **{matched_item.get('name')}** is currently unavailable."
+                    )
+                    if err_suggestions:
+                        err_reply += "\n\nYou might also like:"
+                else:
+                    err_reply = "I couldn't add that to your cart. Please try again."
+                    err_suggestions = []
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="error",
+                    reply=err_reply,
+                    intent=intent,
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=err_suggestions,
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "error": str(add_err),
+                        "pipeline_stage": "add_item_backend_error",
+                    },
+                )
 
             featured_items = await fetch_featured_items()
             popular = suggest_popular_items(featured_items)

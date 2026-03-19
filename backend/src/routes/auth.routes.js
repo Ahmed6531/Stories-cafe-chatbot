@@ -59,12 +59,16 @@ router.post("/login", async (req, res) => {
 
     if (!user.isVerified) {
       const actionLink = `${process.env.BACKEND_URL}/auth/verify-email?email=${email}`;
-      await sendEmail(
-        email,
-        "Verify Your Account",
-        accountVerifyTemplate,
-        { name: email.split("@")[0], actionLink }
-      );
+      try {
+        await sendEmail(
+          email,
+          "Verify Your Account",
+          accountVerifyTemplate,
+          { name: email.split("@")[0], actionLink }
+        );
+      } catch (e) {
+        console.error("Re-send verification email failed:", e);
+      }
       return res.status(403).json({ message: "Please verify your email. A new verification email has been sent." });
     }
 
