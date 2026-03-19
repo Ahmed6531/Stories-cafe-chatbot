@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Box, Button, Container, Stack, Typography } from '@mui/material'
 import { useTheme } from '@mui/material/styles'
@@ -10,10 +11,14 @@ export default function Cart() {
   const theme = useTheme()
   const { brand } = theme
   const navigate = useNavigate()
-  const { state } = useCart()
+  const { state, refreshCart } = useCart()
   const { items: cartItems, loading } = state
   const hasItems = cartItems.length > 0
   const showEmptyState = !loading && !hasItems
+
+  useEffect(() => {
+    refreshCart()
+  }, [refreshCart])
 
   return (
     <Container

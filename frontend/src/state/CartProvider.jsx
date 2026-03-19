@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useCallback } from 'react'
+import { useEffect, useMemo, useReducer, useCallback, useRef } from 'react'
 import { CartContext } from './CartContext'
 import { cartReducer, initialCartState } from './cartReducer'
 import { fetchCart, addToCartApi, updateCartItemApi, removeFromCartApi, clearCartApi } from '../API/cartApi'
@@ -13,13 +13,18 @@ function normalizeCartPayload(data) {
 
 export function CartProvider({ children }) {
   const [state, dispatch] = useReducer(cartReducer, initialCartState)
+  const abortRef = useRef(null)
 
   const loadCart = useCallback(async () => {
+    if (abortRef.current) abortRef.current.abort()
+    abortRef.current = new AbortController()
+
     dispatch({ type: 'CART_LOADING' })
     try {
-      const data = await fetchCart()
+      const data = await fetchCart({ signal: abortRef.current.signal })
       dispatch({ type: 'CART_LOADED', payload: normalizeCartPayload(data) })
     } catch (err) {
+      if (err.name === 'CanceledError' || err.name === 'AbortError') return
       dispatch({ type: 'CART_ERROR', payload: err.message })
     }
   }, [])
@@ -40,6 +45,8 @@ export function CartProvider({ children }) {
   }, [])
 
   const updateQty = useCallback(async (lineId, qty) => {
+    abortRef.current?.abort()
+
     try {
       const data = await updateCartItemApi(lineId, qty)
       dispatch({ type: 'CART_LOADED', payload: normalizeCartPayload(data) })
@@ -49,6 +56,8 @@ export function CartProvider({ children }) {
   }, [])
 
   const removeFromCart = useCallback(async (lineId) => {
+    abortRef.current?.abort()
+
     // Optimistic update: remove from state immediately
     dispatch({ type: 'REMOVE_ITEM', payload: lineId })
 
