@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Box,
@@ -34,8 +34,9 @@ export default function Checkout() {
   const theme = useTheme()
   const navigate = useNavigate()
   const { state, resetCart } = useCart()
-  const { items } = state
+  const { items, loading } = state
   const [orderTypeError, setOrderTypeError] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
 
   const inputStyle = {
     width: '100%',
@@ -80,7 +81,9 @@ export default function Checkout() {
     notes: '',
   })
 
-  if (!items.length) { navigate('/cart'); return null }
+  useEffect(() => {
+    if (!submitted && !loading && !items.length) navigate('/cart')
+  }, [items, loading, submitted, navigate])
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -118,9 +121,10 @@ export default function Checkout() {
     try {
       const response = await submitOrder(payload)
       if (response.data.orderNumber) {
+        setSubmitted(true)
+        navigate('/success', { state: { orderNumber: response.data.orderNumber } })
         localStorage.removeItem('cartId')
         resetCart()
-        navigate('/success', { state: { orderNumber: response.data.orderNumber } })
       }
     } catch (err) {
       console.error(err)
