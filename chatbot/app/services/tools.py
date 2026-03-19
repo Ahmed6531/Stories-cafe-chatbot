@@ -87,3 +87,34 @@ async def find_menu_item_by_name(menu_items, query):
         if query_lower in item["name"].lower():
             return item
     return None
+
+async def remove_from_cart(line_id: str, cart_id: str | None = None) -> dict:
+    try:
+        client = ExpressHttpClient()
+        headers = {"x-cart-id": cart_id} if cart_id else {}
+        logger.info({
+            "service": "express",
+            "method": "DELETE",
+            "path": f"/cart/items/{line_id}",
+            "cart_id": cart_id,
+        })
+        data, resp_headers = await client.delete(f"/cart/items/{line_id}", headers=headers)
+        resolved_cart_id = resp_headers.get("x-cart-id") or cart_id or data.get("cartId")
+        return {"cart_id": resolved_cart_id, "cart": data.get("items", [])}
+    except ExpressAPIError:
+        return {"cart_id": cart_id, "cart": []}
+
+async def clear_cart(cart_id: str | None = None) -> dict:
+    try:
+        client = ExpressHttpClient()
+        headers = {"x-cart-id": cart_id} if cart_id else {}
+        logger.info({
+            "service": "express",
+            "method": "DELETE",
+            "path": "/cart",
+            "cart_id": cart_id,
+        })
+        await client.delete("/cart", headers=headers)
+        return {"cart_id": None, "cart": []}
+    except ExpressAPIError:
+        return {"cart_id": cart_id, "cart": []}

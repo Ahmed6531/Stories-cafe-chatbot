@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { fetchMenuItemById } from '../API/menuApi'
 import { formatLL } from '../utils/currency'
 import { useCart } from '../state/useCart'
+import MenuItemDetailsSkeleton from '../components/MenuItemDetailsSkeleton'
 
 import {
   Alert,
@@ -871,12 +872,7 @@ export default function MenuItemDetails() {
     }
   }
 
-  if (loading)
-    return (
-      <Container sx={{ py: 3, '& .MuiTypography-root': { fontFamily: theme.brand.fontBase } }}>
-        <Typography>Loading...</Typography>
-      </Container>
-    )
+  if (loading) return <MenuItemDetailsSkeleton />
 
   if (!item)
     return (

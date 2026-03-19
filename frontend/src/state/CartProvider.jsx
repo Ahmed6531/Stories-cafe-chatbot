@@ -53,7 +53,8 @@ export function CartProvider({ children }) {
     dispatch({ type: 'REMOVE_ITEM', payload: lineId })
 
     try {
-      await removeFromCartApi(lineId)
+      const data = await removeFromCartApi(lineId)
+      dispatch({ type: 'CART_LOADED', payload: normalizeCartPayload(data) })
     } catch (err) {
       dispatch({ type: 'CART_ERROR', payload: err.message })
       // On error, reload full cart to restore state
