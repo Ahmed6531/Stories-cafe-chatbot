@@ -523,7 +523,11 @@ export default function Navbar() {
         console.warn("[CHAT CART SYNC]", { previous: cart_id, new: data.cart_id })
       }
 
-      if (data.cart_id) localStorage.setItem('cartId', data.cart_id)
+      if (data.cart_id) {
+        localStorage.setItem('cartId', data.cart_id)
+      } else if (data.cart_updated && !data.cart_id) {
+        localStorage.removeItem('cartId')
+      }
       if (data.cart_updated) refreshCart()
       appendMessage({
         id: Date.now() + 1,
