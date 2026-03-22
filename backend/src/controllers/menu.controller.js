@@ -8,25 +8,14 @@ import { Counter } from "../models/Counter.js";
  * getNextMenuItemId
  *
  * Atomically increments the "menuItemId" counter and returns the next value.
- *
- * Self-seeding: on first call the aggregation pipeline reads the current
- * highest MenuItem.id from the DB and sets the counter to at least that
- * value before incrementing. This means existing documents are never
- * assigned a duplicate ID.
- *
- * Safe under concurrent creates: findOneAndUpdate is a single atomic
- * operation in MongoDB; two simultaneous calls will always receive
- * different values.
+ * Self-seeding: reads the current highest MenuItem.id and sets the counter
+ * to at least that value before incrementing, so existing data stays consistent.
+ * Safe under concurrent creates — findOneAndUpdate is a single atomic operation.
  */
 async function getNextMenuItemId() {
-  // Read current max id from existing items (only needed for seeding)
   const lastItem = await MenuItem.findOne().sort({ id: -1 }).lean();
   const currentMax = lastItem?.id ?? 0;
 
-  // Aggregation-pipeline update (MongoDB ≥ 4.2):
-  //   seq = max(existing_seq, currentMax) + 1
-  // If the counter doc doesn't exist yet, $seq resolves to 0 so the result
-  // is max(0, currentMax) + 1.
   const counter = await Counter.findOneAndUpdate(
     { _id: "menuItemId" },
     [
@@ -42,6 +31,44 @@ async function getNextMenuItemId() {
   );
 
   return counter.seq;
+}
+
+/**
+ * generateSlug
+ *
+ * Converts a name to a URL-friendly slug:
+ *   "Frozen Yogurt Combo" → "frozen-yogurt-combo"
+ *
+ * Collision handling: if the base slug already exists (for a different item),
+ * appends -2, -3, ... until a free slot is found.
+ *
+ * @param {string}      name        - Item name to slugify
+ * @param {number|null} excludeId   - Numeric item id to exclude from the
+ *                                    uniqueness check (pass the item's own id
+ *                                    on update so it doesn't collide with itself)
+ */
+async function generateSlug(name, excludeId = null) {
+  const base = name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")   // strip special chars
+    .replace(/\s+/g, "-")            // spaces → hyphens
+    .replace(/-+/g, "-")             // collapse multiple hyphens
+    .slice(0, 80);                   // max length
+
+  let candidate = base;
+  let suffix = 2;
+
+  while (true) {
+    const query = { slug: candidate };
+    if (excludeId != null) query.id = { $ne: excludeId };
+
+    const existing = await MenuItem.findOne(query).lean();
+    if (!existing) return candidate;  // free — use it
+
+    candidate = `${base}-${suffix}`;
+    suffix++;
+  }
 }
 
 // ─── GET /menu/categories ─────────────────────────────────────────────────────
@@ -151,18 +178,17 @@ export async function createMenuItem(req, res) {
       category,
       description,
       basePrice,
-      image = "",   // no longer required at create time — upload comes separately
-      slug,
+      image = "",
       isAvailable,
       isFeatured,
     } = req.body;
 
+    // slug is intentionally excluded from the body — auto-generated below
     const missingFields = [];
-    if (!name) missingFields.push("name");
-    if (!category) missingFields.push("category");
-    if (!description) missingFields.push("description");
-    if (basePrice === undefined) missingFields.push("basePrice");
-    if (!slug) missingFields.push("slug");
+    if (!name)                        missingFields.push("name");
+    if (!category)                    missingFields.push("category");
+    if (!description)                 missingFields.push("description");
+    if (basePrice === undefined)      missingFields.push("basePrice");
 
     if (missingFields.length > 0) {
       return res.status(400).json({
@@ -171,13 +197,15 @@ export async function createMenuItem(req, res) {
       });
     }
 
-    // ✅ Atomic ID — no race condition
-    const newId = await getNextMenuItemId();
+    const [newId, slug] = await Promise.all([
+      getNextMenuItemId(),
+      generateSlug(name),   // no excludeId needed on create
+    ]);
 
     const newItem = new MenuItem({
       id: newId,
       name: name.trim(),
-      slug: slug.trim().toLowerCase(),
+      slug,
       category: category.trim(),
       description: description.trim(),
       basePrice: parseFloat(basePrice),
@@ -188,7 +216,7 @@ export async function createMenuItem(req, res) {
     });
 
     await newItem.save();
-    console.log(`✅ Created menu item: ${newItem.name} (ID: ${newId})`);
+    console.log(`✅ Created menu item: ${newItem.name} (ID: ${newId}, slug: ${slug})`);
     res.status(201).json({
       success: true,
       message: "Menu item created successfully",
@@ -202,15 +230,6 @@ export async function createMenuItem(req, res) {
 
 // ─── POST /menu/:id/image ─────────────────────────────────────────────────────
 
-/**
- * uploadMenuItemImage
- *
- * Called after createMenuItem (or to replace an existing image).
- * Expects multer to have already processed the file — see upload.middleware.js.
- *
- * Stores an absolute URL so any <img src={item.image} /> works without
- * knowing which host the backend is on.
- */
 export async function uploadMenuItemImage(req, res) {
   try {
     const { id } = req.params;
@@ -220,7 +239,6 @@ export async function uploadMenuItemImage(req, res) {
       return res.status(400).json({ success: false, error: "No image file provided" });
     }
 
-    // Build absolute URL from the incoming request
     const imageUrl = `${req.protocol}://${req.get("host")}/images/${req.file.filename}`;
 
     const updatedItem = await MenuItem.findOneAndUpdate(
@@ -251,13 +269,15 @@ export async function uploadMenuItemImage(req, res) {
 export async function updateMenuItem(req, res) {
   try {
     const { id } = req.params;
+    const numericId = parseInt(id);
     console.log(`📥 PATCH /menu/${id} request received with data:`, req.body);
 
-    // Never allow changing the numeric id
+    // Never allow changing the numeric id or manually setting slug
     delete req.body.id;
+    delete req.body.slug;
 
     const allowedFields = [
-      "name", "slug", "image", "category", "subcategory",
+      "name", "image", "category", "subcategory",
       "description", "basePrice", "isAvailable", "isFeatured", "variantGroups",
     ];
     const updateData = {};
@@ -268,8 +288,6 @@ export async function updateMenuItem(req, res) {
         updateData[field] = parseFloat(req.body[field]);
       } else if (field === "isAvailable" || field === "isFeatured") {
         updateData[field] = req.body[field] === true || req.body[field] === "true";
-      } else if (field === "slug") {
-        updateData[field] = req.body[field].trim().toLowerCase();
       } else if (Array.isArray(req.body[field])) {
         updateData[field] = req.body[field];
       } else {
@@ -277,12 +295,18 @@ export async function updateMenuItem(req, res) {
       }
     }
 
+    // If name changed, regenerate slug — exclude this item from the uniqueness check
+    if (updateData.name) {
+      updateData.slug = await generateSlug(updateData.name, numericId);
+      console.log(`🔄 Regenerated slug for "${updateData.name}": ${updateData.slug}`);
+    }
+
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({ success: false, error: "No valid fields to update" });
     }
 
     const updatedItem = await MenuItem.findOneAndUpdate(
-      { id: parseInt(id) },
+      { id: numericId },
       { $set: updateData },
       { new: true, runValidators: true, writeConcern: { w: 1, j: true } }
     );
