@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { protect } from "../middleware/protect.js";
 import { authorize } from "../middleware/auth.js";
+import { uploadImage } from "../middleware/upload.js";
 import {
   getMenu,
   getMenuCategories,
@@ -10,27 +11,50 @@ import {
   createMenuItem,
   updateMenuItem,
   deleteMenuItem,
+  uploadMenuItemImage,
 } from "../controllers/menu.controller.js";
 
 const router = Router();
 
-// GET /menu - All menu items (minimal data)
-router.get("/", getMenu);
+// ── Public ────────────────────────────────────────────────────────────────────
 
-// GET /menu/featured - Featured items
-router.get("/featured", getFeaturedMenu);
-
-// GET /menu/categories - Distinct top-level categories
-router.get("/categories", getMenuCategories);
-
-// GET /menu/category/:category - Items by category
+// Order matters: specific paths before :id wildcard
+router.get("/featured",    getFeaturedMenu);
+router.get("/categories",  getMenuCategories);
 router.get("/category/:category", getMenuByCategory);
+router.get("/:id",         getMenuItem);
+router.get("/",            getMenu);
 
-// GET /menu/:id - Single item by numeric ID
-router.get("/:id", getMenuItem);
+// ── Admin ─────────────────────────────────────────────────────────────────────
 
-router.post("/", protect, authorize("admin"), createMenuItem);
-router.patch("/:id",protect,authorize("admin"), updateMenuItem);
-router.delete("/:id",protect, authorize("admin"), deleteMenuItem);
+router.post(
+  "/",
+  protect,
+  authorize("admin"),
+  createMenuItem
+);
+
+// Image upload — multer runs before the controller
+router.post(
+  "/:id/image",
+  protect,
+  authorize("admin"),
+  uploadImage,          // multer: parses multipart, saves file, populates req.file
+  uploadMenuItemImage   // controller: patches MenuItem.image, returns URL
+);
+
+router.patch(
+  "/:id",
+  protect,
+  authorize("admin"),
+  updateMenuItem
+);
+
+router.delete(
+  "/:id",
+  protect,
+  authorize("admin"),
+  deleteMenuItem
+);
 
 export default router;

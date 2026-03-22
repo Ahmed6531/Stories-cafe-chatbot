@@ -114,16 +114,40 @@ export async function fetchMenuItemById(id) {
     throw new Error(error.response?.data?.error || 'Failed to load menu item')
   }
 }
+
 /**
  * Admin-only: Create a new menu item
  */
 export async function createMenuItem(data) {
   try {
-    const response = await http.post("/menu", data); // JWT sent automatically via http
+    const response = await http.post("/menu", data);
     return transformMenuItem(response.data.item || response.data);
   } catch (error) {
     console.error("Failed to create menu item:", error);
     throw new Error(error.response?.data?.error || "Failed to create menu item");
+  }
+}
+
+/**
+ * Admin-only: Upload an image for a menu item.
+ * Called after createMenuItem or to replace an existing image.
+ *
+ * @param {number|string} id   - Numeric item ID returned by createMenuItem
+ * @param {File}          file - Browser File selected via <input type="file">
+ * @returns {Promise<{ success: boolean, imageUrl: string, item: object }>}
+ */
+export async function uploadMenuItemImage(id, file) {
+  try {
+    const formData = new FormData()
+    formData.append("image", file)
+
+    const response = await http.post(`/menu/${id}/image`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    })
+    return response.data
+  } catch (error) {
+    console.error(`Failed to upload image for menu item ${id}:`, error)
+    throw new Error(error.response?.data?.error || "Failed to upload image")
   }
 }
 
@@ -133,7 +157,6 @@ export async function createMenuItem(data) {
 export async function updateMenuItem(id, data) {
   console.log("→ Sending PATCH request for id:", id, "data:", data);
   try {
-
     const response = await http.patch(`/menu/${id}`, data);
     return transformMenuItem(response.data.item || response.data);
   } catch (error) {

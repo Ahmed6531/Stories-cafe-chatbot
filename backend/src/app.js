@@ -1,5 +1,7 @@
 import express from "express";
 import cors from "cors";
+import { fileURLToPath } from "url";
+import path from "path";
 import { ENV } from "./config/env.js";
 import { authenticate } from "./middleware/auth.js";
 import healthRoutes from "./routes/health.routes.js";
@@ -11,6 +13,8 @@ import { sendEmail } from "./utils/mailer.js";
 import { welcomeTemplate } from "./utils/EmailTemplates.js";
 import 'dotenv/config';
 import adminRoutes from "./routes/adminRoutes.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 
 export function createApp() {
@@ -26,6 +30,9 @@ export function createApp() {
   app.use(cors({ origin: ENV.CORS_ORIGIN, exposedHeaders: ["x-cart-id"] }));
 
   app.use(express.json());
+
+  // Serve uploaded images
+  app.use("/images", express.static(path.join(__dirname, "../public/images")));
 
   //routes
   app.use("/health", healthRoutes);
