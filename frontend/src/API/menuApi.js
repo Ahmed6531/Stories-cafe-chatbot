@@ -144,8 +144,12 @@ export async function uploadMenuItemImage(id, file) {
   try {
     const formData = new FormData()
     formData.append("image", file)
-    // ✅ No Content-Type override — browser sets multipart boundary automatically
-    const response = await http.post(`/menu/${id}/image`, formData)
+    // null explicitly removes the instance-level "application/json" default for
+    // this request — axios v1.x then lets the browser set the correct
+    // multipart/form-data + boundary header automatically
+    const response = await http.post(`/menu/${id}/image`, formData, {
+      headers: { "Content-Type": null },
+    })
     return response.data
   } catch (error) {
     console.error(`Failed to upload image for menu item ${id}:`, error)

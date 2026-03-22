@@ -44,14 +44,21 @@ export async function submitMenuItem({
       await updateMenuItem(editingId, payload);
     } else {
       // ── CREATE ────────────────────────────────────────────────────────────
+      // createMenuItem returns the transformed item (flat object) — res.id is the numeric ID
       const res = await createMenuItem(payload);
-      // The backend returns { item: { id, ... } }
-      savedId = res?.item?.id ?? res?.id ?? res?.itemId;
+      savedId = res?.id;
     }
 
     // ── Image upload (create or replace) ──────────────────────────────────
+    let imageError = null;
     if (imageFile && savedId != null) {
-      await uploadMenuItemImage(savedId, imageFile);
+      try {
+        await uploadMenuItemImage(savedId, imageFile);
+      } catch (err) {
+        // Surface the image error but don't abort — the item was already saved.
+        // The list still refreshes so the imageless item appears rather than vanishing.
+        imageError = err?.message || "Image upload failed";
+      }
     }
 
     // ── Refresh list ───────────────────────────────────────────────────────
@@ -62,7 +69,7 @@ export async function submitMenuItem({
     resetForm();
     resetImage();
     setEditingId(null);
-    setFormError("");
+    setFormError(imageError || "");
   } catch (err) {
     setFormError(err?.response?.data?.error || err?.message || "Submit failed");
   } finally {

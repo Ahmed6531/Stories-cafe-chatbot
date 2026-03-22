@@ -11,6 +11,7 @@ import cartRoutes from "./routes/cart.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import { sendEmail } from "./utils/mailer.js";
 import { welcomeTemplate } from "./utils/EmailTemplates.js";
+import { setUploadedImageHeaders } from "./utils/imageHeaders.js";
 import 'dotenv/config';
 import adminRoutes from "./routes/adminRoutes.js";
 
@@ -31,8 +32,15 @@ export function createApp() {
 
   app.use(express.json());
 
-  // Serve uploaded images
-  app.use("/images", express.static(path.join(__dirname, "../public/images")));
+  // Uploaded images are served from the backend origin. The frontend dev server
+  // sets COEP=require-corp, so these responses must opt into cross-origin
+  // embedding or browser <img> tags will be blocked.
+  app.use(
+    "/images",
+    express.static(path.join(__dirname, "../public/images"), {
+      setHeaders: setUploadedImageHeaders,
+    })
+  );
 
   //routes
   app.use("/health", healthRoutes);
