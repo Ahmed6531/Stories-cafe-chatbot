@@ -1,33 +1,43 @@
+import fs from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
 import { MenuItem } from "../models/MenuItem.js";
 import { VariantGroup } from "../models/VariantGroup.js";
 import { Counter } from "../models/Counter.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const IMAGES_DIR = path.join(__dirname, "../../public/images");
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 /**
  * getNextMenuItemId
  *
- * Atomically increments the "menuItemId" counter and returns the next value.
- * Self-seeding: reads the current highest MenuItem.id and sets the counter
- * to at least that value before incrementing, so existing data stays consistent.
- * Safe under concurrent creates — findOneAndUpdate is a single atomic operation.
+ * Issues a guaranteed-unique numeric ID for a new MenuItem.
+ * Uses plain $inc — compatible with all Mongoose/MongoDB versions.
  */
 async function getNextMenuItemId() {
   const lastItem = await MenuItem.findOne().sort({ id: -1 }).lean();
   const currentMax = lastItem?.id ?? 0;
 
+  // Ensure the Counter document exists, seeded to currentMax on first insert
+  await Counter.findOneAndUpdate(
+    { _id: "menuItemId" },
+    { $setOnInsert: { seq: currentMax } },
+    { upsert: true }
+  );
+
+  // Catch up if Counter fell behind existing data (e.g. after manual DB reset)
+  await Counter.updateOne(
+    { _id: "menuItemId", seq: { $lt: currentMax } },
+    { $set: { seq: currentMax } }
+  );
+
+  // Atomic increment — concurrent creates always receive different values
   const counter = await Counter.findOneAndUpdate(
     { _id: "menuItemId" },
-    [
-      {
-        $set: {
-          seq: {
-            $add: [{ $max: ["$seq", currentMax] }, 1],
-          },
-        },
-      },
-    ],
-    { new: true, upsert: true }
+    { $inc: { seq: 1 } },
+    { new: true }
   );
 
   return counter.seq;
@@ -36,25 +46,20 @@ async function getNextMenuItemId() {
 /**
  * generateSlug
  *
- * Converts a name to a URL-friendly slug:
- *   "Frozen Yogurt Combo" → "frozen-yogurt-combo"
+ * Converts a name to a URL-friendly slug, with collision handling.
+ * "Frozen Yogurt Combo" → "frozen-yogurt-combo" (or "-2", "-3" if taken)
  *
- * Collision handling: if the base slug already exists (for a different item),
- * appends -2, -3, ... until a free slot is found.
- *
- * @param {string}      name        - Item name to slugify
- * @param {number|null} excludeId   - Numeric item id to exclude from the
- *                                    uniqueness check (pass the item's own id
- *                                    on update so it doesn't collide with itself)
+ * @param {string}      name      - Item name to slugify
+ * @param {number|null} excludeId - Exclude this item's own id from uniqueness check (on update)
  */
 async function generateSlug(name, excludeId = null) {
   const base = name
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9\s-]/g, "")   // strip special chars
-    .replace(/\s+/g, "-")            // spaces → hyphens
-    .replace(/-+/g, "-")             // collapse multiple hyphens
-    .slice(0, 80);                   // max length
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 80);
 
   let candidate = base;
   let suffix = 2;
@@ -62,12 +67,45 @@ async function generateSlug(name, excludeId = null) {
   while (true) {
     const query = { slug: candidate };
     if (excludeId != null) query.id = { $ne: excludeId };
-
     const existing = await MenuItem.findOne(query).lean();
-    if (!existing) return candidate;  // free — use it
-
+    if (!existing) return candidate;
     candidate = `${base}-${suffix}`;
     suffix++;
+  }
+}
+
+/**
+ * deleteImageFile
+ *
+ * Attempts to remove a locally-uploaded image from disk.
+ * Only acts on URLs that match the local upload pattern:
+ *   http(s)://host/images/<filename>
+ *
+ * Silently swallows errors — a missing or external file must never
+ * block the DB delete that follows.
+ *
+ * @param {string} imageUrl - The image field value from the MenuItem document
+ */
+async function deleteImageFile(imageUrl) {
+  if (!imageUrl) return;
+
+  try {
+    const parsed = new URL(imageUrl);
+
+    // Only delete files we uploaded ourselves — path must be /images/<filename>
+    const match = parsed.pathname.match(/^\/images\/([^/]+)$/);
+    if (!match) return;
+
+    const filename = match[1];
+    const filepath = path.join(IMAGES_DIR, filename);
+
+    await fs.unlink(filepath);
+    console.log(`🗑 Deleted image file: ${filename}`);
+  } catch (err) {
+    // ENOENT = file already gone, anything else = external URL or parse error
+    if (err.code !== "ENOENT") {
+      console.warn(`⚠️ Could not delete image file for URL "${imageUrl}":`, err.message);
+    }
   }
 }
 
@@ -183,12 +221,11 @@ export async function createMenuItem(req, res) {
       isFeatured,
     } = req.body;
 
-    // slug is intentionally excluded from the body — auto-generated below
     const missingFields = [];
-    if (!name)                        missingFields.push("name");
-    if (!category)                    missingFields.push("category");
-    if (!description)                 missingFields.push("description");
-    if (basePrice === undefined)      missingFields.push("basePrice");
+    if (!name)                   missingFields.push("name");
+    if (!category)               missingFields.push("category");
+    if (!description)            missingFields.push("description");
+    if (basePrice === undefined) missingFields.push("basePrice");
 
     if (missingFields.length > 0) {
       return res.status(400).json({
@@ -199,7 +236,7 @@ export async function createMenuItem(req, res) {
 
     const [newId, slug] = await Promise.all([
       getNextMenuItemId(),
-      generateSlug(name),   // no excludeId needed on create
+      generateSlug(name),
     ]);
 
     const newItem = new MenuItem({
@@ -239,6 +276,12 @@ export async function uploadMenuItemImage(req, res) {
       return res.status(400).json({ success: false, error: "No image file provided" });
     }
 
+    // Delete old image file if this item already has one
+    const existing = await MenuItem.findOne({ id: parseInt(id) }).lean();
+    if (existing?.image) {
+      await deleteImageFile(existing.image);
+    }
+
     const imageUrl = `${req.protocol}://${req.get("host")}/images/${req.file.filename}`;
 
     const updatedItem = await MenuItem.findOneAndUpdate(
@@ -272,7 +315,6 @@ export async function updateMenuItem(req, res) {
     const numericId = parseInt(id);
     console.log(`📥 PATCH /menu/${id} request received with data:`, req.body);
 
-    // Never allow changing the numeric id or manually setting slug
     delete req.body.id;
     delete req.body.slug;
 
@@ -295,7 +337,6 @@ export async function updateMenuItem(req, res) {
       }
     }
 
-    // If name changed, regenerate slug — exclude this item from the uniqueness check
     if (updateData.name) {
       updateData.slug = await generateSlug(updateData.name, numericId);
       console.log(`🔄 Regenerated slug for "${updateData.name}": ${updateData.slug}`);
@@ -333,13 +374,19 @@ export async function deleteMenuItem(req, res) {
   try {
     const { id } = req.params;
     console.log(`📥 DELETE /menu/${id} request received`);
+
     const deletedItem = await MenuItem.findOneAndDelete(
       { id: parseInt(id) },
       { writeConcern: { w: 1, j: true } }
     );
+
     if (!deletedItem) {
       return res.status(404).json({ success: false, error: "Menu item not found" });
     }
+
+    // Best-effort image file cleanup — never blocks the response
+    await deleteImageFile(deletedItem.image);
+
     console.log(`🗑 Deleted menu item: ${deletedItem.name}`);
     res.status(200).json({ success: true, message: "Menu item deleted successfully" });
   } catch (error) {

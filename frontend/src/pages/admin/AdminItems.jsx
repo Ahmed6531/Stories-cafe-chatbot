@@ -343,7 +343,6 @@ export default function AdminItems() {
       description: item.description || "",
       isAvailable: item.isAvailable ?? true,
       isFeatured: item.isFeatured ?? false,
-      // slug intentionally omitted — backend regenerates if name changes
     })
     resetImage()
     setImagePreview(item.image || "")
@@ -475,7 +474,8 @@ export default function AdminItems() {
                 <Td>{item.name}</Td>
                 <Td>{item.category}</Td>
                 <Td>
-                  {item.image && item.image !== "/images/placeholder.png" ? (
+                  {/* item.image is null (not placeholder path) when no image uploaded */}
+                  {item.image ? (
                     <img
                       src={item.image}
                       alt={item.name}
