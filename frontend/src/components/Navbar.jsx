@@ -267,9 +267,11 @@ function getMicAriaLabel(mode) {
   return 'Tap to speak'
 }
 
-function Bubble({ msg, prevTime }) {
+function Bubble({ msg, prevTime, onSuggestionClick }) {
   const isUser = msg.role === 'user'
   const showTime = msg.time !== prevTime
+  const hasSuggestions = msg.suggestions && msg.suggestions.length > 0
+  
   return (
     <div className={`msg-row ${isUser ? 'msg-row-user' : 'msg-row-bot'}`}>
       <div className={`msg-bubble ${isUser ? 'msg-bubble-user' : 'msg-bubble-bot'}`}>
@@ -279,6 +281,37 @@ function Bubble({ msg, prevTime }) {
             {i < arr.length - 1 && <br />}
           </span>
         ))}
+        {hasSuggestions && (
+          <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {msg.suggestions.map((s, idx) => (
+              <button
+                key={idx}
+                onClick={() => onSuggestionClick(`add ${s.item_name}`)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '16px',
+                  border: '1px solid #e5e7eb',
+                  background: '#f3f4f6',
+                  color: '#374151',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = '#e5e7eb'
+                  e.target.style.borderColor = '#d1d5db'
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = '#f3f4f6'
+                  e.target.style.borderColor = '#e5e7eb'
+                }}
+              >
+                {s.item_name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       {showTime && <span className="msg-time">{msg.time}</span>}
     </div>
@@ -333,7 +366,7 @@ export default function Navbar() {
   const partialTranscriptTimeoutRef = useRef(null)
   const pendingPartialTranscriptRef = useRef('')
 
-  const { cartCount } = useCart()
+  const { cartCount, refreshCart } = useCart()
   const location = useLocation()
   const navigate = useNavigate()
   const hasConversation = messages.length > 0
@@ -557,11 +590,13 @@ export default function Navbar() {
       })
       const data = response.data
       if (data.cart_id) localStorage.setItem('cartId', data.cart_id)
+      if (data.cart_updated) refreshCart()
       appendMessage({
         id: Date.now() + 1,
         role: 'bot',
         text: data.reply,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        suggestions: data.suggestions || [],
       })
     } catch {
       appendMessage({
@@ -748,7 +783,12 @@ export default function Navbar() {
                   {(hasConversation || micMode === MIC_MODE.THINKING || micMode === MIC_MODE.FINALIZING) && (
                     <div ref={msgsRef} className="chat-msgs" role="log" aria-live="polite" aria-relevant="additions text">
                       {messages.map((msg, i) => (
-                        <Bubble key={msg.id} msg={msg} prevTime={i > 0 ? messages[i - 1].time : null} />
+                        <Bubble 
+                          key={msg.id} 
+                          msg={msg} 
+                          prevTime={i > 0 ? messages[i - 1].time : null}
+                          onSuggestionClick={sendMessage}
+                        />
                       ))}
                       {typing && (
                         <div className="msg-row msg-row-bot">
