@@ -8,6 +8,7 @@ import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
 import Tooltip from '@mui/material/Tooltip'
 import VoiceInput from './VoiceInput'
+import { normalizeTranscriptForRouting, normalizeTranscriptForUi } from '../utils/voiceTranscript'
 import '../styles/index.css'
 
 const CHATBOT_URL = import.meta.env.VITE_CHATBOT_URL || 'http://localhost:8000'
@@ -232,6 +233,39 @@ const CHAT_PANEL_WIDTH = 420
 const CHAT_STORAGE_KEY = 'chatMessages'
 const CHAT_STORAGE_TS_KEY = 'chatMessagesSavedAt'
 const CHAT_TTL_MS = 24 * 60 * 60 * 1000
+const PARTIAL_TRANSCRIPT_DEBOUNCE_MS = 120
+const MIC_MODE = {
+  IDLE: 'idle',
+  CONNECTING: 'connecting',
+  LISTENING: 'listening',
+  FINALIZING: 'finalizing',
+  THINKING: 'thinking',
+  NO_SPEECH: 'no-speech',
+  TIMED_OUT: 'timed-out',
+  ERROR: 'error',
+}
+
+function getMicLabel(mode) {
+  if (mode === MIC_MODE.CONNECTING) return 'Connecting...'
+  if (mode === MIC_MODE.LISTENING) return 'Listening'
+  if (mode === MIC_MODE.FINALIZING) return 'Finalizing...'
+  if (mode === MIC_MODE.THINKING) return 'Thinking...'
+  if (mode === MIC_MODE.NO_SPEECH) return 'No speech detected'
+  if (mode === MIC_MODE.TIMED_OUT) return 'Timed out'
+  if (mode === MIC_MODE.ERROR) return 'Voice error'
+  return 'tap to speak'
+}
+
+function getMicAriaLabel(mode) {
+  if (mode === MIC_MODE.CONNECTING) return 'Connecting microphone'
+  if (mode === MIC_MODE.LISTENING) return 'Listening, tap to stop'
+  if (mode === MIC_MODE.FINALIZING) return 'Finalizing your speech'
+  if (mode === MIC_MODE.THINKING) return 'Processing your message'
+  if (mode === MIC_MODE.NO_SPEECH) return 'No speech detected, tap to try again'
+  if (mode === MIC_MODE.TIMED_OUT) return 'Voice input timed out, tap to try again'
+  if (mode === MIC_MODE.ERROR) return 'Voice input error, tap to try again'
+  return 'Tap to speak'
+}
 
 function Bubble({ msg, prevTime }) {
   const isUser = msg.role === 'user'
@@ -260,7 +294,6 @@ export default function Navbar() {
       if (!saved) return []
       const savedAtRaw = localStorage.getItem(CHAT_STORAGE_TS_KEY)
       const savedAt = Number(savedAtRaw)
-      // eslint-disable-next-line react-hooks/purity
       if (!Number.isFinite(savedAt) || Date.now() - savedAt > CHAT_TTL_MS) {
         localStorage.removeItem(CHAT_STORAGE_KEY)
         localStorage.removeItem(CHAT_STORAGE_TS_KEY)
@@ -283,7 +316,9 @@ export default function Navbar() {
   const [chatClosing, setChatClosing] = useState(false)
   const [chatRouteClosing, setChatRouteClosing] = useState(false)
   const [voiceActive, setVoiceActive] = useState(false)
-  const [micMode, setMicMode] = useState('idle')
+  const [voiceSessionBusy, setVoiceSessionBusy] = useState(false)
+  const [deferredChatClose, setDeferredChatClose] = useState(null)
+  const [micMode, setMicMode] = useState(MIC_MODE.IDLE)
   const [isOnline, setIsOnline] = useState(() => navigator.onLine)
   const [voiceError, setVoiceError] = useState('')
 
@@ -295,6 +330,8 @@ export default function Navbar() {
   const pageRef = useRef(null)
   const msgsRef = useRef(null)
   const pendingReplyTimeoutRef = useRef(null)
+  const partialTranscriptTimeoutRef = useRef(null)
+  const pendingPartialTranscriptRef = useRef('')
 
   const { cartCount } = useCart()
   const location = useLocation()
@@ -327,6 +364,12 @@ export default function Navbar() {
       window.clearTimeout(pendingReplyTimeoutRef.current)
       pendingReplyTimeoutRef.current = null
     }
+    if (voiceSessionBusy) {
+      setVoiceActive(false)
+      setDeferredChatClose('panel')
+      return
+    }
+    setDeferredChatClose(null)
     setChatRouteClosing(false)
     setChatClosing(true)
   }
@@ -337,8 +380,9 @@ export default function Navbar() {
       setChatClosing(false)
       setChatOpen(false)
       setChatRouteClosing(false)
+      setDeferredChatClose(null)
       setVoiceActive(false)
-      setMicMode('idle')
+      setMicMode(MIC_MODE.IDLE)
       setTyping(false)
     }
   }
@@ -350,13 +394,24 @@ export default function Navbar() {
         pendingReplyTimeoutRef.current = null
       }
       setVoiceActive(false)
-      setMicMode('idle')
+      setMicMode(MIC_MODE.IDLE)
       setTyping(false)
+      if (voiceSessionBusy) {
+        setDeferredChatClose('route')
+        return
+      }
       setChatRouteClosing(true)
       setChatClosing(true)
     }
     return undefined
-  }, [isChatAllowedRoute, chatOpen, chatClosing, chatRouteClosing])
+  }, [isChatAllowedRoute, chatOpen, chatClosing, chatRouteClosing, voiceSessionBusy])
+
+  useEffect(() => {
+    if (!deferredChatClose || voiceSessionBusy || chatClosing) return
+    setChatRouteClosing(deferredChatClose === 'route')
+    setChatClosing(true)
+    setDeferredChatClose(null)
+  }, [deferredChatClose, voiceSessionBusy, chatClosing])
 
   useEffect(() => {
     if (msgsRef.current) msgsRef.current.scrollTop = msgsRef.current.scrollHeight
@@ -367,7 +422,7 @@ export default function Navbar() {
     const setOffline = () => {
       setIsOnline(false)
       setVoiceActive(false)
-      setMicMode('idle')
+      setMicMode(MIC_MODE.IDLE)
       setVoiceError("You're offline. Reconnect to use voice input.")
     }
     window.addEventListener('online', setOnline)
@@ -388,14 +443,48 @@ export default function Navbar() {
     localStorage.setItem(CHAT_STORAGE_TS_KEY, String(Date.now()))
   }, [messages])
 
+  useEffect(() => () => {
+    if (partialTranscriptTimeoutRef.current) {
+      window.clearTimeout(partialTranscriptTimeoutRef.current)
+      partialTranscriptTimeoutRef.current = null
+    }
+  }, [])
+
+  const flushPartialTranscript = (nextText = pendingPartialTranscriptRef.current) => {
+    if (partialTranscriptTimeoutRef.current) {
+      window.clearTimeout(partialTranscriptTimeoutRef.current)
+      partialTranscriptTimeoutRef.current = null
+    }
+    const normalized = normalizeTranscriptForUi(nextText)
+    pendingPartialTranscriptRef.current = normalized
+    setChatInput((current) => (current === normalized ? current : normalized))
+  }
+
+  const schedulePartialTranscript = (nextText) => {
+    const normalized = normalizeTranscriptForUi(nextText)
+    pendingPartialTranscriptRef.current = normalized
+
+    if (partialTranscriptTimeoutRef.current) {
+      window.clearTimeout(partialTranscriptTimeoutRef.current)
+    }
+
+    partialTranscriptTimeoutRef.current = window.setTimeout(() => {
+      partialTranscriptTimeoutRef.current = null
+      setChatInput((current) => (
+        current === pendingPartialTranscriptRef.current ? current : pendingPartialTranscriptRef.current
+      ))
+    }, PARTIAL_TRANSCRIPT_DEBOUNCE_MS)
+  }
+
   const stopPendingReply = () => {
     if (pendingReplyTimeoutRef.current) {
       window.clearTimeout(pendingReplyTimeoutRef.current)
       pendingReplyTimeoutRef.current = null
     }
+    flushPartialTranscript('')
     setTyping(false)
     setVoiceActive(false)
-    setMicMode('idle')
+    setMicMode(MIC_MODE.IDLE)
   }
 
   useEffect(() => {
@@ -406,7 +495,8 @@ export default function Navbar() {
     }
     setTyping(false)
     setVoiceActive(false)
-    setMicMode('idle')
+    setMicMode(MIC_MODE.IDLE)
+    flushPartialTranscript('')
     setChatInput('')
     setMessages([])
     setChipsVisible(true)
@@ -419,17 +509,23 @@ export default function Navbar() {
       setVoiceError("You're offline. Reconnect to use voice input.")
       return
     }
-    if (typing || micMode === 'thinking') {
+    if (micMode === MIC_MODE.FINALIZING) {
+      return
+    }
+    if (typing || micMode === MIC_MODE.THINKING) {
       stopPendingReply()
       return
     }
     if (voiceActive) {
       setVoiceActive(false)
-      setMicMode('idle')
+      if (micMode === MIC_MODE.LISTENING || micMode === MIC_MODE.CONNECTING) {
+        setMicMode(MIC_MODE.FINALIZING)
+      }
       return
     }
+    setVoiceError('')
     setVoiceActive(true)
-    setMicMode('listening')
+    setMicMode(MIC_MODE.CONNECTING)
   }
 
   const cycleMicMode = () => toggleVoiceCapture()
@@ -442,19 +538,21 @@ export default function Navbar() {
   const sendMessage = async (text) => {
     const trimmed = text.trim()
     if (!trimmed) return
+    const routedText = normalizeTranscriptForRouting(trimmed) || trimmed
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
+    flushPartialTranscript('')
     setVoiceActive(false)
     appendMessage({ id: Date.now(), role: 'user', text: trimmed, time: now })
     setChatInput('')
-    setMicMode('thinking')
+    setMicMode(MIC_MODE.THINKING)
     setTyping(true)
 
     try {
       const cartId = localStorage.getItem('cartId') || null
       const response = await axios.post(`${CHATBOT_URL}/chat/message`, {
         session_id: getChatSessionId(),
-        message: trimmed,
+        message: routedText,
         cart_id: cartId,
       })
       const data = response.data
@@ -465,7 +563,7 @@ export default function Navbar() {
         text: data.reply,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       })
-    } catch (err) {
+    } catch {
       appendMessage({
         id: Date.now() + 1,
         role: 'bot',
@@ -474,7 +572,7 @@ export default function Navbar() {
       })
     } finally {
       setTyping(false)
-      setMicMode('idle')
+      setMicMode(MIC_MODE.IDLE)
     }
   }
 
@@ -598,22 +696,38 @@ export default function Navbar() {
               <aside className="chat-panel">
                 <VoiceInput
                   active={voiceActive}
+                  sourceName="Navbar"
                   onListeningChange={(listening) => {
-                    if (listening) setMicMode('listening')
+                    if (listening) setMicMode(MIC_MODE.LISTENING)
                   }}
                   onProcessingChange={(processing) => {
-                    if (processing) setMicMode('thinking')
+                    if (processing) setMicMode(MIC_MODE.FINALIZING)
+                  }}
+                  onSessionBusyChange={setVoiceSessionBusy}
+                  onVoiceStateChange={(state) => {
+                    if (!state) return
+                    setMicMode(state)
+                    if (
+                      state === MIC_MODE.CONNECTING ||
+                      state === MIC_MODE.LISTENING ||
+                      state === MIC_MODE.FINALIZING ||
+                      state === MIC_MODE.THINKING ||
+                      state === MIC_MODE.IDLE
+                    ) {
+                      setVoiceError('')
+                    }
                   }}
                   onPartialTranscript={(text) => {
-                    if (text) setChatInput(text)
+                    schedulePartialTranscript(text)
                   }}
                   onTranscript={(text) => {
-                    setChatInput(text)
+                    flushPartialTranscript(text)
+                    setMicMode(MIC_MODE.THINKING)
                     setTimeout(() => sendMessage(text), 500)
                   }}
                   onError={(message) => {
+                    flushPartialTranscript('')
                     setVoiceActive(false)
-                    setMicMode('idle')
                     setVoiceError(message ? `Couldn't hear that, try again. ${message}` : "Couldn't hear that, try again.")
                   }}
                 />
@@ -631,7 +745,7 @@ export default function Navbar() {
                 </div>
 
                 <section className="chat-conversation" aria-label="Conversation area">
-                  {(hasConversation || micMode === 'thinking') && (
+                  {(hasConversation || micMode === MIC_MODE.THINKING || micMode === MIC_MODE.FINALIZING) && (
                     <div ref={msgsRef} className="chat-msgs" role="log" aria-live="polite" aria-relevant="additions text">
                       {messages.map((msg, i) => (
                         <Bubble key={msg.id} msg={msg} prevTime={i > 0 ? messages[i - 1].time : null} />
@@ -664,9 +778,9 @@ export default function Navbar() {
                       <button
                         className="voice-mic-btn"
                         type="button"
-                        aria-label={micMode === 'listening' ? 'Listening, tap to stop' : micMode === 'thinking' ? 'Processing your message' : 'Tap to speak'}
+                        aria-label={getMicAriaLabel(micMode)}
                         onClick={cycleMicMode}
-                        disabled={!isOnline}
+                        disabled={!isOnline || micMode === MIC_MODE.FINALIZING}
                       >
                         <svg width="26" height="26" viewBox="0 0 100 100" fill="none" overflow="visible">
                           <path d="M65.732 77.6329C65.2176 71.801 63.7431 66.1064 61.5486 60.7204C59.4226 55.3002 56.1993 50.3945 52.7703 45.7633L47.0782 38.9022C46.0495 37.7015 45.1922 36.3979 44.2664 35.1286C43.4435 33.7907 42.5176 32.4871 41.8318 31.0463C38.78 25.4545 37.0312 18.9365 37.1684 12.3842C37.237 8.57633 37.9228 4.80274 39.0543 1.20068C37.6142 1.50943 36.174 1.88679 34.8024 2.33276C34.8024 2.40137 34.7338 2.43568 34.7338 2.50429C32.1621 7.82161 30.6533 13.6192 30.6876 19.4168C30.7562 25.2144 32.4021 30.8748 35.2824 35.8147C38.0256 40.9262 42.1747 44.8027 46.1867 49.6398C49.9243 54.4768 53.4904 59.6226 55.8907 65.4202C58.3939 71.1492 60.1084 77.2556 60.7942 83.5678C61.3085 88.6449 61.1714 93.7907 60.3827 98.8336C61.4457 98.5935 62.5087 98.3533 63.5717 98.0446C65.5948 91.4237 66.3492 84.4597 65.7662 77.6672L65.732 77.6329Z" fill="white" />
@@ -676,7 +790,7 @@ export default function Navbar() {
                       </button>
                     </div>
                     <p className="voice-state-label" data-mode={micMode}>
-                      {micMode === 'listening' ? 'Listening' : micMode === 'thinking' ? 'Thinking...' : 'tap to speak'}
+                      {getMicLabel(micMode)}
                     </p>
                     <div className={`chat-suggestions ${!chipsVisible ? 'chat-suggestions-hidden' : ''}`} role="list" aria-label="Suggestions">
                       <button className="chat-suggestion-chip" type="button" onClick={() => handleChipClick("What's good today?")}>

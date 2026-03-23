@@ -412,12 +412,14 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
 
 [data-mode="idle"] .voice-mic-btn:hover,
 [data-mode="listening"] .voice-mic-btn:hover,
+[data-mode="finalizing"] .voice-mic-btn:hover,
 [data-mode="thinking"] .voice-mic-btn:hover {
   transform: translateZ(0) scale(1.12);
   background: #1f7b46;
   box-shadow: 0 6px 22px rgba(26, 107, 60, 0.5);
 }
 
+[data-mode="finalizing"] .voice-mic-btn::after,
 [data-mode="thinking"] .voice-mic-btn::after,
 [data-mode="listening"] .voice-mic-btn::after {
   content: '';
@@ -429,6 +431,7 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
   animation: btn-emanate 3s ease-out infinite;
   z-index: -1;
 }
+[data-mode="finalizing"] .voice-mic-btn::after { background: #1a6b3c; }
 [data-mode="thinking"] .voice-mic-btn::after { background: #1a6b3c; }
 [data-mode="listening"] .voice-mic-btn {
   background: #1a6b3c;
@@ -439,6 +442,11 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
   background: #1a6b3c;
   animation: btn-emanate 2s ease-out infinite;
 }
+[data-mode="finalizing"] .voice-mic-btn {
+  background: #1a6b3c;
+  box-shadow: 0 4px 16px rgba(26, 107, 60, 0.25);
+}
+[data-mode="finalizing"] .voice-mic-btn svg { animation: none; }
 [data-mode="thinking"] .voice-mic-btn {
   background: #1a6b3c;
   box-shadow: 0 4px 16px rgba(26, 107, 60, 0.25);
@@ -470,6 +478,11 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
 [data-mode="listening"] .voice-ring-2 { animation: sonar 2.4s ease-out infinite 0.7s; }
 [data-mode="listening"] .voice-ring-3 { animation: sonar 2.4s ease-out infinite 1.4s; }
 
+[data-mode="finalizing"] .voice-ring { border: 1.5px solid rgba(26, 107, 60, 0.28); background: transparent; }
+[data-mode="finalizing"] .voice-ring-1 { animation: idle-breathe-ring 1.8s ease-in-out infinite 0s; }
+[data-mode="finalizing"] .voice-ring-2 { border-color: rgba(26, 107, 60, 0.18); animation: idle-breathe-ring 1.8s ease-in-out infinite 0.6s; }
+[data-mode="finalizing"] .voice-ring-3 { animation: none; opacity: 0; border: 0; }
+
 .voice-arc-svg,
 .voice-arc-svg-2 {
   position: absolute;
@@ -482,6 +495,8 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
   pointer-events: none;
   z-index: 1;
 }
+[data-mode="finalizing"] .voice-arc-svg { opacity: 1; animation: arc-spin 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+[data-mode="finalizing"] .voice-arc-svg-2 { opacity: 0.25; animation: arc-spin 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite; animation-delay: -0.6s; }
 [data-mode="thinking"] .voice-arc-svg { opacity: 1; animation: arc-spin 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
 [data-mode="thinking"] .voice-arc-svg-2 { opacity: 0.25; animation: arc-spin 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite; animation-delay: -0.6s; }
 
@@ -504,8 +519,13 @@ input:focus-visible { outline: 2px solid #00704a; outline-offset: 2px; }
   transition: opacity 200ms ease, color 200ms ease;
 }
 [data-mode="idle"] .voice-state-label { opacity: 1; color: #9ca3af; }
+[data-mode="connecting"] .voice-state-label { opacity: 1; color: #6b7280; }
 [data-mode="listening"] .voice-state-label { opacity: 1; color: #9ca3af; }
+[data-mode="finalizing"] .voice-state-label { opacity: 1; color: #6b7280; }
 [data-mode="thinking"] .voice-state-label { opacity: 1; color: #9ca3af; }
+[data-mode="no-speech"] .voice-state-label { opacity: 1; color: #b45309; }
+[data-mode="timed-out"] .voice-state-label { opacity: 1; color: #b45309; }
+[data-mode="error"] .voice-state-label { opacity: 1; color: #b91c1c; }
 
 .voice-fab {
   position: fixed;

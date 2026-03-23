@@ -15,6 +15,16 @@ from app.services.http_client import ExpressAPIError
 
 
 def detect_intent(normalized_message: str) -> str:
+    if any(phrase in normalized_message for phrase in [
+        "menu",
+        "what do you have",
+        "what's on the menu",
+        "what is on the menu",
+        "what do you serve",
+        "show menu",
+    ]):
+        return "menu_query"
+
     if any(word in normalized_message for word in ["add", "get", "want", "order"]):
         return "add_item"
 
