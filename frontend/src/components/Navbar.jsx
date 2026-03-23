@@ -365,6 +365,7 @@ export default function Navbar() {
   const pendingReplyTimeoutRef = useRef(null)
   const partialTranscriptTimeoutRef = useRef(null)
   const pendingPartialTranscriptRef = useRef('')
+  const firstPartialRenderedRef = useRef(false)
 
   const { cartCount, refreshCart } = useCart()
   const location = useLocation()
@@ -490,12 +491,23 @@ export default function Navbar() {
     }
     const normalized = normalizeTranscriptForUi(nextText)
     pendingPartialTranscriptRef.current = normalized
+    firstPartialRenderedRef.current = Boolean(normalized)
     setChatInput((current) => (current === normalized ? current : normalized))
   }
 
   const schedulePartialTranscript = (nextText) => {
     const normalized = normalizeTranscriptForUi(nextText)
     pendingPartialTranscriptRef.current = normalized
+
+    if (!normalized) {
+      flushPartialTranscript('')
+      return
+    }
+
+    if (!firstPartialRenderedRef.current) {
+      flushPartialTranscript(normalized)
+      return
+    }
 
     if (partialTranscriptTimeoutRef.current) {
       window.clearTimeout(partialTranscriptTimeoutRef.current)
