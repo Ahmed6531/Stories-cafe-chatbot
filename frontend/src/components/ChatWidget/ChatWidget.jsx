@@ -32,25 +32,32 @@ function getChatSessionId() {
   return id
 }
 
+// Collapse internal-only states into their user-facing equivalents:
+// connecting → listening (mic setup is a detail the user doesn't need to see)
+// finalizing → thinking (transcription finishing is indistinguishable from bot processing)
+function getDisplayMode(mode) {
+  if (mode === MIC_MODE.CONNECTING) return MIC_MODE.LISTENING
+  if (mode === MIC_MODE.FINALIZING) return MIC_MODE.THINKING
+  return mode
+}
+
 function getMicLabel(mode) {
-  if (mode === MIC_MODE.CONNECTING) return 'Connecting...'
-  if (mode === MIC_MODE.LISTENING) return 'Listening'
-  if (mode === MIC_MODE.FINALIZING) return 'Finalizing...'
-  if (mode === MIC_MODE.THINKING) return 'Thinking...'
-  if (mode === MIC_MODE.NO_SPEECH) return 'No speech detected'
-  if (mode === MIC_MODE.TIMED_OUT) return 'Timed out'
-  if (mode === MIC_MODE.ERROR) return 'Voice error'
+  const display = getDisplayMode(mode)
+  if (display === MIC_MODE.LISTENING) return 'Listening'
+  if (display === MIC_MODE.THINKING) return 'Thinking...'
+  if (display === MIC_MODE.NO_SPEECH) return 'No speech detected'
+  if (display === MIC_MODE.TIMED_OUT) return 'Timed out'
+  if (display === MIC_MODE.ERROR) return 'Voice error'
   return 'tap to speak'
 }
 
 function getMicAriaLabel(mode) {
-  if (mode === MIC_MODE.CONNECTING) return 'Connecting microphone'
-  if (mode === MIC_MODE.LISTENING) return 'Listening, tap to stop'
-  if (mode === MIC_MODE.FINALIZING) return 'Finalizing your speech'
-  if (mode === MIC_MODE.THINKING) return 'Processing your message'
-  if (mode === MIC_MODE.NO_SPEECH) return 'No speech detected, tap to try again'
-  if (mode === MIC_MODE.TIMED_OUT) return 'Voice input timed out, tap to try again'
-  if (mode === MIC_MODE.ERROR) return 'Voice input error, tap to try again'
+  const display = getDisplayMode(mode)
+  if (display === MIC_MODE.LISTENING) return 'Listening, tap to stop'
+  if (display === MIC_MODE.THINKING) return 'Processing your message'
+  if (display === MIC_MODE.NO_SPEECH) return 'No speech detected, tap to try again'
+  if (display === MIC_MODE.TIMED_OUT) return 'Voice input timed out, tap to try again'
+  if (display === MIC_MODE.ERROR) return 'Voice input error, tap to try again'
   return 'Tap to speak'
 }
 
@@ -151,6 +158,7 @@ export default function ChatWidget({
   const partialTranscriptTimeoutRef = useRef(null)
   const pendingPartialTranscriptRef = useRef('')
   const firstPartialRenderedRef = useRef(false)
+  const errorResetTimeoutRef = useRef(null)
 
   const hasConversation = messages.length > 0
 
@@ -256,6 +264,26 @@ export default function ChatWidget({
   useEffect(() => {
     onVoiceSessionBusyChange?.(voiceSessionBusy)
   }, [voiceSessionBusy, onVoiceSessionBusyChange])
+
+  useEffect(() => {
+    const errorModes = [MIC_MODE.NO_SPEECH, MIC_MODE.TIMED_OUT, MIC_MODE.ERROR]
+    if (errorResetTimeoutRef.current) {
+      window.clearTimeout(errorResetTimeoutRef.current)
+      errorResetTimeoutRef.current = null
+    }
+    if (errorModes.includes(micMode)) {
+      errorResetTimeoutRef.current = window.setTimeout(() => {
+        errorResetTimeoutRef.current = null
+        setMicMode(MIC_MODE.IDLE)
+      }, 1500)
+    }
+    return () => {
+      if (errorResetTimeoutRef.current) {
+        window.clearTimeout(errorResetTimeoutRef.current)
+        errorResetTimeoutRef.current = null
+      }
+    }
+  }, [micMode])
 
   useEffect(() => {
     if (!isOnline) {
@@ -461,8 +489,8 @@ export default function ChatWidget({
 
               <div className={`chat-mic-fade ${hasConversation ? 'chat-mic-fade-visible' : ''}`} />
 
-              <div className={`chat-mic-zone ${hasConversation ? 'chat-mic-zone-active' : 'chat-mic-zone-fresh'}`} data-mode={micMode}>
-                <div className="voice-mic-wrapper" data-mode={micMode}>
+              <div className={`chat-mic-zone ${hasConversation ? 'chat-mic-zone-active' : 'chat-mic-zone-fresh'}`} data-mode={getDisplayMode(micMode)}>
+                <div className="voice-mic-wrapper" data-mode={getDisplayMode(micMode)}>
                   <span className="voice-ring voice-ring-1" />
                   <span className="voice-ring voice-ring-2" />
                   <span className="voice-ring voice-ring-3" />
@@ -486,7 +514,7 @@ export default function ChatWidget({
                     </svg>
                   </button>
                 </div>
-                <p className="voice-state-label" data-mode={micMode}>
+                <p className="voice-state-label" data-mode={getDisplayMode(micMode)}>
                   {getMicLabel(micMode)}
                 </p>
                 <div className={`chat-suggestions ${!chipsVisible ? 'chat-suggestions-hidden' : ''}`} role="list" aria-label="Suggestions">
