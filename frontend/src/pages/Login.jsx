@@ -2,35 +2,27 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AuthShell from '../components/auth/AuthShell'
 import { authInputStyle, authLabelStyle } from '../components/auth/authStyles'
+import http from '../API/http'
+import { useSession } from '../hooks/useSession'
 
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [status, setStatus] = useState({ type: '', message: '' })
   const navigate = useNavigate()
+  const { refreshSession } = useSession()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setStatus({ type: '', message: '' })
 
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-
-      const data = await res.json()
-
-      if (res.ok && data.token) {
-        localStorage.setItem('token', data.token)
-        navigate('/dashboard')
-      } else {
-        setStatus({ type: 'error', message: data.message || 'Login failed' })
-      }
+      await http.post('/auth/login', { email, password })
+      await refreshSession()
+      navigate('/dashboard')
     } catch (err) {
-      console.error(err)
-      setStatus({ type: 'error', message: 'Server error, please try again' })
+      const message = err.response?.data?.error?.message || 'Login failed'
+      setStatus({ type: 'error', message })
     }
   }
 

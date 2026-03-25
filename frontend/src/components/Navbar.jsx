@@ -1,6 +1,7 @@
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useCart } from '../state/useCart'
+import { useSession } from '../hooks/useSession'
 import { styled, keyframes, useTheme } from '@mui/material/styles'
 import axios from 'axios'
 import Box from '@mui/material/Box'
@@ -309,7 +310,8 @@ export default function Navbar() {
     }
   }, [])
 
-  const [isAuthed, setIsAuthed] = useState(false)
+  const { user, logout } = useSession()
+  const isAuthed = !!user
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuClosing, setMenuClosing] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
@@ -346,14 +348,8 @@ export default function Navbar() {
     pageRef.current?.scrollTo({ top: 0, behavior: 'auto' })
   }, [location.pathname, location.search])
 
-  useEffect(() => {
-    const token = localStorage.getItem('token')
-    setIsAuthed(!!token)
-  }, [location.pathname])
-
-  const handleLogout = () => {
-    localStorage.removeItem('token')
-    setIsAuthed(false)
+  const handleLogout = async () => {
+    await logout()
     navigate('/login')
   }
 
@@ -799,12 +795,21 @@ export default function Navbar() {
               Cart
             </MenuPanelItem>
 
-            <MenuPanelItem type="button" isActive={location.pathname.startsWith('/login')} onClick={() => { closeMenu(); navigate('/login') }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-              </svg>
-              Login
-            </MenuPanelItem>
+            {isAuthed ? (
+              <MenuPanelItem type="button" onClick={() => { closeMenu(); handleLogout() }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                Logout
+              </MenuPanelItem>
+            ) : (
+              <MenuPanelItem type="button" isActive={location.pathname.startsWith('/login')} onClick={() => { closeMenu(); navigate('/login') }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+                </svg>
+                Login
+              </MenuPanelItem>
+            )}
           </MenuPanel>
         </>
       )}

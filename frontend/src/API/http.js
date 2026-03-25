@@ -6,23 +6,9 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_U
 const http = axios.create({
   baseURL: BASE_URL,
   timeout: 10000,
-  headers: { "Content-Type": "application/json" }
+  headers: { "Content-Type": "application/json" },
+  withCredentials: true,
 });
-
-// Request interceptor for cart session management
-http.interceptors.request.use((config) => {
-  const cartId = localStorage.getItem("cartId");
-  if (cartId) config.headers["x-cart-id"] = cartId;
-  return config;
-});
-http.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token') || localStorage.getItem('adminToken')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-
-  return config
-})
 
 // Response interceptor for cart ID capturing and error handling
 http.interceptors.response.use(
@@ -33,6 +19,23 @@ http.interceptors.response.use(
   },
   (error) => {
     console.error('API Error:', error.response?.data || error.message);
+
+    if (error.response?.status === 401) {
+      const pathname = window.location.pathname;
+      const requestUrl = error.config?.url || "";
+      const isSessionBootstrap = requestUrl.includes("/auth/me");
+      const isAuthPage =
+        pathname === "/login" ||
+        pathname === "/register" ||
+        pathname === "/admin/login" ||
+        pathname === "/unauthorized";
+
+      if (!isSessionBootstrap && !isAuthPage) {
+        const isAdmin = pathname.startsWith("/admin");
+        window.location.replace(isAdmin ? "/admin/login" : "/login");
+      }
+    }
+
     return Promise.reject(error);
   }
 );

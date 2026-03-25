@@ -1,6 +1,5 @@
 import { Router } from "express";
-import { protect } from "../middleware/protect.js";
-import { authorize } from "../middleware/auth.js";
+import { requireRole } from "../middleware/auth.js";
 import {
   getMenu,
   getMenuCategories,
@@ -29,8 +28,8 @@ router.get("/category/:category", getMenuByCategory);
 // GET /menu/:id - Single item by numeric ID
 router.get("/:id", getMenuItem);
 
-router.post("/", protect, authorize("admin"), createMenuItem);
-router.patch("/:id",protect,authorize("admin"), updateMenuItem);
-router.delete("/:id",protect, authorize("admin"), deleteMenuItem);
+router.post("/", requireRole("admin"), createMenuItem);
+router.patch("/:id", requireRole("admin"), updateMenuItem);
+router.delete("/:id", requireRole("admin"), deleteMenuItem);
 
 export default router;

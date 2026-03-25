@@ -16,6 +16,7 @@ import AdminOrders from "../pages/admin/AdminOrders";
 import AdminLogin from "../pages/admin/AdminLogin"
 import AdminGuard from "../components/admin/AdminGuard";
 import AuthGuard from "../components/auth/AuthGuard";
+import Unauthorized from "../pages/Unauthorized";
 
 // Layout wrapper: Navbar contains sidebar + top header + breadcrumb
 function Layout() {
@@ -54,6 +55,8 @@ export default function AppRoutes() {
         <Route path="/dashboard" element={<AuthGuard><Dashboard /></AuthGuard>} />
         <Route path="/item/:id" element={<MenuItemDetails />} />
       </Route>
+
+      <Route path="/unauthorized" element={<Unauthorized />} />
 
       {/* Catch-all: top-level so it never competes with /admin */}
       <Route path="*" element={<Navigate to="/" replace />} />
