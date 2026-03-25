@@ -7,12 +7,15 @@ import menuRoutes from "./routes/menu.routes.js";
 import ordersRoutes from "./routes/orders.routes.js";
 import cartRoutes from "./routes/cart.routes.js";
 import authRoutes from "./routes/auth.routes.js";
+import { sendEmail } from "./utils/mailer.js";
+import { welcomeTemplate } from "./utils/EmailTemplates.js";
 import 'dotenv/config';
+import adminRoutes from "./routes/adminRoutes.js";
 
 
 export function createApp() {
   const app = express();
-
+ 
 
   console.log("CORS_ORIGIN =", ENV.CORS_ORIGIN)
 
@@ -30,6 +33,7 @@ export function createApp() {
   app.use("/orders", ordersRoutes);
   app.use("/cart", cartRoutes);
   app.use("/auth", authRoutes);
+  app.use("/admin", adminRoutes);
 
 
   app.get("/api/protected", authenticate, (req, res) => {
@@ -39,6 +43,7 @@ export function createApp() {
     });
   });
   app.use((req, res) => res.status(404).json({ error: "Not Found" }));
+
 
   return app;
 }

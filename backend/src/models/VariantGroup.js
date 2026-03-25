@@ -1,5 +1,13 @@
 import mongoose from "mongoose";
 
+const suboptionSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    additionalPrice: { type: Number, default: 0 },
+  },
+  { _id: false },
+);
+
 const variantOptionSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -21,6 +29,10 @@ const variantOptionSchema = new mongoose.Schema({
   order: {
     type: Number,
     default: 0,
+  },
+  suboptions: {
+    type: [suboptionSchema],
+    default: [],
   },
 });
 

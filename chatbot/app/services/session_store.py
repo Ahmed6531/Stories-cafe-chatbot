@@ -13,7 +13,9 @@ def get_or_create_session(session_id: str | None) -> Tuple[str, str | None]:
     """
     import uuid
 
-    if session_id and session_id in _sessions:
+    if session_id:
+        if session_id not in _sessions:
+            _sessions[session_id] = None
         return session_id, _sessions[session_id]
 
     # Create a new session
@@ -21,3 +23,7 @@ def get_or_create_session(session_id: str | None) -> Tuple[str, str | None]:
     cart_id = None  # can later initialize via cart API if needed
     _sessions[new_session_id] = cart_id
     return new_session_id, cart_id
+
+
+def set_session_cart_id(session_id: str, cart_id: str | None) -> None:
+    _sessions[session_id] = cart_id

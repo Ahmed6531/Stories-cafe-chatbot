@@ -1,6 +1,9 @@
+import logging
+
 import httpx
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
 
 class ExpressAPIError(Exception):
     pass
@@ -22,6 +25,11 @@ class ExpressHttpClient:
             response = await client.get(url, params=params, headers=headers)
 
         if response.status_code >= 400:
+            logger.error({
+                "service": "express",
+                "status": response.status_code,
+                "body": response.text,
+            })
             raise ExpressAPIError(
                 f"GET {path} failed with {response.status_code}: {response.text}"
             )
@@ -40,8 +48,58 @@ class ExpressHttpClient:
             response = await client.post(url, json=json, headers=headers)
 
         if response.status_code >= 400:
+            logger.error({
+                "service": "express",
+                "status": response.status_code,
+                "body": response.text,
+            })
             raise ExpressAPIError(
                 f"POST {path} failed with {response.status_code}: {response.text}"
+            )
+
+        return response.json(), response.headers
+
+    async def patch(
+        self,
+        path: str,
+        json: dict | None = None,
+        headers: dict | None = None,
+    ) -> tuple[dict, httpx.Headers]:
+        url = f"{self.base_url}{path}"
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.patch(url, json=json, headers=headers)
+
+        if response.status_code >= 400:
+            logger.error({
+                "service": "express",
+                "status": response.status_code,
+                "body": response.text,
+            })
+            raise ExpressAPIError(
+                f"PATCH {path} failed with {response.status_code}: {response.text}"
+            )
+
+        return response.json(), response.headers
+
+    async def delete(
+        self,
+        path: str,
+        headers: dict | None = None,
+    ) -> tuple[dict, httpx.Headers]:
+        url = f"{self.base_url}{path}"
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.delete(url, headers=headers)
+
+        if response.status_code >= 400:
+            logger.error({
+                "service": "express",
+                "status": response.status_code,
+                "body": response.text,
+            })
+            raise ExpressAPIError(
+                f"DELETE {path} failed with {response.status_code}: {response.text}"
             )
 
         return response.json(), response.headers

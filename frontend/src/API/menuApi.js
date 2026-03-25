@@ -28,7 +28,6 @@ function transformMenuItem(item) {
       ...v,
       id: v.groupId || v.id // Map groupId to id for frontend compatibility
     })).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)),
-    mongoId: item._id,
   }
 }
 
@@ -115,4 +114,43 @@ export async function fetchMenuItemById(id) {
     throw new Error(error.response?.data?.error || 'Failed to load menu item')
   }
 }
+/**
+ * Admin-only: Create a new menu item
+ */
+export async function createMenuItem(data) {
+  try {
+    const response = await http.post("/menu", data); // JWT sent automatically via http
+    return transformMenuItem(response.data.item || response.data);
+  } catch (error) {
+    console.error("Failed to create menu item:", error);
+    throw new Error(error.response?.data?.error || "Failed to create menu item");
+  }
+}
 
+/**
+ * Admin-only: Update a menu item by ID
+ */
+export async function updateMenuItem(id, data) {
+  console.log("→ Sending PATCH request for id:", id, "data:", data);
+  try {
+
+    const response = await http.patch(`/menu/${id}`, data);
+    return transformMenuItem(response.data.item || response.data);
+  } catch (error) {
+    console.error(`Failed to update menu item ${id}:`, error);
+    throw new Error(error.response?.data?.error || "Failed to update menu item");
+  }
+}
+
+/**
+ * Admin-only: Delete a menu item by ID
+ */
+export async function deleteMenuItem(id) {
+  try {
+    const response = await http.delete(`/menu/${id}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Failed to delete menu item ${id}:`, error);
+    throw new Error(error.response?.data?.error || "Failed to delete menu item");
+  }
+}

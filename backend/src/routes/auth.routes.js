@@ -59,18 +59,30 @@ router.post("/login", async (req, res) => {
 
     if (!user.isVerified) {
       const actionLink = `${process.env.BACKEND_URL}/auth/verify-email?email=${email}`;
-      await sendEmail(
-        email,
-        "Verify Your Account",
-        accountVerifyTemplate,
-        { name: email.split("@")[0], actionLink }
-      );
+      try {
+        await sendEmail(
+          email,
+          "Verify Your Account",
+          accountVerifyTemplate,
+          { name: email.split("@")[0], actionLink }
+        );
+      } catch (e) {
+        console.error("Re-send verification email failed:", e);
+      }
       return res.status(403).json({ message: "Please verify your email. A new verification email has been sent." });
     }
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "1d",
-    });
+   const token = jwt.sign(
+      {
+        id: user._id,
+        role: user.role,    // ✅ MODIFIED
+        
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
+
+    console.log("Decoded JWT:", jwt.decode(token));
 
     res.json({ token });
   } catch (err) {

@@ -15,8 +15,24 @@ function makeCartId() {
   return crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex");
 }
 
-async function getOrCreateCart(req) {
-  let cartId = req.get("x-cart-id") || req.query.cartId;
+function getCartIdFromRequest(req) {
+  return req.get("x-cart-id") || req.query.cartId || null;
+}
+
+function emptyCartResponse() {
+  return { cartId: null, count: 0, items: [] };
+}
+
+async function getExistingCart(req) {
+  const cartId = getCartIdFromRequest(req);
+  if (!cartId) return { cart: null, cartId: null };
+
+  const cart = await Cart.findOne({ cartId });
+  return { cart, cartId: cart ? cartId : null };
+}
+
+async function getOrCreateWritableCart(req) {
+  let cartId = getCartIdFromRequest(req);
 
   if (!cartId) {
     cartId = makeCartId();
@@ -31,19 +47,15 @@ async function getOrCreateCart(req) {
 }
 
 async function buildCartResponse(cart) {
-  const ids = cart.items.map((x) => x.menuItemId);
+  const ids = cart.items
+    .map((x) => Number(x.menuItemId))
+    .filter((id) => Number.isFinite(id));
 
-  // Lookup by both MongoDB _id and numeric id
   const menuItems = await MenuItem.find({
-    $or: [
-      { _id: { $in: ids.filter(id => id && String(id).match(/^[0-9a-fA-F]{24}$/)) } },
-      { id: { $in: ids.filter(id => id && !isNaN(Number(id))).map(Number) } }
-    ]
+    id: { $in: ids }
   });
 
-  const byMongoId = new Map(menuItems.map((m) => [String(m._id), m]));
-  const byNumericId = new Map(menuItems.map((m) => [String(m.id), m]));
-  const byStringId = new Map(menuItems.map((m) => [String(m.id), m]));
+  const byNumericId = new Map(menuItems.map((m) => [Number(m.id), m]));
 
   // Fetch all variant groups referenced by these menu items
   const allVariantGroupIds = new Set();
@@ -59,19 +71,18 @@ async function buildCartResponse(cart) {
   const variantGroupsById = createVariantGroupMap(variantGroups);
 
   const items = cart.items.map((line) => {
-    let menuItem = byMongoId.get(String(line.menuItemId))
-      || byNumericId.get(Number(line.menuItemId))
-      || byStringId.get(String(line.menuItemId));
+    const menuItem = byNumericId.get(Number(line.menuItemId));
 
-    let price = menuItem ? menuItem.basePrice : 0;
-    const resolvedVariantGroups = menuItem
-      ? resolveVariantGroupsForMenuItem(menuItem, variantGroupsById)
-      : [];
+    if (!menuItem) return null; // ghost item — menu item no longer exists
+
+    let price = menuItem.basePrice;
+    const resolvedVariantGroups = resolveVariantGroupsForMenuItem(menuItem, variantGroupsById);
 
     // Support legacy "options" if they exist
-    if (menuItem && menuItem.options && resolvedVariantGroups.length === 0) {
-      line.selectedOptions.forEach(optLabel => {
-        const opt = menuItem.options.find(o => o.label === optLabel);
+    if (menuItem.options && resolvedVariantGroups.length === 0) {
+      line.selectedOptions.forEach((selection) => {
+        const optionName = selection?.optionName || selection;
+        const opt = menuItem.options.find((entry) => entry.label === optionName);
         if (opt) price += opt.priceDelta;
       });
     }
@@ -81,15 +92,15 @@ async function buildCartResponse(cart) {
     return {
       lineId: line._id,
       menuItemId: line.menuItemId,
-      name: menuItem ? menuItem.name : "Unknown item",
-      image: menuItem ? menuItem.image : undefined,
+      name: menuItem.name,
+      image: menuItem.image,
       qty: line.qty,
       price: price,
       selectedOptions: sortSelectedOptionsForDisplay(line.selectedOptions, resolvedVariantGroups),
       instructions: line.instructions || "",
-      isAvailable: menuItem ? !!menuItem.isAvailable : false
+      isAvailable: !!menuItem.isAvailable,
     };
-  });
+  }).filter(Boolean);
 
   const count = items.reduce((sum, x) => sum + (x.qty || 0), 0);
 
@@ -98,8 +109,28 @@ async function buildCartResponse(cart) {
 
 export async function getCart(req, res) {
   try {
-    const { cart, cartId } = await getOrCreateCart(req);
+    const { cart, cartId } = await getExistingCart(req);
+    if (!cart) {
+      return res.json(emptyCartResponse());
+    }
+
     const payload = await buildCartResponse(cart);
+
+    // Prune ghost items (menu items that no longer exist) from the DB
+    if (payload.items.length < cart.items.length) {
+      const validLineIds = new Set(payload.items.map((i) => String(i.lineId)));
+      const ghostIds = cart.items
+        .filter((l) => !validLineIds.has(String(l._id)))
+        .map((l) => l._id);
+      ghostIds.forEach((id) => cart.items.pull(id));
+
+      if (cart.items.length === 0) {
+        await Cart.findOneAndDelete({ cartId });
+        return res.json(emptyCartResponse());
+      }
+      await cart.save();
+    }
+
     res.set("x-cart-id", cartId);
     res.json(payload);
   } catch {
@@ -109,39 +140,58 @@ export async function getCart(req, res) {
 
 export async function addToCart(req, res) {
   try {
-    const { cart, cartId } = await getOrCreateCart(req);
+    const { cart, cartId } = await getOrCreateWritableCart(req);
 
     const { menuItemId, qty = 1, selectedOptions = [], instructions = "" } = req.body || {};
+    console.log("[CART ADD REQUEST]", {
+      cartId,
+      menuItemId,
+      qty,
+      rawOptions: req.body?.selectedOptions,
+    });
     const nQty = Number(qty);
+    const normalizedMenuItemId = Number(menuItemId);
 
-    if (!menuItemId || !Number.isFinite(nQty) || nQty < 1) {
+    if (!Number.isFinite(normalizedMenuItemId) || !Number.isFinite(nQty) || nQty < 1) {
       return res.status(400).json({ error: "menuItemId and qty >= 1 are required" });
     }
 
-    const isMongoId = String(menuItemId).match(/^[0-9a-fA-F]{24}$/);
-    const menuItem = isMongoId
-      ? await MenuItem.findById(menuItemId)
-      : await MenuItem.findOne({ id: Number(menuItemId) });
+    const menuItem = await MenuItem.findOne({ id: normalizedMenuItemId });
 
     if (!menuItem || !menuItem.isAvailable) {
       return res.status(400).json({ error: "Menu item not available" });
     }
 
     const opts = sanitizeSelectedOptions(selectedOptions);
+    console.log("[CART SANITIZED OPTIONS]", opts);
     const inst = (instructions || "").trim();
 
     const existing = cart.items.find(
-      (l) => String(l.menuItemId) === String(menuItemId) &&
+      (l) => Number(l.menuItemId) === normalizedMenuItemId &&
         sameSelectedOptions(l.selectedOptions, opts) &&
         (l.instructions || "").trim() === inst
     );
+    const shouldMerge = Boolean(existing);
+    console.log("[CART LINE DECISION]", {
+      merge: shouldMerge,
+      existingLineId: existing?._id ?? null,
+    });
 
     if (existing) existing.qty += nQty;
-    else cart.items.push({ menuItemId, qty: nQty, selectedOptions: opts, instructions: inst });
+    else cart.items.push({ menuItemId: normalizedMenuItemId, qty: nQty, selectedOptions: opts, instructions: inst });
 
     await cart.save();
 
     const payload = await buildCartResponse(cart);
+    const cartTotal = payload.items.reduce(
+      (sum, item) => sum + (Number(item.price || 0) * Number(item.qty || 0)),
+      0,
+    );
+    console.log("[CART STATE]", {
+      lines: cart.items.length,
+      totalItems: cart.items.reduce((a,i)=>a+i.qty,0),
+      cartTotal,
+    });
     res.set("x-cart-id", cartId);
     res.status(201).json(payload);
   } catch (err) {
@@ -151,7 +201,9 @@ export async function addToCart(req, res) {
 }
 export async function updateCartItem(req, res) {
   try {
-    const { cart, cartId } = await getOrCreateCart(req);
+    const { cart, cartId } = await getExistingCart(req);
+    if (!cart) return res.status(404).json({ error: "Cart not found" });
+
     const { lineId } = req.params;
     const { qty } = req.body;
 
@@ -160,6 +212,11 @@ export async function updateCartItem(req, res) {
 
     if (qty <= 0) cart.items.pull(lineId);
     else item.qty = qty;
+
+    if (cart.items.length === 0) {
+      await Cart.findOneAndDelete({ cartId });
+      return res.json(emptyCartResponse());
+    }
 
     await cart.save();
     const payload = await buildCartResponse(cart);
@@ -172,11 +229,21 @@ export async function updateCartItem(req, res) {
 
 export async function removeFromCart(req, res) {
   try {
-    const { cart, cartId } = await getOrCreateCart(req);
+    const { cart, cartId } = await getExistingCart(req);
+    if (!cart) {
+      return res.json(emptyCartResponse());
+    }
+
     const { lineId } = req.params;
 
     // Use pull to remove item by its subdocument _id
     cart.items.pull(lineId);
+
+    if (cart.items.length === 0) {
+      await Cart.findOneAndDelete({ cartId });
+      return res.json(emptyCartResponse());
+    }
+
     await cart.save();
 
     const payload = await buildCartResponse(cart);
@@ -190,13 +257,13 @@ export async function removeFromCart(req, res) {
 
 export async function clearCart(req, res) {
   try {
-    const { cart, cartId } = await getOrCreateCart(req);
-    cart.items = [];
-    await cart.save();
+    const { cart, cartId } = await getExistingCart(req);
+    if (!cart) {
+      return res.json(emptyCartResponse());
+    }
 
-    const payload = await buildCartResponse(cart);
-    res.set("x-cart-id", cartId);
-    res.json(payload);
+    await Cart.findOneAndDelete({ cartId });
+    res.json(emptyCartResponse());
   } catch (err) {
     res.status(500).json({ error: "Failed to clear cart" });
   }
