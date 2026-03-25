@@ -145,7 +145,8 @@ export default function ChatWidget({
   }, [])
 
   const [messages, setMessages] = useState(initialMessages)
-  const [chatInput, setChatInput] = useState('')
+  const [confirmedText, setConfirmedText] = useState('')
+  const [interimText, setInterimText]     = useState('')
   const [typing, setTyping] = useState(false)
   const [chipsVisible, setChipsVisible] = useState(initialMessages.length === 0)
   const [micMode, setMicMode] = useState(MIC_MODE.IDLE)
@@ -154,6 +155,7 @@ export default function ChatWidget({
   const [voiceError, setVoiceError] = useState('')
 
   const msgsRef = useRef(null)
+  const inputRef = useRef(null)
   const pendingReplyTimeoutRef = useRef(null)
   const partialTranscriptTimeoutRef = useRef(null)
   const pendingPartialTranscriptRef = useRef('')
@@ -171,7 +173,7 @@ export default function ChatWidget({
     const normalized = normalizeTranscriptForUi(nextText)
     pendingPartialTranscriptRef.current = normalized
     firstPartialRenderedRef.current = Boolean(normalized)
-    setChatInput((current) => (current === normalized ? current : normalized))
+    setInterimText((current) => (current === normalized ? current : normalized))
   }
 
   const schedulePartialTranscript = (nextText) => {
@@ -194,7 +196,7 @@ export default function ChatWidget({
 
     partialTranscriptTimeoutRef.current = window.setTimeout(() => {
       partialTranscriptTimeoutRef.current = null
-      setChatInput((current) => (
+      setInterimText((current) => (
         current === pendingPartialTranscriptRef.current ? current : pendingPartialTranscriptRef.current
       ))
     }, PARTIAL_TRANSCRIPT_DEBOUNCE_MS)
@@ -242,7 +244,7 @@ export default function ChatWidget({
     setVoiceActive(false)
     setMicMode(MIC_MODE.IDLE)
     flushPartialTranscript('')
-    setChatInput('')
+    setConfirmedText('')
     setMessages([])
     setChipsVisible(true)
     localStorage.removeItem(CHAT_STORAGE_KEY)
@@ -333,7 +335,7 @@ export default function ChatWidget({
     flushPartialTranscript('')
     setVoiceActive(false)
     appendMessage({ id: Date.now(), role: 'user', text: trimmed, time: now })
-    setChatInput('')
+    setConfirmedText('')
     setMicMode(MIC_MODE.THINKING)
     setTyping(true)
 
@@ -368,7 +370,7 @@ export default function ChatWidget({
   }
 
   const handleChipClick = (text) => sendMessage(text)
-  const handleSend = () => sendMessage(chatInput)
+  const handleSend = () => sendMessage((confirmedText + (interimText ? ' ' + interimText : '')).trim())
 
   const handleCloseClick = () => {
     if (pendingReplyTimeoutRef.current) {
@@ -533,15 +535,31 @@ export default function ChatWidget({
 
             <div className="chat-input-bar">
               <div className="chat-input-wrap">
-                <input
-                  className="chat-input"
-                  type="text"
-                  placeholder="Type your order..."
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                />
-                {chatInput && (
+                <div className="chat-input-composite" onClick={() => inputRef.current?.focus()}>
+                  <input
+                    ref={inputRef}
+                    className="chat-input-hidden"
+                    type="text"
+                    value={confirmedText}
+                    onChange={(e) => { setConfirmedText(e.target.value); setInterimText('') }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                    aria-label="Type your order"
+                  />
+                  <div className="chat-input-display" aria-hidden="true">
+                    {!confirmedText && !interimText && (
+                      <span className="chat-input-placeholder">Type your order...</span>
+                    )}
+                    {confirmedText && (
+                      <span className="chat-input-confirmed">{confirmedText}</span>
+                    )}
+                    {interimText && (
+                      <span className="chat-input-interim">
+                        {confirmedText ? ' ' : ''}{interimText}…
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {(confirmedText || interimText) && (
                   <button className="chat-input-send" type="button" aria-label="Send" onClick={handleSend}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="22" y1="2" x2="11" y2="13" />
