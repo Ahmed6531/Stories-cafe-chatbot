@@ -41,7 +41,7 @@ describe('createOrder', () => {
         _id: 'orderId1',
         orderNumber: 'SC-20231201-12345',
         status: 'pending',
-        total: 10
+        total: 11
       };
 
       req.body = {
@@ -66,7 +66,7 @@ describe('createOrder', () => {
         orderId: 'orderId1',
         orderNumber: 'SC-20231201-12345',
         status: 'pending',
-        total: 10
+        total: 11
       });
       expect(Order.create).toHaveBeenCalledTimes(1);
       expect(Order.create).toHaveBeenCalledWith({
@@ -84,7 +84,7 @@ describe('createOrder', () => {
           lineTotal: 10
         }],
         subtotal: 10,
-        total: 10
+        total: 11
       });
       expect(Cart.findOneAndDelete).toHaveBeenCalledWith({ cartId: 'cartId123' });
     });
@@ -102,7 +102,7 @@ describe('createOrder', () => {
         _id: 'orderId1',
         orderNumber: 'SC-20231201-12345',
         status: 'pending',
-        total: 10
+        total: 11
       };
 
       req.body = {

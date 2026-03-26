@@ -17,12 +17,16 @@ export const adminLogin = async (req, res) => {
       return res.status(401).json({ error: { code: "INVALID_CREDENTIALS", message: "Invalid admin credentials" } });
     }
 
+    if (!user.isVerified) {
+      return res.status(403).json({ error: { code: "EMAIL_NOT_VERIFIED", message: "Account not verified" } });
+    }
+
     const token = signToken({ id: user._id, email: user.email, role: user.role });
 
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
