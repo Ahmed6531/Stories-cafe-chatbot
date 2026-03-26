@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
 import axios from 'axios'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
@@ -156,6 +156,7 @@ export default function ChatWidget({
 
   const msgsRef = useRef(null)
   const inputRef = useRef(null)
+  const displayRef = useRef(null)
   const pendingReplyTimeoutRef = useRef(null)
   const partialTranscriptTimeoutRef = useRef(null)
   const pendingPartialTranscriptRef = useRef('')
@@ -216,6 +217,10 @@ export default function ChatWidget({
   useEffect(() => {
     if (msgsRef.current) msgsRef.current.scrollTop = msgsRef.current.scrollHeight
   }, [messages, typing])
+
+  useLayoutEffect(() => {
+    if (displayRef.current) displayRef.current.scrollLeft = displayRef.current.scrollWidth
+  }, [confirmedText, interimText])
 
   useEffect(() => {
     if (messages.length === 0) {
@@ -443,9 +448,11 @@ export default function ChatWidget({
                 schedulePartialTranscript(text)
               }}
               onTranscript={(text) => {
-                flushPartialTranscript(text)
+                const finalText = normalizeTranscriptForUi(text).trim()
+                flushPartialTranscript('')
+                setConfirmedText(finalText)
                 setMicMode(MIC_MODE.THINKING)
-                setTimeout(() => sendMessage(text), 500)
+                window.setTimeout(() => sendMessage(finalText), 150)
               }}
               onError={(message) => {
                 flushPartialTranscript('')
@@ -545,16 +552,20 @@ export default function ChatWidget({
                     onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                     aria-label="Type your order"
                   />
-                  <div className="chat-input-display" aria-hidden="true">
+                  <div className="chat-input-display" ref={displayRef} aria-hidden="true">
                     {!confirmedText && !interimText && (
                       <span className="chat-input-placeholder">Type your order...</span>
                     )}
-                    {confirmedText && (
-                      <span className="chat-input-confirmed">{confirmedText}</span>
-                    )}
-                    {interimText && (
-                      <span className="chat-input-interim">
-                        {confirmedText ? ' ' : ''}{interimText}…
+                    {(confirmedText || interimText) && (
+                      <span className="chat-input-text-row">
+                        {confirmedText && (
+                          <span className="chat-input-confirmed">{confirmedText}</span>
+                        )}
+                        {interimText && (
+                          <span className="chat-input-interim">
+                            {confirmedText ? ' ' : ''}{interimText}
+                          </span>
+                        )}
                       </span>
                     )}
                   </div>

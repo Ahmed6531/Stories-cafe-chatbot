@@ -769,18 +769,27 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 }
 
 .chat-input-display {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
-  white-space: nowrap;
-  overflow: hidden;
-  width: 100%;
-  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
   font-family: 'Montserrat', sans-serif;
   font-size: 13px;
   font-weight: 500;
   line-height: 1;
   pointer-events: none;
   user-select: none;
+}
+.chat-input-display::-webkit-scrollbar { display: none; }
+
+.chat-input-text-row {
+  display: inline-flex;
+  align-items: center;
+  min-width: max-content;
+  white-space: nowrap;
 }
 
 .chat-input-placeholder {
@@ -791,18 +800,12 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .chat-input-confirmed {
   color: #2b2b2b;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: clip;
-  flex-shrink: 1;
-  min-width: 0;
 }
 
 .chat-input-interim {
   color: #2b2b2b;
-  opacity: 0.38;
+  opacity: 0.42;
   white-space: nowrap;
-  flex-shrink: 0;
-  transition: opacity 0.15s ease;
 }
 
 .chat-input {
