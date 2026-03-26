@@ -7,6 +7,8 @@ import { useTheme } from '@mui/material/styles'
 import { formatLL } from '../utils/currency'
 import { calculateOrderTotals } from '../utils/orderPricing'
 import { useCart } from '../state/useCart'
+import { useNavigate } from 'react-router-dom'
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 
 const receiptPath =
   'M 2 2 H 98 V 96 L 94 98 L 90 96 L 86 98 L 82 96 L 78 98 L 74 96 L 70 98 L 66 96 L 62 98 L 58 96 L 54 98 L 50 96 L 46 98 L 42 96 L 38 98 L 34 96 L 30 98 L 26 96 L 22 98 L 18 96 L 14 98 L 10 96 L 6 98 L 2 96 Z'
@@ -77,7 +79,8 @@ export default function CartSummary({
   const theme = useTheme()
   const { brand } = theme
   const receiptId = useId().replace(/:/g, '')
-  const { updateQty, removeFromCart } = useCart()
+  
+  const navigate = useNavigate()
   const [pendingRemove, setPendingRemove] = useState(() => new Set())
   const { subtotal, tax, total } = calculateOrderTotals(items)
 
@@ -359,6 +362,13 @@ export default function CartSummary({
                               <AddIcon sx={{ fontSize: { xs: '0.95rem', sm: '1.05rem' } }} />
                             </IconButton>
                           </Stack>
+                          <IconButton
+    onClick={() => navigate(`/item/${item.menuItemId}?edit=${item.lineId}`)}
+    sx={{ color: brand.textSecondary, width: { xs: 24, sm: 28 }, height: { xs: 24, sm: 28 } }}
+    size="small"
+  >
+    <EditOutlinedIcon fontSize="small" />
+  </IconButton>
                           <IconButton
                             onClick={() => handleRemove(item.lineId)}
                             disabled={pendingRemove.has(item.lineId)}

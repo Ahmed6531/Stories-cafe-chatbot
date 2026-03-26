@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { fetchMenuItemById } from '../API/menuApi'
 import { formatLL } from '../utils/currency'
 import { useCart } from '../state/useCart'
@@ -52,7 +52,26 @@ const MenuProps = {
     horizontal: 'left',
   },
 }
-
+function seedSelectionsFromCartItem(groups, selectedOptions) {
+  const selections = {}
+  for (const g of groups) {
+    const groupOptionNames = new Set((g.options || []).map((o) => o.name))
+    const matching = (selectedOptions || []).filter((s) => groupOptionNames.has(s.optionName))
+    if (g.maxSelections === 1) {
+      const match = matching[0]
+      selections[g.id] = {
+        type: 'single',
+        value: match ? createSelectionEntry(match.optionName, match.suboptionName) : '',
+      }
+    } else {
+      selections[g.id] = {
+        type: 'multi',
+        values: matching.map((m) => createSelectionEntry(m.optionName, m.suboptionName)),
+      }
+    }
+  }
+  return selections
+}
 function initSelections(groups) {
   const next = {}
   for (const g of groups) {
@@ -524,8 +543,10 @@ function MenuItemHero({
 
 export default function MenuItemDetails() {
   const { id } = useParams()
+  const [searchParams] = useSearchParams()
+const editLineId = searchParams.get('edit') || null
   const navigate = useNavigate()
-  const { addToCart } = useCart()
+  const { addToCart, editCartItem, state } = useCart()
   const theme = useTheme()
 
   const [item, setItem] = useState(null)
@@ -566,13 +587,26 @@ export default function MenuItemDetails() {
     }))
   }, [item])
 
+  const cartItemToEdit = useMemo(() => {
+  if (!editLineId || !state?.items) return null
+  return state.items.find((i) => String(i.lineId) === String(editLineId)) || null
+}, [editLineId, state?.items])
+
+const isEditMode = Boolean(cartItemToEdit)
+  
   const [selections, setSelections] = useState(() => initSelections([]))
   useEffect(() => {
+  if (cartItemToEdit && groups.length > 0) {
+    setSelections(seedSelectionsFromCartItem(groups, cartItemToEdit.selectedOptions))
+    setQty(cartItemToEdit.qty)
+    setInstructions(cartItemToEdit.instructions || '')
+  } else {
     setSelections(initSelections(groups))
     setQty(1)
     setInstructions('')
-    setShowErrors(false)
-  }, [id, groups])
+  }
+  setShowErrors(false)
+}, [id, groups, cartItemToEdit])
 
   const errors = useMemo(() => validate(groups, selections), [groups, selections])
 
@@ -848,29 +882,28 @@ export default function MenuItemDetails() {
   }
 
   const handleSubmit = async () => {
-    const hasErrors = Object.keys(errors).length > 0
-    if (hasErrors) {
-      setShowErrors(true)
-      return
-    }
-
-    const payload = {
-      menuItemId: item.id,
-      qty,
-      selectedOptions: serializeSelectedOptions(selections),
-      instructions: instructions.trim(),
-    }
-
-    try {
-      console.log('Adding to cart:', payload)
-      await addToCart(payload)
-      setSnackOpen(true)
-      setTimeout(() => navigate('/cart'), 500)
-    } catch (err) {
-      console.error('Failed to add to cart:', err)
-      alert('Failed to add to cart. Please try again.')
-    }
+  const hasErrors = Object.keys(errors).length > 0
+  if (hasErrors) {
+    setShowErrors(true)
+    return
   }
+
+  const selectedOptions = serializeSelectedOptions(selections)
+  const inst = instructions.trim()
+
+  try {
+    if (isEditMode) {
+      await editCartItem(editLineId, { qty, selectedOptions, instructions: inst })
+    } else {
+      await addToCart({ menuItemId: item.id, qty, selectedOptions, instructions: inst })
+    }
+    setSnackOpen(true)
+    setTimeout(() => navigate('/cart'), 500)
+  } catch (err) {
+    console.error('Failed to update cart:', err)
+    alert('Failed to add to cart. Please try again.')
+  }
+}
 
   if (loading) return <MenuItemDetailsSkeleton />
 
@@ -992,7 +1025,7 @@ export default function MenuItemDetails() {
                   fontSize: { xs: '0.88rem', md: '1rem' },
                 }}
               >
-                ADD TO CART
+                {isEditMode ? 'UPDATE CART' : 'ADD TO CART'}
               </Button>
             </Stack>
           </Stack>
@@ -1003,7 +1036,7 @@ export default function MenuItemDetails() {
         open={snackOpen}
         autoHideDuration={2000}
         onClose={() => setSnackOpen(false)}
-        message="Item added to cart"
+        message={isEditMode ? 'Item updated' : 'Item added to cart'}
       />
     </Container>
   )

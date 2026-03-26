@@ -205,13 +205,17 @@ export async function updateCartItem(req, res) {
     if (!cart) return res.status(404).json({ error: "Cart not found" });
 
     const { lineId } = req.params;
-    const { qty } = req.body;
+    const { qty, selectedOptions, instructions } = req.body;
 
     const item = cart.items.id(lineId);
     if (!item) return res.status(404).json({ error: "Item not found in cart" });
 
     if (qty <= 0) cart.items.pull(lineId);
-    else item.qty = qty;
+else {
+  item.qty = qty;
+  if (selectedOptions !== undefined) item.selectedOptions = sanitizeSelectedOptions(selectedOptions);
+  if (instructions !== undefined) item.instructions = instructions.trim();
+}
 
     if (cart.items.length === 0) {
       await Cart.findOneAndDelete({ cartId });
