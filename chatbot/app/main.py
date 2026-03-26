@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .api.chat import router as chat_router
+from .api.routes_chat import router as chat_router
 from .api.voice import router as voice_router
 from .core.config import settings
 
