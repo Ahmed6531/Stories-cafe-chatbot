@@ -1,4 +1,6 @@
 # orchestrator.py
+import logging
+
 from app.schemas.chat import ChatMessageResponse
 from app.utils.normalize import normalize_user_message
 from app.services.tools import (
@@ -6,7 +8,8 @@ from app.services.tools import (
     fetch_featured_items,
     get_cart,
     add_item_to_cart,
-    find_menu_item_by_name,
+    remove_from_cart,
+    clear_cart,
 )
 from app.services.suggestions import suggest_popular_items, suggest_complementary_items
 from app.services.http_client import ExpressAPIError
@@ -14,17 +17,58 @@ from app.services.http_client import ExpressAPIError
 # Default options for smart defaults (SCRUM-91)
 DEFAULT_SIZE = "Medium"
 DEFAULT_MILK = "Regular"
+logger = logging.getLogger(__name__)
+
+def _fmt_price(n) -> str:
+    """Format a price as Lebanese Pounds, matching the frontend formatLL utility."""
+    return f"L.L {int(n or 0):,}"
 
 def detect_intent(normalized_message: str) -> str:
-    """Detects the intent of the user message"""
+    """Detects the intent of the user message.
+    More-specific phrases are checked before loose single-word keywords to
+    prevent accidental keyword matches (e.g. 'order' in 'repeat my last order').
+    """
+    # checkout: user wants to pay/confirm
+    if any(phrase in normalized_message for phrase in [
+        "checkout", "place order", "confirm order", "proceed to pay", "i want to pay",
+    ]):
+        return "checkout"
+
+    # clear entire cart — these phrases must be checked BEFORE the loose "delete"
+    # word check below, otherwise "delete my cart" / "delete cart" routes to remove_item
+    if any(phrase in normalized_message for phrase in [
+        "clear cart", "empty cart", "remove all", "start over", "reset cart",
+        "clear my cart", "delete my cart", "empty my cart", "delete cart",
+    ]):
+        return "clear_cart"
+
+    # remove a specific item (check before add_item to avoid collision)
+    if any(word in normalized_message for word in ["remove", "delete", "take out"]):
+        return "remove_item"
+
+    # view cart
+    if any(phrase in normalized_message for phrase in [
+        "show cart", "my cart", "what is in my cart", "view cart", "what's in my cart",
+        "whats in my cart",
+    ]):
+        return "view_cart"
+
+    # recommendations — includes quick-reply chip phrases
+    if any(phrase in normalized_message for phrase in [
+        "recommend", "suggest", "good today", "what's good", "whats good",
+        "surprise", "popular", "what do you have",
+    ]):
+        return "recommendation_query"
+
+    # "repeat my last order" has 'order' which would wrongly match add_item —
+    # guard it here; repeat-order is not yet supported so fall to unknown
+    if any(phrase in normalized_message for phrase in ["repeat", "last order"]):
+        return "unknown"
+
+    # add item (loose keywords last)
     if any(word in normalized_message for word in ["add", "get", "want", "order"]):
         return "add_item"
-    if any(word in normalized_message for word in ["remove", "delete"]):
-        return "remove_item"
-    if any(phrase in normalized_message for phrase in ["show cart", "my cart", "what is in my cart"]):
-        return "view_cart"
-    if any(phrase in normalized_message for phrase in ["recommend", "suggest"]):
-        return "recommendation_query"
+
     return "unknown"
 
 def extract_item_query(normalized_message: str) -> tuple[str, int]:
@@ -96,6 +140,8 @@ async def process_chat_message(
         fetch_featured_items,
         get_cart,
         add_item_to_cart,
+        remove_from_cart,
+        clear_cart,
     )
     from app.services.suggestions import (
         suggest_popular_items,
@@ -105,14 +151,34 @@ async def process_chat_message(
 
     normalized_message = normalize_user_message(message)
     intent = detect_intent(normalized_message)
+    logger.info({
+        "stage": "intent_detection",
+        "normalized_message": normalized_message,
+        "intent": intent,
+    })
 
     try:
         if intent == "view_cart":
             cart_result = await get_cart(cart_id=cart_id)
+            cart_items = cart_result["cart"]
+            if cart_items:
+                lines = []
+                total = 0.0
+                for item in cart_items:
+                    qty = item.get("qty", 1)
+                    name = item.get("name", "item")
+                    price = float(item.get("price", 0))
+                    line_total = price * qty
+                    total += line_total
+                    lines.append(f"• {qty}x {name} — {_fmt_price(price)} each")
+                cart_text = "\n".join(lines)
+                reply = f"Your cart:\n{cart_text}\n\nTotal: {_fmt_price(total)}"
+            else:
+                reply = "Your cart is empty."
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
-                reply="Here is your current cart.",
+                reply=reply,
                 intent=intent,
                 cart_updated=False,
                 cart_id=cart_result["cart_id"],
@@ -120,7 +186,7 @@ async def process_chat_message(
                 suggestions=[],
                 metadata={
                     "normalized_message": normalized_message,
-                    "cart": cart_result["cart"],
+                    "cart": cart_items,
                     "pipeline_stage": "view_cart_done",
                 },
             )
@@ -128,9 +194,39 @@ async def process_chat_message(
         if intent == "add_item":
             menu_items = await fetch_menu_items()
             item_query, quantity = extract_item_query(normalized_message)
+
+            if quantity <= 0:
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply="Please specify a quantity of 1 or more.",
+                    intent=intent,
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "invalid_quantity",
+                    },
+                )
+
             matched_item = await find_menu_item_by_name(menu_items, item_query)
+            item_id = matched_item.get("id") if matched_item else None
+            confidence = 1.0 if matched_item else 0.0
+
+            logger.info({
+                "stage": "menu_lookup",
+                "item_query": item_query,
+                "matched_item_id": item_id,
+                "confidence": confidence,
+            })
 
             if not matched_item:
+                logger.warning({
+                    "stage": "menu_lookup_failed",
+                    "query": item_query,
+                })
                 return ChatMessageResponse(
                     session_id=session_id,
                     status="ok",
@@ -147,12 +243,12 @@ async def process_chat_message(
                     },
                 )
 
-            menu_item_id = matched_item.get("id") or matched_item.get("_id")
+            menu_item_id = item_id
             if menu_item_id is None:
                 return ChatMessageResponse(
                     session_id=session_id,
                     status="error",
-                    reply="I found the menu item, but its ID is missing.",
+                    reply="I found the menu item, but its numeric ID is missing.",
                     intent=intent,
                     cart_updated=False,
                     cart_id=cart_id,
@@ -164,13 +260,50 @@ async def process_chat_message(
                     },
                 )
 
-            cart_result = await add_item_to_cart(
-                menu_item_id=menu_item_id,
-                qty=quantity,
-                selected_options=[],
-                instructions="",
-                cart_id=cart_id,
-            )
+            logger.info({
+                "stage": "cart_operation",
+                "operation": "add_item",
+                "menu_item_id": menu_item_id,
+                "qty": quantity,
+                "session_id": session_id,
+            })
+            try:
+                cart_result = await add_item_to_cart(
+                    menu_item_id=menu_item_id,
+                    qty=quantity,
+                    selected_options=[],
+                    instructions="",
+                    cart_id=cart_id,
+                )
+            except ExpressAPIError as add_err:
+                err_lower = str(add_err).lower()
+                is_unavailable = "unavailable" in err_lower or "not available" in err_lower
+                featured_items = await fetch_featured_items()
+                err_suggestions = suggest_popular_items(featured_items)
+                if is_unavailable:
+                    err_reply = (
+                        f"Sorry, **{matched_item.get('name')}** is currently unavailable."
+                    )
+                    if err_suggestions:
+                        err_reply += "\n\nYou might also like:"
+                else:
+                    err_reply = "I couldn't add that to your cart. Please try again."
+                    err_suggestions = []
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="error",
+                    reply=err_reply,
+                    intent=intent,
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=err_suggestions,
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "error": str(add_err),
+                        "pipeline_stage": "add_item_backend_error",
+                    },
+                )
 
             featured_items = await fetch_featured_items()
             popular = suggest_popular_items(featured_items)
@@ -181,32 +314,30 @@ async def process_chat_message(
                 s for s in suggestions
                 if s.get("item_name", "").lower() != matched_item.get("name", "").lower()
             ]
-            # Build cart summary
+            # Build cart summary with prices
             cart_items = cart_result["cart"]
 
             cart_lines = []
             for item in cart_items:
                 qty = item.get("qty", 1)
                 name = item.get("name", "item")
-                cart_lines.append(f"• {qty}x {name}")
+                price = float(item.get("price", 0))
+                cart_lines.append(f"• {qty}x {name} — {_fmt_price(price)} each")
 
             cart_summary = "\n".join(cart_lines)
 
-            # Build suggestion text
-            suggestion_lines = []
-            for s in filtered_suggestions:
-                suggestion_lines.append(f"• {s['item_name']}")
-
-            suggestion_text = "\n".join(suggestion_lines)
+            # Per-item price for the confirmation line
+            added_price = float(matched_item.get("basePrice", matched_item.get("price", 0)))
+            price_note = f" ({_fmt_price(added_price)})" if added_price else ""
 
             reply_text = (
-                f"Added {quantity} {matched_item.get('name')} to your cart.\n\n"
-                f"Your cart now contains:\n"
+                f"Added {quantity}x {matched_item.get('name')}{price_note} to your cart.\n\n"
+                f"Your cart:\n"
                 f"{cart_summary}"
             )
 
-            if suggestion_lines:
-                reply_text += f"\n\nYou might also like:\n{suggestion_text}"
+            if filtered_suggestions:
+                reply_text += "\n\nYou might also like:"
                         
             return ChatMessageResponse(
                 session_id=session_id,
@@ -227,13 +358,120 @@ async def process_chat_message(
                 },
             )
 
-        if intent == "recommendation_query":
-            featured_items = await fetch_featured_items()
-            suggestions = suggest_popular_items(featured_items)
+        if intent == "remove_item":
+            cart_result = await get_cart(cart_id=cart_id)
+            cart_items = cart_result["cart"]
+            item_query, _ = extract_item_query(normalized_message)
+
+            matched_line = None
+            if item_query:
+                # Strip intent verbs that extract_item_query leaves in the query
+                # e.g. "remove filtered coffee" → "filtered coffee"
+                _intent_words = {"remove", "delete", "take", "out"}
+                clean_query = " ".join(
+                    t for t in item_query.lower().split() if t not in _intent_words
+                ).strip()
+                for line in cart_items:
+                    cart_name = line.get("name", "").lower()
+                    if clean_query and (clean_query in cart_name or cart_name in clean_query):
+                        matched_line = line
+                        break
+
+            if not matched_line:
+                if not cart_items:
+                    reply = "Your cart is already empty."
+                else:
+                    reply = f"I couldn't find '{item_query}' in your cart."
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply=reply,
+                    intent=intent,
+                    cart_updated=False,
+                    cart_id=cart_result["cart_id"],
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "remove_item_not_found",
+                    },
+                )
+
+            line_id = str(matched_line.get("lineId", ""))
+            remove_result = await remove_from_cart(line_id=line_id, cart_id=cart_result["cart_id"])
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
-                reply="Here are some popular items you might like.",
+                reply=f"Removed {matched_line.get('name')} from your cart.",
+                intent=intent,
+                cart_updated=True,
+                cart_id=remove_result["cart_id"],
+                defaults_used=[],
+                suggestions=[],
+                metadata={
+                    "normalized_message": normalized_message,
+                    "removed_item": matched_line.get("name"),
+                    "pipeline_stage": "remove_item_done",
+                },
+            )
+
+        if intent == "clear_cart":
+            await clear_cart(cart_id=cart_id)
+            return ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply="Your cart has been cleared.",
+                intent=intent,
+                cart_updated=True,
+                cart_id=None,
+                defaults_used=[],
+                suggestions=[],
+                metadata={
+                    "normalized_message": normalized_message,
+                    "pipeline_stage": "clear_cart_done",
+                },
+            )
+
+        if intent == "checkout":
+            cart_result = await get_cart(cart_id=cart_id)
+            if not cart_result["cart"]:
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply="Your cart is empty. Add some items first, then head to checkout.",
+                    intent=intent,
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "checkout_empty_cart",
+                    },
+                )
+            return ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply="Ready to checkout! Head to the checkout page to enter your details and place your order.",
+                intent=intent,
+                cart_updated=False,
+                cart_id=cart_result["cart_id"],
+                defaults_used=[],
+                suggestions=[],
+                metadata={
+                    "normalized_message": normalized_message,
+                    "pipeline_stage": "checkout_redirect",
+                },
+            )
+
+        if intent == "recommendation_query":
+            featured_items = await fetch_featured_items()
+            suggestions = suggest_popular_items(featured_items)
+            reply = "Here are some items you might like!"
+            return ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply=reply,
                 intent=intent,
                 cart_updated=False,
                 cart_id=cart_id,

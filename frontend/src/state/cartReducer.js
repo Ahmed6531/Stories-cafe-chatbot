@@ -19,6 +19,8 @@ export function cartReducer(state, action) {
         count: action.payload.count || 0,
         items: action.payload.items || []
       };
+    case "CART_RESET":
+      return { ...initialCartState };
     case "CART_ERROR":
       return { ...state, loading: false, error: action.payload || "Cart error" };
     case "REMOVE_ITEM":
@@ -26,6 +28,14 @@ export function cartReducer(state, action) {
         ...state,
         items: state.items.filter(item => item.lineId !== action.payload),
         count: state.items.reduce((acc, item) => item.lineId === action.payload ? acc : acc + item.qty, 0)
+      };
+    case "RESTORE_CART":
+      return {
+        ...state,
+        loading: false,
+        cartId: action.payload.cartId ?? null,
+        count: action.payload.count || 0,
+        items: action.payload.items || []
       };
     default:
       return state;

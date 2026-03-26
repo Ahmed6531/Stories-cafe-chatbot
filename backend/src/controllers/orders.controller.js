@@ -7,6 +7,7 @@ import {
   calculateSelectedOptionsDelta,
   createVariantGroupMap,
   resolveVariantGroupsForMenuItem,
+  sanitizeSelectedOptions,
 } from "../utils/variantPricing.js";
 
 const ORDER_TAX_RATE = 0.08;
@@ -14,6 +15,13 @@ const ORDER_TAX_RATE = 0.08;
 export async function createOrder(req, res) {
   const { orderType, customer, items, notesToBarista } = req.body || {};
   const cartId = req.get("x-cart-id") || req.body.cartId;
+  const userId = req.user?.id || null;
+
+  console.log("[ORDER CREATE]", {
+    orderType,
+    itemCount: Array.isArray(items) ? items.length : 0,
+    cartId,
+  });
 
   if (!orderType || !["pickup", "dine_in", "delivery"].includes(orderType)) {
     return res.status(400).json({ error: "Invalid orderType" });
@@ -33,15 +41,18 @@ export async function createOrder(req, res) {
 
   for (const line of items) {
     const { menuItemId, qty, selectedOptions = [], instructions = "" } = line || {};
+    const numericMenuItemId = Number(menuItemId);
     if (!menuItemId || !qty || qty < 1) {
       return res.status(400).json({ error: "Each item must include menuItemId and qty >= 1" });
     }
+    if (!Number.isFinite(numericMenuItemId)) {
+      return res.status(400).json({ error: `Invalid menuItemId: ${menuItemId}. Backend expects numeric id.` });
+    }
 
-    const menuItem = await MenuItem.findById(menuItemId);
+    const normalizedSelectedOptions = sanitizeSelectedOptions(selectedOptions);
+
+    const menuItem = await MenuItem.findOne({ id: numericMenuItemId });
     if (!menuItem) {
-      if (!isNaN(menuItemId)) {
-        return res.status(400).json({ error: `Invalid menuItemId: ${menuItemId}. Backend expects Mongo _id (ObjectId), not numeric id.` });
-      }
       return res.status(400).json({ error: "Menu item not found" });
     }
     if (!menuItem.isAvailable) {
@@ -55,10 +66,10 @@ export async function createOrder(req, res) {
       });
       const variantGroupsById = createVariantGroupMap(variantGroups);
       const resolvedVariantGroups = resolveVariantGroupsForMenuItem(menuItem, variantGroupsById);
-      optionsDelta = calculateSelectedOptionsDelta(selectedOptions, resolvedVariantGroups);
+      optionsDelta = calculateSelectedOptionsDelta(normalizedSelectedOptions, resolvedVariantGroups);
     } else {
-      for (const optLabel of selectedOptions) {
-        const found = (menuItem.options || []).find((o) => o.label === optLabel);
+      for (const selection of normalizedSelectedOptions) {
+        const found = (menuItem.options || []).find((o) => o.label === selection.optionName);
         if (found) optionsDelta += found.priceDelta;
       }
     }
@@ -68,11 +79,11 @@ export async function createOrder(req, res) {
     subtotal += lineTotal;
 
     orderLines.push({
-      menuItemId: menuItem._id,
+      menuItemId: numericMenuItemId,
       name: menuItem.name,
       qty,
       unitPrice,
-      selectedOptions,
+      selectedOptions: normalizedSelectedOptions,
       instructions: instructions || "",
       lineTotal
     });
@@ -80,6 +91,11 @@ export async function createOrder(req, res) {
 
   const tax = Math.round(subtotal * ORDER_TAX_RATE);
   const total = subtotal + tax;
+  console.log("[ORDER TOTALS]", {
+    subtotal,
+    tax,
+    total,
+  });
 
   let orderNumber = generateOrderNumber();
   for (let i = 0; i < 3; i++) {
@@ -90,6 +106,7 @@ export async function createOrder(req, res) {
 
   const order = await Order.create({
     orderNumber,
+    userId,
     orderType,
     customer: {
       name: customer.name,
@@ -103,7 +120,11 @@ export async function createOrder(req, res) {
   });
 
   if (cartId) {
-    await Cart.findOneAndDelete({ cartId });
+    const deletedCart = await Cart.findOneAndDelete({ cartId });
+    console.log("[CART DELETE]", {
+      cartId,
+      success: !!deletedCart,
+    });
   }
 
   res.status(201).json({

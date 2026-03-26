@@ -218,7 +218,7 @@ export default function Navbar() {
   const theme = useTheme()
   const { brand } = theme
 
-  const [isAuthed] = useState(false)
+  const [isAuthed, setIsAuthed] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuClosing, setMenuClosing] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
@@ -229,6 +229,7 @@ export default function Navbar() {
   const [isOnline, setIsOnline] = useState(() => navigator.onLine)
 
   const pageRef = useRef(null)
+  const pendingCheckoutRef = useRef(false)
 
   const { cartCount, refreshCart } = useCart()
   const location = useLocation()
@@ -245,6 +246,17 @@ export default function Navbar() {
   useEffect(() => {
     pageRef.current?.scrollTo({ top: 0, behavior: 'auto' })
   }, [location.pathname, location.search])
+
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    setIsAuthed(!!token)
+  }, [location.pathname])
+
+  const handleLogout = () => {
+    localStorage.removeItem('token')
+    setIsAuthed(false)
+    navigate('/login')
+  }
 
   const closeMenu = () => {
     if (menuClosing) return
@@ -270,6 +282,10 @@ export default function Navbar() {
     setChatOpen(false)
     setChatRouteClosing(false)
     setDeferredChatClose(null)
+    if (pendingCheckoutRef.current) {
+        pendingCheckoutRef.current = false
+        navigate('/checkout')
+      }
   }
 
   useEffect(() => {
@@ -339,7 +355,7 @@ export default function Navbar() {
 
             <TopbarActionsWrap sx={{ display: isSuccessRoute ? 'none' : undefined }}>
               {isAuthed ? (
-                <TopPillBtn isAuth type="button" onClick={() => navigate(-1)}>Back</TopPillBtn>
+                <TopPillBtn isAuth type="button" onClick={handleLogout}>Logout</TopPillBtn>
               ) : (
                 <TopPillBtn type="button" onClick={() => navigate('/login')}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
