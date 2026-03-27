@@ -64,6 +64,7 @@ async function findCartByIdSafely(cartId, { createIfMissing = false } = {}) {
     const cart = await Cart.findOne({ cartId });
     if (cart) return cart;
   } catch (err) {
+    if (err.name !== "CastError" && err.name !== "ValidationError") throw err;
     console.warn("Cart hydration failed, trying legacy recovery:", err?.message || err);
   }
 
@@ -107,9 +108,7 @@ async function getOrCreateWritableCart(req) {
     return { cart, cartId };
   }
 
-  let cart = await findCartByIdSafely(cartId, { createIfMissing: true });
-  if (!cart) cart = await Cart.create({ cartId, items: [] });
-
+  const cart = await findCartByIdSafely(cartId, { createIfMissing: true });
   return { cart, cartId };
 }
 
@@ -277,8 +276,9 @@ export async function updateCartItem(req, res) {
     const item = cart.items.id(lineId);
     if (!item) return res.status(404).json({ error: "Item not found in cart" });
 
-    if (qty <= 0) cart.items.pull(lineId);
-    else item.qty = qty;
+    const nQty = Number(qty);
+    if (!Number.isFinite(nQty) || nQty <= 0) cart.items.pull(lineId);
+    else item.qty = nQty;
 
     if (cart.items.length === 0) {
       await Cart.findOneAndDelete({ cartId });
