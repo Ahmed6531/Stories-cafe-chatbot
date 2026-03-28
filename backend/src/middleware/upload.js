@@ -1,30 +1,19 @@
 import multer from "multer";
+import { Storage } from "@google-cloud/storage";
+import { v4 as uuidv4 } from "uuid";
 import path from "path";
-import { fileURLToPath } from "url";
-import fs from "fs";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+/*
+  Google Cloud Storage image upload middleware
+  Public URL format after upload:
+  https://storage.googleapis.com/<bucket>/<filename>
+*/
 
-// Ensure the upload directory exists
-const uploadDir = path.join(__dirname, "../../public/images");
-fs.mkdirSync(uploadDir, { recursive: true });
+const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+const storage = new Storage({ credentials });
+const bucket  = storage.bucket(process.env.GCS_BUCKET_NAME);
 
-const storage = multer.diskStorage({
-  destination(_req, _file, cb) {
-    cb(null, uploadDir);
-  },
-  filename(_req, file, cb) {
-    // e.g.  "cappuccino-1712345678901.jpg"
-    const base = path
-      .basename(file.originalname, path.extname(file.originalname))
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, "-")
-      .replace(/-+/g, "-")
-      .slice(0, 60);
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `${base}-${Date.now()}${ext}`);
-  },
-});
+// ── multer: buffer in memory, never write to disk ─────────────────────────────
 
 function imageFilter(_req, file, cb) {
   const allowed = /^image\/(jpeg|png|webp|gif|avif)$/;
@@ -35,8 +24,77 @@ function imageFilter(_req, file, cb) {
   }
 }
 
-export const uploadImage = multer({
-  storage,
+const multerInstance = multer({
+  storage: multer.memoryStorage(),
   fileFilter: imageFilter,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
 }).single("image");
+
+/*
+  uploadImage
+ 
+  Drop-in replacement for the previous local disk middleware.
+  After this runs, req.file.path holds the public GCS URL —
+  menu.controller.js reads req.file.path identically to before.
+ 
+  Usage in menu.routes.js (unchanged):
+    router.post("/:id/image", protect, authorize("admin"), uploadImage, uploadMenuItemImage)
+ */
+export function uploadImage(req, res, next) {
+  multerInstance(req, res, async (err) => {
+    if (err) return next(err);
+    if (!req.file) return next(); // controller returns 400 "No image file provided"
+
+    try {
+      const ext      = path.extname(req.file.originalname).toLowerCase() || ".jpg";
+      const filename = `menu/${uuidv4()}${ext}`;   // stored under menu/ prefix in the bucket
+      const blob     = bucket.file(filename);
+
+      await blob.save(req.file.buffer, {
+        contentType: req.file.mimetype,
+        metadata: {
+          cacheControl: "public, max-age=31536000",
+        },
+      });
+
+      // Public URL — works immediately because allUsers has Storage Object Viewer
+      const publicUrl = `https://storage.googleapis.com/${process.env.GCS_BUCKET_NAME}/${filename}`;
+      req.file.path = publicUrl;
+
+      next();
+    } catch (uploadErr) {
+      console.error("GCS upload failed:", uploadErr.message);
+      next(new Error("Image upload to Google Cloud Storage failed: " + uploadErr.message));
+    }
+  });
+}
+
+/*
+  deleteGCSImage
+ 
+  Deletes a blob from GCS by its public URL.
+  Called by menu.controller.js when a menu item is deleted or its image replaced.
+ 
+  Silently swallows errors — a failed cloud delete must never block a DB operation.
+ 
+  @param {string} imageUrl - Full GCS public URL stored in MenuItem.image
+*/
+export async function deleteGCSImage(imageUrl) {
+  if (!imageUrl) return;
+
+  try {
+    // URL format: https://storage.googleapis.com/<bucket>/<filename>
+    const url      = new URL(imageUrl);
+    // pathname: /<bucket>/menu/<uuid>.jpg
+    const segments = url.pathname.split("/").filter(Boolean);
+    // segments[0] = bucket name, rest = object path
+    const objectPath = segments.slice(1).join("/");
+
+    if (!objectPath) return;
+
+    await bucket.file(objectPath).delete({ ignoreNotFound: true });
+    console.log(`🗑 Deleted GCS object: ${objectPath}`);
+  } catch (err) {
+    console.warn(`Could not delete GCS image "${imageUrl}":`, err.message);
+  }
+}

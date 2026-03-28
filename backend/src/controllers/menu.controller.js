@@ -1,12 +1,7 @@
-import fs from "fs/promises";
-import path from "path";
-import { fileURLToPath } from "url";
 import { MenuItem } from "../models/MenuItem.js";
 import { VariantGroup } from "../models/VariantGroup.js";
 import { Counter } from "../models/Counter.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const IMAGES_DIR = path.join(__dirname, "../../public/images");
+import { deleteGCSImage } from "../middleware/upload.js";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -20,20 +15,17 @@ async function getNextMenuItemId() {
   const lastItem = await MenuItem.findOne().sort({ id: -1 }).lean();
   const currentMax = lastItem?.id ?? 0;
 
-  // Ensure the Counter document exists, seeded to currentMax on first insert
   await Counter.findOneAndUpdate(
     { _id: "menuItemId" },
     { $setOnInsert: { seq: currentMax } },
     { upsert: true }
   );
 
-  // Catch up if Counter fell behind existing data (e.g. after manual DB reset)
   await Counter.updateOne(
     { _id: "menuItemId", seq: { $lt: currentMax } },
     { $set: { seq: currentMax } }
   );
 
-  // Atomic increment — concurrent creates always receive different values
   const counter = await Counter.findOneAndUpdate(
     { _id: "menuItemId" },
     { $inc: { seq: 1 } },
@@ -71,41 +63,6 @@ async function generateSlug(name, excludeId = null) {
     if (!existing) return candidate;
     candidate = `${base}-${suffix}`;
     suffix++;
-  }
-}
-
-/**
- * deleteImageFile
- *
- * Attempts to remove a locally-uploaded image from disk.
- * Only acts on URLs that match the local upload pattern:
- *   http(s)://host/images/<filename>
- *
- * Silently swallows errors — a missing or external file must never
- * block the DB delete that follows.
- *
- * @param {string} imageUrl - The image field value from the MenuItem document
- */
-async function deleteImageFile(imageUrl) {
-  if (!imageUrl) return;
-
-  try {
-    const parsed = new URL(imageUrl);
-
-    // Only delete files we uploaded ourselves — path must be /images/<filename>
-    const match = parsed.pathname.match(/^\/images\/([^/]+)$/);
-    if (!match) return;
-
-    const filename = match[1];
-    const filepath = path.join(IMAGES_DIR, filename);
-
-    await fs.unlink(filepath);
-    console.log(`🗑 Deleted image file: ${filename}`);
-  } catch (err) {
-    // ENOENT = file already gone, anything else = external URL or parse error
-    if (err.code !== "ENOENT") {
-      console.warn(`⚠️ Could not delete image file for URL "${imageUrl}":`, err.message);
-    }
   }
 }
 
@@ -267,6 +224,13 @@ export async function createMenuItem(req, res) {
 
 // ─── POST /menu/:id/image ─────────────────────────────────────────────────────
 
+/**
+ * uploadMenuItemImage
+ *
+ * Multer has already processed the file and uploaded it to GCS before this runs.
+ * req.file.path is the full GCS public URL set by upload.middleware.js.
+ * We delete the old image from GCS (if any), then patch the DB.
+ */
 export async function uploadMenuItemImage(req, res) {
   try {
     const { id } = req.params;
@@ -276,13 +240,14 @@ export async function uploadMenuItemImage(req, res) {
       return res.status(400).json({ success: false, error: "No image file provided" });
     }
 
-    // Delete old image file if this item already has one
+    // Delete old GCS image before overwriting the DB field
     const existing = await MenuItem.findOne({ id: parseInt(id) }).lean();
     if (existing?.image) {
-      await deleteImageFile(existing.image);
+      await deleteGCSImage(existing.image);
     }
 
-    const imageUrl = `${req.protocol}://${req.get("host")}/images/${req.file.filename}`;
+    // upload.middleware.js sets req.file.path to the public GCS URL after upload
+    const imageUrl = req.file.path;
 
     const updatedItem = await MenuItem.findOneAndUpdate(
       { id: parseInt(id) },
@@ -384,8 +349,8 @@ export async function deleteMenuItem(req, res) {
       return res.status(404).json({ success: false, error: "Menu item not found" });
     }
 
-    // Best-effort image file cleanup — never blocks the response
-    await deleteImageFile(deletedItem.image);
+    // Best-effort GCS cleanup — never blocks the response
+    await deleteGCSImage(deletedItem.image);
 
     console.log(`🗑 Deleted menu item: ${deletedItem.name}`);
     res.status(200).json({ success: true, message: "Menu item deleted successfully" });
