@@ -118,9 +118,18 @@ export default function AdminLogin() {
           />
 
           {error && (
-            <Typography color="error" textAlign="center">
+            <p
+              role="status"
+              style={{
+                margin: '-6px 0 0 0',
+                color: '#d93025',
+                fontStyle: 'italic',
+                fontWeight: 600,
+                fontSize: '12px',
+              }}
+            >
               {error}
-            </Typography>
+            </p>
           )}
 
           <Button

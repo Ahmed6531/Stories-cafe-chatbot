@@ -78,6 +78,10 @@ router.post("/login", authLimiter, validate([
       return res.status(401).json({ error: { code: "INVALID_CREDENTIALS", message: "Invalid credentials" } });
     }
 
+    if (user.role === "admin") {
+      return res.status(403).json({ error: { code: "FORBIDDEN", message: "Admin accounts must use the admin login" } });
+    }
+
     if (!user.isVerified) {
       const verificationToken = generateVerificationToken(email);
       const actionLink = `${process.env.BACKEND_URL}/auth/verify-email?token=${verificationToken}`;
