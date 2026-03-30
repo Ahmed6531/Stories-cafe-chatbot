@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getOrders, updateOrderStatus } from "../../API/ordersApi";
+import { getFilteredOrders, updateOrderStatus } from "../../API/ordersApi";
 
 export default function AdminOrders() {
   const [orders, setOrders] = useState([]);
@@ -15,27 +15,13 @@ export default function AdminOrders() {
   async function fetchOrders() {
     setLoading(true);
     try {
-      const data = await getOrders();
-      let fetchedOrders = [];
-
-      if (Array.isArray(data)) fetchedOrders = data;
-      else if (Array.isArray(data.orders)) fetchedOrders = data.orders;
-      else if (Array.isArray(data.data)) fetchedOrders = data.data;
-      else {
-        setError("Orders response format is invalid.");
-        setLoading(false);
-        return;
-      }
-
-      // Apply frontend filters
-      if (statusFilter !== "all") {
-        fetchedOrders = fetchedOrders.filter((o) => o.status === statusFilter);
-      }
-      if (typeFilter !== "all") {
-        fetchedOrders = fetchedOrders.filter((o) => o.orderType === typeFilter);
-      }
-
+      const data = await getFilteredOrders({
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        orderType: typeFilter !== "all" ? typeFilter : undefined,
+      });
+      const fetchedOrders = Array.isArray(data.orders) ? data.orders : [];
       setOrders(fetchedOrders);
+
       setError("");
     } catch (err) {
       console.error(err);
