@@ -23,11 +23,79 @@ function emptyCartResponse() {
   return { cartId: null, count: 0, items: [] };
 }
 
+function normalizeLegacyCartItems(rawItems) {
+  if (!Array.isArray(rawItems)) return [];
+
+  return rawItems
+    .map((line) => {
+      const normalizedMenuItemId = Number(line?.menuItemId);
+      if (!Number.isFinite(normalizedMenuItemId)) {
+        return null;
+      }
+
+      const normalizedQty = Number(line?.qty);
+      const qty = Number.isFinite(normalizedQty) && normalizedQty > 0
+        ? Math.floor(normalizedQty)
+        : 1;
+
+      const rawSelectedOptions = Array.isArray(line?.selectedOptions)
+        ? line.selectedOptions
+        : line?.selectedOptions != null
+          ? [line.selectedOptions]
+          : [];
+
+      const selectedOptions = sanitizeSelectedOptions(rawSelectedOptions);
+      const instructions = typeof line?.instructions === "string" ? line.instructions.trim() : "";
+
+      return {
+        menuItemId: normalizedMenuItemId,
+        qty,
+        selectedOptions,
+        instructions,
+      };
+    })
+    .filter(Boolean);
+}
+
+async function findCartByIdSafely(cartId, { createIfMissing = false } = {}) {
+  if (!cartId) return null;
+
+  try {
+    const cart = await Cart.findOne({ cartId });
+    if (cart) return cart;
+  } catch (err) {
+    if (err.name !== "CastError" && err.name !== "ValidationError") throw err;
+    console.warn("Cart hydration failed, trying legacy recovery:", err?.message || err);
+  }
+
+  const rawCart = await Cart.collection.findOne({ cartId });
+
+  if (!rawCart) {
+    if (!createIfMissing) return null;
+    return Cart.create({ cartId, items: [] });
+  }
+
+  const normalizedItems = normalizeLegacyCartItems(rawCart.items);
+  await Cart.collection.updateOne(
+    { _id: rawCart._id },
+    { $set: { items: normalizedItems } },
+  );
+
+  try {
+    return await Cart.findOne({ cartId });
+  } catch (err) {
+    console.error("Cart recovery failed after normalization, rebuilding cart:", err?.message || err);
+    await Cart.collection.deleteOne({ _id: rawCart._id });
+    if (!createIfMissing) return null;
+    return Cart.create({ cartId, items: [] });
+  }
+}
+
 async function getExistingCart(req) {
   const cartId = getCartIdFromRequest(req);
   if (!cartId) return { cart: null, cartId: null };
 
-  const cart = await Cart.findOne({ cartId });
+  const cart = await findCartByIdSafely(cartId);
   return { cart, cartId: cart ? cartId : null };
 }
 
@@ -40,9 +108,7 @@ async function getOrCreateWritableCart(req) {
     return { cart, cartId };
   }
 
-  let cart = await Cart.findOne({ cartId });
-  if (!cart) cart = await Cart.create({ cartId, items: [] });
-
+  const cart = await findCartByIdSafely(cartId, { createIfMissing: true });
   return { cart, cartId };
 }
 
@@ -210,8 +276,9 @@ export async function updateCartItem(req, res) {
     const item = cart.items.id(lineId);
     if (!item) return res.status(404).json({ error: "Item not found in cart" });
 
-    if (qty <= 0) cart.items.pull(lineId);
-    else item.qty = qty;
+    const nQty = Number(qty);
+    if (!Number.isFinite(nQty) || nQty <= 0) cart.items.pull(lineId);
+    else item.qty = nQty;
 
     if (cart.items.length === 0) {
       await Cart.findOneAndDelete({ cartId });

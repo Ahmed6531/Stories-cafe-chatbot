@@ -37,8 +37,11 @@ async function seed() {
 
     const variantGroupsArray = Object.entries(templates.variantGroups).map(
       ([groupId, group]) => ({
-        groupId,
         ...group,
+        groupId,
+        adminName: group.adminName || group.name,
+        customerLabel: group.customerLabel || "",
+        name: group.name,
       }),
     );
 

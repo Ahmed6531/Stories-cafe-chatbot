@@ -16,6 +16,10 @@
 export async function submitMenuItem({
   editingId,
   form,
+<<<<<<< HEAD
+=======
+  variantGroups,        // string[] — ordered groupId array from AdminItems
+>>>>>>> dev
   imageFile,            // File | null — set by the file picker in AdminItems
   createMenuItem,
   updateMenuItem,
@@ -32,6 +36,10 @@ export async function submitMenuItem({
   const payload = {
     ...form,
     basePrice: Number(form.basePrice),
+<<<<<<< HEAD
+=======
+    variantGroups,
+>>>>>>> dev
   };
 
   setSaving(true);

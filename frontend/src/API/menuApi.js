@@ -184,4 +184,27 @@ export async function deleteMenuItem(id) {
     console.error(`Failed to delete menu item ${id}:`, error);
     throw new Error(error.response?.data?.error || "Failed to delete menu item");
   }
+<<<<<<< HEAD
 }
+=======
+}
+
+/**
+ * Admin-only: Upload or replace a menu item image
+ */
+export async function uploadMenuItemImage(id, file) {
+  try {
+    const formData = new FormData();
+    formData.append("image", file);
+
+    const response = await http.post(`/menu/${id}/image`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+
+    return response.data;
+  } catch (error) {
+    console.error(`Failed to upload image for menu item ${id}:`, error);
+    throw new Error(error.response?.data?.error || "Failed to upload menu item image");
+  }
+}
+>>>>>>> dev

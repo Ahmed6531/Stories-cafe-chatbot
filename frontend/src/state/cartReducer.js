@@ -29,6 +29,14 @@ export function cartReducer(state, action) {
         items: state.items.filter(item => item.lineId !== action.payload),
         count: state.items.reduce((acc, item) => item.lineId === action.payload ? acc : acc + item.qty, 0)
       };
+    case "RESTORE_CART":
+      return {
+        ...state,
+        loading: false,
+        cartId: action.payload.cartId ?? null,
+        count: action.payload.count || 0,
+        items: action.payload.items || []
+      };
     default:
       return state;
   }

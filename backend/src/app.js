@@ -14,6 +14,9 @@ import { welcomeTemplate } from "./utils/EmailTemplates.js";
 import { setUploadedImageHeaders } from "./utils/imageHeaders.js";
 import 'dotenv/config';
 import adminRoutes from "./routes/adminRoutes.js";
+import variantGroupRoutes from "./routes/variantGroup.routes.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -49,6 +52,7 @@ export function createApp() {
   app.use("/cart", cartRoutes);
   app.use("/auth", authRoutes);
   app.use("/admin", adminRoutes);
+  app.use("/variant-groups", variantGroupRoutes);
 
 
   app.get("/api/protected", authenticate, (req, res) => {
