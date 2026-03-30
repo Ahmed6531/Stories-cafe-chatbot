@@ -3,6 +3,9 @@ import http from './http'
 let categoriesCache = null
 let categoriesRequest = null
 
+export function invalidateCategoriesCache() {
+  categoriesCache = null
+}
 /**
  * Transform backend menu item to frontend format
  */

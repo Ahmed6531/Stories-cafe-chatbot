@@ -89,6 +89,7 @@ export async function createOrder(req, res) {
   }
 
   const order = await Order.create({
+    userId: req.user?.id || null,
     orderNumber,
     orderType,
     customer: {
@@ -115,6 +116,60 @@ export async function createOrder(req, res) {
 }
 
 export async function listOrders(req, res) {
-  const orders = await Order.find().sort({ createdAt: -1 }).limit(50);
+  const { status, orderType } = req.query;
+
+  const filter = {};
+
+  const validStatuses = ["received", "in_progress", "completed", "cancelled"];
+  const validTypes = ["pickup", "dine_in", "delivery"];
+
+  if (status && validStatuses.includes(status)) {
+    filter.status = status;
+  }
+
+  if (orderType && validTypes.includes(orderType)) {
+    filter.orderType = orderType;
+  }
+
+  const orders = await Order.find(filter)
+    .sort({ createdAt: -1 })
+    .limit(50);
+
   res.json({ orders });
+}
+
+export async function getMyOrders(req, res) {
+  const orders = await Order.find({ userId: req.user.id })
+    .sort({ createdAt: -1 })
+    .limit(20);
+
+  res.json({ orders });
+}
+
+export async function updateOrderStatus(req, res) {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const validStatuses = ["received", "in_progress", "completed", "cancelled"];
+
+  if (!validStatuses.includes(status)) {
+    return res.status(400).json({ error: "Invalid status" });
+  }
+
+  const order = await Order.findById(id);
+
+  if (!order) {
+    return res.status(404).json({ error: "Order not found" });
+  }
+
+  order.status = status;
+  await order.save();
+
+  res.json({
+    order: {
+      _id: order._id,
+      orderNumber: order.orderNumber,
+      status: order.status
+    }
+  });
 }
