@@ -13,15 +13,31 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 const receiptPath =
   'M 2 2 H 98 V 96 L 94 98 L 90 96 L 86 98 L 82 96 L 78 98 L 74 96 L 70 98 L 66 96 L 62 98 L 58 96 L 54 98 L 50 96 L 46 98 L 42 96 L 38 98 L 34 96 L 30 98 L 26 96 L 22 98 L 18 96 L 14 98 L 10 96 L 6 98 L 2 96 Z'
 
-function formatSelectedOptionLabel(selection) {
-  if (!selection) return ''
-  if (typeof selection === 'string') return selection
+function formatGroupLabel(groupId) {
+  if (!groupId) return ''
+  return String(groupId)
+    .split('-')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
 
-  const optionName = String(selection.optionName || selection.name || '').trim()
-  if (!optionName) return ''
+function formatSelections(selectedOptions = []) {
+  return selectedOptions
+    .map((selection) => {
+      if (!selection) return ''
+      if (typeof selection === 'string') return selection
 
-  const suboptionName = String(selection.suboptionName || selection.sub || '').trim()
-  return suboptionName ? `${optionName} (${suboptionName})` : optionName
+      const group = selection.groupName || formatGroupLabel(selection.groupId)
+      const option = selection.optionName || selection.name || ''
+      const sub = selection.suboptionName || selection.sub || ''
+
+      if (!option) return ''
+      const value = sub ? `${option} (${sub})` : option
+      return group ? `${group}: ${value}` : value
+    })
+    .filter(Boolean)
+    .join(' · ')
 }
 
 function SummaryItemImage({ image, name }) {
@@ -79,8 +95,8 @@ export default function CartSummary({
   const theme = useTheme()
   const { brand } = theme
   const receiptId = useId().replace(/:/g, '')
-  
   const navigate = useNavigate()
+  const { updateQty, removeFromCart } = useCart()
   const [pendingRemove, setPendingRemove] = useState(() => new Set())
   const { subtotal, tax, total } = calculateOrderTotals(items)
 
@@ -228,16 +244,8 @@ export default function CartSummary({
                     )
                   }
 
-                  const optionSummary = Array.isArray(item.selectedOptions)
-                    ? item.selectedOptions.filter(Boolean).join(' \u00B7 ')
-                    : ''
                   const instructions = item.instructions?.trim()
-                  const displayOptionSummary = Array.isArray(item.selectedOptions)
-                    ? item.selectedOptions
-                        .map(formatSelectedOptionLabel)
-                        .filter(Boolean)
-                        .join(' \u00B7 ')
-                    : optionSummary
+                  const displayOptionSummary = formatSelections(item.selectedOptions)
 
                   return (
                     <Box key={item.lineId || index}>

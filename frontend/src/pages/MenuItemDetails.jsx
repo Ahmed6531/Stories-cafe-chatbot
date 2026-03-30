@@ -56,17 +56,23 @@ function seedSelectionsFromCartItem(groups, selectedOptions) {
   const selections = {}
   for (const g of groups) {
     const groupOptionNames = new Set((g.options || []).map((o) => o.name))
-    const matching = (selectedOptions || []).filter((s) => groupOptionNames.has(s.optionName))
+    const matching = (selectedOptions || []).filter((s) => {
+      const selectionGroupId = s?.groupId
+      if (selectionGroupId != null && String(selectionGroupId).trim() !== '') {
+        return String(selectionGroupId) === String(g.id)
+      }
+      return groupOptionNames.has(s.optionName)
+    })
     if (g.maxSelections === 1) {
       const match = matching[0]
       selections[g.id] = {
         type: 'single',
-        value: match ? createSelectionEntry(match.optionName, match.suboptionName) : '',
+        value: match ? createSelectionEntry(match.optionName, match.suboptionName, g.id) : '',
       }
     } else {
       selections[g.id] = {
         type: 'multi',
-        values: matching.map((m) => createSelectionEntry(m.optionName, m.suboptionName)),
+        values: matching.map((m) => createSelectionEntry(m.optionName, m.suboptionName, g.id)),
       }
     }
   }
@@ -96,14 +102,18 @@ function getRenderableOptions(group) {
   return active.length > 0 ? active : all
 }
 
-function createSelectionEntry(optionName, suboptionName = '') {
+function createSelectionEntry(optionName, suboptionName = '', groupId = undefined) {
   const trimmedOptionName = String(optionName || '').trim()
   if (!trimmedOptionName) return null
 
   const trimmedSuboptionName = String(suboptionName || '').trim()
-  return trimmedSuboptionName
-    ? { optionName: trimmedOptionName, suboptionName: trimmedSuboptionName }
-    : { optionName: trimmedOptionName }
+  const trimmedGroupId = groupId == null ? '' : String(groupId).trim()
+
+  return {
+    optionName: trimmedOptionName,
+    ...(trimmedSuboptionName ? { suboptionName: trimmedSuboptionName } : {}),
+    ...(trimmedGroupId ? { groupId: trimmedGroupId } : {}),
+  }
 }
 
 function normalizeSelectionEntry(selected) {
@@ -114,6 +124,7 @@ function normalizeSelectionEntry(selected) {
   return createSelectionEntry(
     selected.optionName || selected.name,
     selected.suboptionName || selected.sub,
+    selected.groupId,
   )
 }
 
@@ -135,20 +146,20 @@ function getDefaultSuboptionName(option) {
 
 function createSelectionForOption(group, optionName, existingSelection = null) {
   const option = findOptionByName(group, optionName)
-  if (!option) return createSelectionEntry(optionName)
+  if (!option) return createSelectionEntry(optionName, '', group.id)
 
   const existing = normalizeSelectionEntry(existingSelection)
   const suboptions = Array.isArray(option.suboptions) ? option.suboptions : []
 
   if (suboptions.length === 0) {
-    return createSelectionEntry(optionName)
+    return createSelectionEntry(optionName, '', group.id)
   }
 
   const preservedSuboption = suboptions.some((suboption) => suboption.name === existing?.suboptionName)
     ? existing?.suboptionName
     : getDefaultSuboptionName(option)
 
-  return createSelectionEntry(optionName, preservedSuboption)
+  return createSelectionEntry(optionName, preservedSuboption, group.id)
 }
 
 function optionPriceOf(group, selected) {
@@ -215,21 +226,34 @@ function formatSecondaryOptionPrice(additionalPrice) {
   return Number(additionalPrice || 0) > 0 ? `+ ${formatLL(additionalPrice)}` : ''
 }
 
-function serializeSelectedOptions(selections) {
+function serializeSelectedOptions(selections, groups) {
   const selectedOptionsArray = []
 
-  for (const gid in selections) {
-    const selection = selections[gid]
+  for (const group of groups || []) {
+    const groupId = group?.id == null ? '' : String(group.id).trim()
+    const selection = selections[group?.id]
+    if (!selection) continue
+
     if (selection.type === 'single') {
       const normalized = normalizeSelectionEntry(selection.value)
-      if (normalized) selectedOptionsArray.push(normalized)
+      if (normalized) {
+        selectedOptionsArray.push({
+          ...normalized,
+          ...(groupId ? { groupId } : {}),
+        })
+      }
       continue
     }
 
     if (selection.type === 'multi' && Array.isArray(selection.values)) {
       selection.values.forEach((value) => {
         const normalized = normalizeSelectionEntry(value)
-        if (normalized) selectedOptionsArray.push(normalized)
+        if (normalized) {
+          selectedOptionsArray.push({
+            ...normalized,
+            ...(groupId ? { groupId } : {}),
+          })
+        }
       })
     }
   }
@@ -595,18 +619,31 @@ const editLineId = searchParams.get('edit') || null
 const isEditMode = Boolean(cartItemToEdit)
   
   const [selections, setSelections] = useState(() => initSelections([]))
+  const groupsReady = groups.length > 0
+
+  // Effect 1 — seeds all three fields once on edit entry.
+  // Depends on editLineId and groupsReady (not cartItemToEdit) so that
+  // subsequent CART_LOADED dispatches replacing state.items never re-run
+  // this and reset qty while the user is adjusting it.
   useEffect(() => {
-  if (cartItemToEdit && groups.length > 0) {
-    setSelections(seedSelectionsFromCartItem(groups, cartItemToEdit.selectedOptions))
-    setQty(cartItemToEdit.qty)
-    setInstructions(cartItemToEdit.instructions || '')
-  } else {
-    setSelections(initSelections(groups))
-    setQty(1)
-    setInstructions('')
-  }
-  setShowErrors(false)
-}, [id, groups, cartItemToEdit])
+    if (cartItemToEdit && groupsReady) {
+      setSelections(seedSelectionsFromCartItem(groups, cartItemToEdit.selectedOptions))
+      setQty(cartItemToEdit.qty)
+      setInstructions(cartItemToEdit.instructions || '')
+      setShowErrors(false)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editLineId, groupsReady])
+
+  // Effect 2 — resets to defaults in add mode whenever the item or groups change.
+  useEffect(() => {
+    if (!editLineId) {
+      setSelections(initSelections(groups))
+      setQty(1)
+      setInstructions('')
+      setShowErrors(false)
+    }
+  }, [id, groups, editLineId])
 
   const errors = useMemo(() => validate(groups, selections), [groups, selections])
 
@@ -709,7 +746,7 @@ const isEditMode = Boolean(cartItemToEdit)
           {renderSuboptionSelect(group, currentSelection, (suboptionName) =>
             setGroupSelection(group.id, {
               type: 'single',
-              value: createSelectionEntry(value, suboptionName),
+              value: createSelectionEntry(value, suboptionName, group.id),
             }),
           )}
         </Stack>
@@ -752,7 +789,7 @@ const isEditMode = Boolean(cartItemToEdit)
           {renderSuboptionSelect(group, currentSelection, (suboptionName) =>
             setGroupSelection(group.id, {
               type: 'single',
-              value: createSelectionEntry(value, suboptionName),
+              value: createSelectionEntry(value, suboptionName, group.id),
             }),
           )}
         </Stack>
@@ -839,7 +876,7 @@ const isEditMode = Boolean(cartItemToEdit)
     const handleSuboptionChange = (optName, suboptionName) => {
       const next = values.map((value) =>
         getSelectionOptionName(value) === optName
-          ? createSelectionEntry(optName, suboptionName)
+          ? createSelectionEntry(optName, suboptionName, group.id)
           : normalizeSelectionEntry(value),
       )
       setGroupSelection(group.id, { type: 'multi', values: next })
@@ -888,7 +925,7 @@ const isEditMode = Boolean(cartItemToEdit)
     return
   }
 
-  const selectedOptions = serializeSelectedOptions(selections)
+  const selectedOptions = serializeSelectedOptions(selections, groups)
   const inst = instructions.trim()
 
   try {

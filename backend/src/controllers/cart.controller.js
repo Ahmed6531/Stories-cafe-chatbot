@@ -96,7 +96,10 @@ async function buildCartResponse(cart) {
       image: menuItem.image,
       qty: line.qty,
       price: price,
-      selectedOptions: sortSelectedOptionsForDisplay(line.selectedOptions, resolvedVariantGroups),
+      selectedOptions: sortSelectedOptionsForDisplay(line.selectedOptions, resolvedVariantGroups).map((s) => ({
+        ...(s.toObject?.() ?? s),
+        groupName: variantGroupsById.get(s.groupId)?.name ?? null,
+      })),
       instructions: line.instructions || "",
       isAvailable: !!menuItem.isAvailable,
     };
@@ -206,13 +209,17 @@ export async function updateCartItem(req, res) {
 
     const { lineId } = req.params;
     const { qty, selectedOptions, instructions } = req.body;
+    const nQty = Number(qty);
 
     const item = cart.items.id(lineId);
     if (!item) return res.status(404).json({ error: "Item not found in cart" });
 
-    if (qty <= 0) cart.items.pull(lineId);
+    if (!Number.isFinite(nQty) || nQty < 0) {
+      return res.status(400).json({ error: 'qty must be a non-negative number' });
+    }
+    if (nQty === 0) cart.items.pull(lineId);
 else {
-  item.qty = qty;
+  item.qty = nQty;
   if (selectedOptions !== undefined) item.selectedOptions = sanitizeSelectedOptions(selectedOptions);
   if (instructions !== undefined) item.instructions = instructions.trim();
 }
