@@ -45,6 +45,17 @@ const variantGroupSchema = new mongoose.Schema(
       unique: true,
       trim: true,
     },
+    // Admin-facing name — shown only in the dashboard
+    adminName: {
+      type: String,
+      required: true,
+    },
+    // Customer-facing label — shown on the order form; falls back to adminName if empty
+    customerLabel: {
+      type: String,
+      default: "",
+    },
+    // Legacy field — kept for backward compat; mirrors customerLabel || adminName
     name: {
       type: String,
       required: true,

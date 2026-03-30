@@ -1,7 +1,23 @@
+/**
+ * submitMenuItem
+ *
+ * Orchestrates the create/edit flow including image upload:
+ *
+ *   CREATE
+ *     1. POST /menu with text fields (no image yet)
+ *     2. If the user chose a file → POST /menu/:id/image
+ *
+ *   EDIT
+ *     1. PATCH /menu/:id with changed text fields
+ *     2. If the user chose a new file → POST /menu/:id/image
+ *
+ * Keeps the form and image state in sync and surfaces errors to the UI.
+ */
 export async function submitMenuItem({
   editingId,
   form,
-  imageFile,
+  variantGroups,        // string[] — ordered groupId array from AdminItems
+  imageFile,            // File | null — set by the file picker in AdminItems
   createMenuItem,
   updateMenuItem,
   uploadMenuItemImage,
@@ -13,43 +29,52 @@ export async function submitMenuItem({
   setFormError,
   setSaving,
 }) {
+  // Build the JSON payload — note basePrice (not price) to match the backend schema
   const payload = {
     ...form,
-    price: Number(form.price),
-  }
+    basePrice: Number(form.basePrice),
+    variantGroups,
+  };
 
-  setSaving(true)
+  setSaving(true);
 
   try {
-    let savedId = editingId
+    let savedId = editingId;
 
-    // EDIT flow
     if (editingId) {
-      await updateMenuItem(editingId, payload)
-    }
-    // CREATE flow
-    else {
-      const res = await createMenuItem(payload)
-      savedId = res?.id ?? res?.item?.id ?? res?.itemId
+      // ── EDIT ──────────────────────────────────────────────────────────────
+      await updateMenuItem(editingId, payload);
+    } else {
+      // ── CREATE ────────────────────────────────────────────────────────────
+      // createMenuItem returns the transformed item (flat object) — res.id is the numeric ID
+      const res = await createMenuItem(payload);
+      savedId = res?.id;
     }
 
-    // Upload image if present
+    // ── Image upload (create or replace) ──────────────────────────────────
+    let imageError = null;
     if (imageFile && savedId != null) {
-      await uploadMenuItemImage(savedId, imageFile)
+      try {
+        await uploadMenuItemImage(savedId, imageFile);
+      } catch (err) {
+        // Surface the image error but don't abort — the item was already saved.
+        // The list still refreshes so the imageless item appears rather than vanishing.
+        imageError = err?.message || "Image upload failed";
+      }
     }
 
-    // Refresh menu items
-    const data = await fetchMenu()
-    setItems(data.items)
+    // ── Refresh list ───────────────────────────────────────────────────────
+    const data = await fetchMenu();
+    setItems(data.items);
 
-    // Reset UI state
-    resetForm()
-    resetImage()
-    setEditingId(null)
-    setFormError("")
+    // ── Reset UI ───────────────────────────────────────────────────────────
+    resetForm();
+    resetImage();
+    setEditingId(null);
+    setFormError(imageError || "");
   } catch (err) {
-    setFormError(err?.message || "Submit failed")
+    setFormError(err?.response?.data?.error || err?.message || "Submit failed");
   } finally {
-    setSaving(false)
+    setSaving(false);
   }
 }

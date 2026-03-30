@@ -91,6 +91,7 @@ export default function AdminLayout() {
         <SideTitle>Admin Panel</SideTitle>
         <SideLink to="/admin" end>Dashboard</SideLink>
         <SideLink to="/admin/items">Menu Items</SideLink>
+        <SideLink to="/admin/variant-groups">Variant Groups</SideLink>
         <SideLink to="/admin/categories">Categories</SideLink>
       </Sidebar>
       <Main>
