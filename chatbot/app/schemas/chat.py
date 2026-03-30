@@ -6,6 +6,7 @@ class ChatMessageRequest(BaseModel):
     session_id: str = Field(..., description="Frontend/chatbot session identifier")
     message: str = Field(..., min_length=1, description="User text input")
     cart_id: str | None = Field(default=None, description="Existing cart identifier")
+    user_id: str | None = Field(default=None, description="Logged-in user identifier")
 
 
 class ChatMessageResponse(BaseModel):

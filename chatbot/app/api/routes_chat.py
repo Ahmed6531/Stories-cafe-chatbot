@@ -23,6 +23,7 @@ async def send_message(payload: ChatMessageRequest) -> ChatMessageResponse:
             session_id=session_id,
             message=payload.message,
             cart_id=cart_id,
+            user_id=payload.user_id,
         )
 
         set_session_cart_id(session_id, response.cart_id)

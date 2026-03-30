@@ -16,6 +16,12 @@ from app.services.suggestions import suggest_popular_items, suggest_complementar
 from app.services.http_client import ExpressAPIError
 from app.services.upsell import get_upsell_suggestions
 from app.services.upsell_llm import generate_casual_suggestion_copy
+from app.services.personalized_combo import (
+    update_session_profile,
+    pick_personalized_combo,
+    is_usual_combo_pick,
+    get_order_history_tag_hints,
+)
 
 # Default options for smart defaults (SCRUM-91)
 DEFAULT_SIZE = "Medium"
@@ -136,6 +142,7 @@ async def process_chat_message(
     session_id: str,
     message: str,
     cart_id: str | None = None,
+    user_id: str | None = None,
 ) -> ChatMessageResponse:
     from app.utils.normalize import normalize_user_message
     from app.services.tools import (
@@ -154,6 +161,12 @@ async def process_chat_message(
     from app.services.http_client import ExpressAPIError
     from app.services.upsell import get_upsell_suggestions
     from app.services.upsell_llm import generate_casual_suggestion_copy
+    from app.services.personalized_combo import (
+        update_session_profile,
+        pick_personalized_combo,
+        is_usual_combo_pick,
+        get_order_history_tag_hints,
+    )
 
     normalized_message = normalize_user_message(message)
     intent = detect_intent(normalized_message)
@@ -337,13 +350,34 @@ async def process_chat_message(
                 if s.get("item_name", "").lower() != matched_item.get("name", "").lower()
             ]
 
-            combo_only_pick = next(
-                (
-                    s for s in filtered_suggestions
-                    if s.get("type") == "upsell" and s.get("upsell_source") == "combo"
-                ),
-                None,
-            )
+            combo_candidates = [
+                s for s in filtered_suggestions
+                if s.get("type") == "upsell" and s.get("upsell_source") == "combo"
+            ]
+            history_tag_hints: list[str] = []
+            history_mode = "disabled_not_logged_in"
+            combo_only_pick = None
+
+            if user_id:
+                update_session_profile(
+                    session_id=session_id,
+                    cart_items=cart_items,
+                    menu_items=menu_items,
+                )
+                history_tag_hints = await get_order_history_tag_hints(
+                    session_id=session_id,
+                    user_id=user_id,
+                )
+                history_mode = "real_orders_placeholder_by_user"
+                combo_only_pick = pick_personalized_combo(
+                    session_id=session_id,
+                    combo_suggestions=combo_candidates,
+                    menu_items=menu_items,
+                    external_tag_hints=history_tag_hints,
+                )
+            elif combo_candidates:
+                combo_only_pick = combo_candidates[0]
+
             if combo_only_pick:
                 filtered_suggestions = [combo_only_pick]
             # Build cart summary with prices
@@ -378,10 +412,21 @@ async def process_chat_message(
             )
 
             if upsell_pick:
-                reply_text += (
-                    f"\n\nWould you like to add {upsell_pick.get('item_name')}? "
-                    f"It pairs perfectly with {matched_item.get('name')}."
-                )
+                if user_id and is_usual_combo_pick(
+                    session_id=session_id,
+                    suggestion=upsell_pick,
+                    menu_items=menu_items,
+                    external_tag_hints=history_tag_hints,
+                ):
+                    reply_text += (
+                        f"\n\nWould you like your usual, {upsell_pick.get('item_name')}? "
+                        f"It pairs perfectly with {matched_item.get('name')}."
+                    )
+                else:
+                    reply_text += (
+                        f"\n\nWould you like to add {upsell_pick.get('item_name')}? "
+                        f"It pairs perfectly with {matched_item.get('name')}."
+                    )
                 if upsell_pick.get("fun_fact"):
                     reply_text += f"\nFun fact: {upsell_pick.get('fun_fact')}"
             elif filtered_suggestions:
@@ -402,6 +447,9 @@ async def process_chat_message(
                     "matched_item": matched_item,
                     "quantity": quantity,
                     "cart": cart_result["cart"],
+                    "history_tag_hints": history_tag_hints,
+                    "history_mode": history_mode,
+                    "personalization_enabled": bool(user_id),
                     "pipeline_stage": "add_item_done",
                 },
             )

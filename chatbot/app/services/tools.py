@@ -181,6 +181,25 @@ async def fetch_combo_suggestions(anchor_menu_item_ids, exclude_menu_item_ids=No
         return []
 
 
+async def fetch_recent_orders(limit=50):
+    try:
+        client = ExpressHttpClient()
+
+        logger.info({
+            "service": "express",
+            "method": "GET",
+            "path": "/orders",
+            "limit": limit,
+        })
+
+        data, _ = await client.get("/orders")
+        orders = data.get("orders", [])
+        return orders[:limit]
+
+    except ExpressAPIError:
+        return []
+
+
 # ------------------ HELPERS ------------------
 
 async def find_menu_item_by_name(menu_items, query):

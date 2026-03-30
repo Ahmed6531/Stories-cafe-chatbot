@@ -127,7 +127,7 @@ def should_upsell(session_id: str, intent: str, cart_items: list[dict]) -> bool:
 async def suggest_upsell_items(
     cart_items: list[dict],
     menu_items: list[dict],
-    limit: int = 1,
+    limit: int = 3,
 ) -> list[dict]:
     menu_by_id = {
         int(item.get("id")): item
@@ -252,10 +252,11 @@ async def get_upsell_suggestions(
     intent: str,
     cart_items: list[dict],
     menu_items: list[dict],
+    limit: int = 3,
 ) -> list[dict]:
     if not should_upsell(session_id, intent, cart_items):
         return []
-    suggestions = await suggest_upsell_items(cart_items, menu_items)
+    suggestions = await suggest_upsell_items(cart_items, menu_items, limit=limit)
     if suggestions:
         _upsell_last_shown[session_id] = _session_turn_counter.get(session_id, 0)
     return suggestions
