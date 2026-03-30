@@ -1,4 +1,4 @@
-import express from "express";
+﻿import express from "express";
 import cors from "cors";
 import { fileURLToPath } from "url";
 import path from "path";
@@ -15,8 +15,6 @@ import { setUploadedImageHeaders } from "./utils/imageHeaders.js";
 import 'dotenv/config';
 import adminRoutes from "./routes/adminRoutes.js";
 import variantGroupRoutes from "./routes/variantGroup.routes.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

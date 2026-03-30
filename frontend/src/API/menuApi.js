@@ -18,7 +18,7 @@ function transformMenuItem(item) {
     category: item.category,
     subcategory: item.subcategory || null,
     slug: item.slug || null,
-    // null instead of '/images/placeholder.png' — that file doesn't exist and
+    // null instead of '/images/placeholder.png' â€” that file doesn't exist and
     // causes a wasted 404 request. All three customer components (MenuItem,
     // MenuItemDetails, CartSummary) already render an inline SVG fallback when
     // image is null or falsy.
@@ -116,7 +116,7 @@ export async function fetchMenuItemById(id) {
 
 /**
  * Admin-only: Create a new menu item.
- * Slug is NOT sent — the backend auto-generates it from name.
+ * Slug is NOT sent â€” the backend auto-generates it from name.
  */
 export async function createMenuItem(data) {
   try {
@@ -132,7 +132,7 @@ export async function createMenuItem(data) {
  * Admin-only: Upload an image for a menu item.
  * Called after createMenuItem or to replace an existing image.
  *
- * No Content-Type header is set — axios detects FormData and lets the browser
+ * No Content-Type header is set â€” axios detects FormData and lets the browser
  * set the full multipart/form-data header including the boundary automatically.
  * Setting it manually strips the boundary and breaks multer parsing.
  *
@@ -145,7 +145,7 @@ export async function uploadMenuItemImage(id, file) {
     const formData = new FormData()
     formData.append("image", file)
     // null explicitly removes the instance-level "application/json" default for
-    // this request — axios v1.x then lets the browser set the correct
+    // this request â€” axios v1.x then lets the browser set the correct
     // multipart/form-data + boundary header automatically
     const response = await http.post(`/menu/${id}/image`, formData, {
       headers: { "Content-Type": null },
@@ -159,10 +159,10 @@ export async function uploadMenuItemImage(id, file) {
 
 /**
  * Admin-only: Update a menu item by ID.
- * Slug is NOT sent — backend regenerates it automatically if name changes.
+ * Slug is NOT sent â€” backend regenerates it automatically if name changes.
  */
 export async function updateMenuItem(id, data) {
-  console.log("→ Sending PATCH request for id:", id, "data:", data);
+  console.log("â†’ Sending PATCH request for id:", id, "data:", data);
   try {
     const response = await http.patch(`/menu/${id}`, data);
     return transformMenuItem(response.data.item || response.data);
@@ -184,27 +184,4 @@ export async function deleteMenuItem(id) {
     console.error(`Failed to delete menu item ${id}:`, error);
     throw new Error(error.response?.data?.error || "Failed to delete menu item");
   }
-<<<<<<< HEAD
 }
-=======
-}
-
-/**
- * Admin-only: Upload or replace a menu item image
- */
-export async function uploadMenuItemImage(id, file) {
-  try {
-    const formData = new FormData();
-    formData.append("image", file);
-
-    const response = await http.post(`/menu/${id}/image`, formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
-
-    return response.data;
-  } catch (error) {
-    console.error(`Failed to upload image for menu item ${id}:`, error);
-    throw new Error(error.response?.data?.error || "Failed to upload menu item image");
-  }
-}
->>>>>>> dev
