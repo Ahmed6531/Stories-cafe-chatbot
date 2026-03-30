@@ -3,7 +3,7 @@ from html import unescape
 from xml.sax.saxutils import escape
 
 
-BREAK_TAG = '<break time="300ms"/>'
+BREAK_TAG = '<break time="350ms"/>'
 DECIMAL_PLACEHOLDER = "_DECIMAL_DOT_"
 LIRA_PLACEHOLDER = "_LIRA_DOTS_"
 LIRA_PATTERN = re.compile(r"\bL\.L\b")
@@ -11,6 +11,10 @@ CURRENCY_PATTERN = re.compile(r"\$\d[\d,]*(?:\.\d{1,2})?")
 ORDINAL_PATTERN = re.compile(r"\b(\d+)(st|nd|rd|th)\b", re.IGNORECASE)
 ITEM_PATTERN = re.compile(
     r"\b(added|removed|updated)\b\s+(?:\d+\s+)?(?:an?\s+|the\s+)?(?P<item>.*?)(?=\s+(?:to|from|in|on|with|for)\b|[.!?,]|$)",
+    re.IGNORECASE,
+)
+POSITIVE_PHRASE_PATTERN = re.compile(
+    r"\b(great|awesome|perfect|nice|delicious|popular|favorite|fresh|ready)\b",
     re.IGNORECASE,
 )
 
@@ -28,6 +32,7 @@ def build_ssml(text: str) -> str:
     """
     Convert plain reply text to SSML for Google TTS.
     Returns a valid <speak>...</speak> SSML string.
+    Tuned for a slightly more expressive, demo-friendly delivery.
     """
     cleaned = (text or "").strip()
     if not cleaned:
@@ -35,13 +40,19 @@ def build_ssml(text: str) -> str:
 
     sentences = _split_sentences(cleaned)
     if not sentences:
-        return f"<speak>{escape(cleaned)}</speak>"
+        return f"<speak><prosody rate=\"medium\">{escape(cleaned)}</prosody></speak>"
 
     chunks: list[str] = []
     for index, sentence in enumerate(sentences):
         sentence_ssml = _build_sentence_ssml(sentence)
-        if index == len(sentences) - 1 and sentence.rstrip().endswith("?"):
+
+        if index == 0:
             sentence_ssml = f'<prosody rate="medium" pitch="+1st">{sentence_ssml}</prosody>'
+        elif sentence.rstrip().endswith("?"):
+            sentence_ssml = f'<prosody rate="medium" pitch="+2st">{sentence_ssml}</prosody>'
+        else:
+            sentence_ssml = f'<prosody rate="medium">{sentence_ssml}</prosody>'
+
         chunks.append(sentence_ssml)
 
     return f"<speak>{BREAK_TAG.join(chunks)}</speak>"
@@ -76,20 +87,21 @@ def _build_sentence_ssml(sentence: str) -> str:
         next_emphasis_start = emphasis_span[0] if emphasis_span and emphasis_span[0] >= cursor else None
 
         if next_match is None and next_emphasis_start is None:
-            parts.append(escape(sentence[cursor:]))
+            tail = sentence[cursor:]
+            parts.append(_apply_positive_emphasis(tail))
             break
 
         if next_emphasis_start is not None and (
             next_match is None or next_emphasis_start < next_match[0]
         ):
             if next_emphasis_start > cursor:
-                parts.append(escape(sentence[cursor:next_emphasis_start]))
+                parts.append(_apply_positive_emphasis(sentence[cursor:next_emphasis_start]))
             cursor = next_emphasis_start
             continue
 
         start, end, replacement = next_match
         if start > cursor:
-            parts.append(escape(sentence[cursor:start]))
+            parts.append(_apply_positive_emphasis(sentence[cursor:start]))
         parts.append(replacement)
         cursor = end
 
@@ -134,6 +146,28 @@ def _find_next_special_match(
         return None
 
     return min(matches, key=lambda item: item[0])
+
+
+def _apply_positive_emphasis(text: str) -> str:
+    if not text:
+        return ""
+
+    result_parts: list[str] = []
+    last_end = 0
+
+    for match in POSITIVE_PHRASE_PATTERN.finditer(text):
+        if match.start() > last_end:
+            result_parts.append(escape(text[last_end:match.start()]))
+
+        result_parts.append(
+            f'<emphasis level="reduced">{escape(match.group(0))}</emphasis>'
+        )
+        last_end = match.end()
+
+    if last_end < len(text):
+        result_parts.append(escape(text[last_end:]))
+
+    return "".join(result_parts)
 
 
 def _currency_replacement(match: re.Match[str]) -> str:

@@ -11,6 +11,19 @@ from .ssml_builder import build_ssml
 
 FALLBACK_VOICE = "en-US-Neural2-F"
 
+VOICE_PERSONALITIES = {
+    "default": {
+        "voice": "en-US-Journey-F",
+        "speaking_rate": 1.0,
+        "pitch": 0.0,
+    },
+    "fun_demo": {
+        "voice": "en-US-Journey-F",
+        "speaking_rate": 1.08,
+        "pitch": 2.0,
+    },
+}
+
 
 class TTSService:
     """
@@ -21,6 +34,10 @@ class TTSService:
     - Preferred voice: settings.tts_voice (default en-US-Journey-F)
     - Fallback voice: en-US-Neural2-F
     - Audio encoding: MP3
+
+    Personality profiles:
+    - default: balanced and natural
+    - fun_demo: slightly faster and brighter for a more engaging demo feel
     """
 
     def __init__(self):
@@ -47,6 +64,25 @@ class TTSService:
         self._client = texttospeech.TextToSpeechClient(credentials=credentials)
         return self._client
 
+    def _get_personality_profile(self) -> dict:
+        """
+        Returns the active personality profile.
+        For this task, default to fun_demo so the chatbot sounds more engaging in demos.
+        
+        """
+        personality_name = (settings.tts_personality or "fun_demo").strip().lower()
+        profile = VOICE_PERSONALITIES.get(
+        personality_name,
+        VOICE_PERSONALITIES["fun_demo"],
+    ).copy()
+
+        custom_voice = settings.tts_voice.strip() if settings.tts_voice else ""
+
+        if custom_voice:
+            profile["voice"] = custom_voice
+
+        return profile
+
     async def synthesize(self, text: str) -> str | None:
         """
         Convert text to base64 MP3 data URI.
@@ -60,20 +96,35 @@ class TTSService:
         try:
             ssml = build_ssml(text)
             client = self._get_client()
-            voice_name = settings.tts_voice or "en-US-Journey-F"
-            response = await self._synthesize_with_voice(client, ssml, voice_name)
+            profile = self._get_personality_profile()
+
+            response = await self._synthesize_with_voice(
+                client=client,
+                ssml=ssml,
+                voice_name=profile["voice"],
+                speaking_rate=profile["speaking_rate"],
+                pitch=profile["pitch"],
+            )
+
             encoded = base64.b64encode(response.audio_content).decode("utf-8")
             return f"data:audio/mp3;base64,{encoded}"
         except Exception as exc:
             print(f"[TTS] synthesis failed: {exc}")
             return None
 
-    async def _synthesize_with_voice(self, client, ssml: str, voice_name: str):
+    async def _synthesize_with_voice(
+        self,
+        client,
+        ssml: str,
+        voice_name: str,
+        speaking_rate: float,
+        pitch: float,
+    ):
         synthesis_input = texttospeech.SynthesisInput(ssml=ssml)
         audio_config = texttospeech.AudioConfig(
             audio_encoding=texttospeech.AudioEncoding.MP3,
-            speaking_rate=1.0,
-            pitch=0.0,
+            speaking_rate=speaking_rate,
+            pitch=pitch,
         )
 
         async def run_request(selected_voice: str):
