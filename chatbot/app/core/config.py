@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     stt_language: str = "en"
     google_credentials_json: str = ""
 
+    tts_enabled: bool = False
+    tts_voice: str = "en-US-Journey-F"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

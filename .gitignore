@@ -6,3 +6,4 @@ chatbot/venv/
 chatbot/.env
 __pycache__/
 *.pyc
+.venv/

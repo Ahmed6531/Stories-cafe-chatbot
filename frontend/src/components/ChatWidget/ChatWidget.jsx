@@ -354,6 +354,15 @@ export default function ChatWidget({
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         suggestions: data.suggestions || [],
       })
+
+      if (data.audio_base64) {
+        try {
+          const audio = new Audio(data.audio_base64)
+          audio.play().catch(() => {})
+        } catch {
+          // never break chat on audio failure
+        }
+      }
     } catch {
       appendMessage({
         id: Date.now() + 1,
