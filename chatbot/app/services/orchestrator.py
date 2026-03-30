@@ -3,6 +3,7 @@ import httpx
 
 from app.schemas.chat import ChatMessageResponse
 from app.services.llm_interpreter import try_interpret_message, _extract_add_items_from_message
+from app.services.session_store import Session
 
 
 def detect_special_command(message: str) -> str | None:
@@ -143,6 +144,133 @@ def extract_requested_items(interpretation: dict) -> list[dict]:
     ]
 
 
+def resolve_requested_items_from_session(
+    intent: str,
+    requested_items: list[dict],
+    interpretation: dict,
+    session: Session | None,
+) -> list[dict]:
+    if session is None or intent not in {"update_quantity", "remove_item"}:
+        return requested_items
+
+    session_items = session.get("last_items")
+    if not isinstance(session_items, list) or not session_items:
+        return requested_items
+
+    session_item = session_items[0]
+    if not isinstance(session_item, dict):
+        return requested_items
+
+    session_item_name = (session_item.get("item_name") or "").strip()
+    if not session_item_name:
+        return requested_items
+
+    if requested_items:
+        current_item = requested_items[0]
+        if (current_item.get("item_name") or "").strip():
+            return requested_items
+    else:
+        raw_items = interpretation.get("items")
+        if isinstance(raw_items, list) and raw_items:
+            current_item = raw_items[0] if isinstance(raw_items[0], dict) else {}
+        else:
+            current_item = {
+                "item_name": interpretation.get("item_name"),
+                "quantity": interpretation.get("quantity"),
+                "size": interpretation.get("size"),
+                "options": interpretation.get("options"),
+            }
+
+        if (current_item.get("item_name") or "").strip():
+            return requested_items
+
+    current_quantity = current_item.get("quantity")
+    current_size = current_item.get("size")
+    current_options = current_item.get("options")
+    session_options = session_item.get("options")
+    options = current_options if isinstance(current_options, dict) else session_options
+    if not isinstance(options, dict):
+        options = {"milk": None, "sugar": None}
+
+    return [
+        {
+            "item_name": session_item_name,
+            "quantity": current_quantity if current_quantity is not None else (
+                session_item.get("quantity") if intent == "remove_item" else None
+            ),
+            "size": current_size if current_size is not None else session_item.get("size"),
+            "options": options,
+        }
+    ]
+
+
+def resolve_add_items_from_session(
+    requested_items: list[dict],
+    interpretation: dict,
+    session: Session | None,
+) -> list[dict]:
+    if session is None or not interpretation.get("fallback_needed", False):
+        return requested_items
+
+    follow_up_item_names = {"same one", "another one", "one more", "more", "another"}
+
+    if requested_items:
+        current_item = requested_items[0]
+        current_item_name = (current_item.get("item_name") or "").strip().lower()
+        if current_item_name and current_item_name not in follow_up_item_names:
+            return requested_items
+    else:
+        raw_items = interpretation.get("items")
+        if isinstance(raw_items, list) and raw_items:
+            current_item = raw_items[0] if isinstance(raw_items[0], dict) else {}
+        else:
+            current_item = {
+                "item_name": interpretation.get("item_name"),
+                "quantity": interpretation.get("quantity"),
+            }
+
+        current_item_name = (current_item.get("item_name") or "").strip().lower()
+        current_quantity = current_item.get("quantity")
+        if current_quantity is None:
+            current_quantity = interpretation.get("quantity")
+
+        if (
+            current_item_name
+            and current_item_name not in follow_up_item_names
+            and current_quantity is None
+        ):
+            return requested_items
+
+    session_items = session.get("last_items")
+    if not isinstance(session_items, list) or not session_items:
+        return requested_items
+
+    session_item = session_items[0]
+    if not isinstance(session_item, dict):
+        return requested_items
+
+    session_item_name = (session_item.get("item_name") or "").strip()
+    if not session_item_name:
+        return requested_items
+
+    session_options = session_item.get("options")
+    options = session_options if isinstance(session_options, dict) else {"milk": None, "sugar": None}
+    quantity = current_item.get("quantity")
+    if quantity is None:
+        quantity = interpretation.get("quantity")
+    if quantity is None:
+        quantity = 1
+
+    return [
+        {
+            "item_name": session_item_name,
+            "quantity": quantity,
+            "size": session_item.get("size"),
+            "options": options,
+        }
+    ]
+
+
 def is_invalid_fallback_query(item_query: str) -> bool:
     if not item_query:
         return True
@@ -202,6 +330,7 @@ async def process_chat_message(
     session_id: str,
     message: str,
     cart_id: str | None = None,
+    session: Session | None = None,
 ) -> ChatMessageResponse:
 
     from app.utils.normalize import normalize_user_message
@@ -220,6 +349,9 @@ async def process_chat_message(
         suggest_popular_items,
     )
     from app.services.http_client import ExpressAPIError
+
+    if session is not None and cart_id is None:
+        cart_id = session["cart_id"]
 
     normalized_message = normalize_user_message(message)
     special_command = detect_special_command(normalized_message)
@@ -340,6 +472,12 @@ async def process_chat_message(
         if intent == "update_quantity":
             cart_result = await get_cart(cart_id=cart_id)
             requested_items = extract_requested_items(interpretation)
+            requested_items = resolve_requested_items_from_session(
+                intent,
+                requested_items,
+                interpretation,
+                session,
+            )
             if not validate_requested_items(
                 normalized_message,
                 intent,
@@ -468,6 +606,12 @@ async def process_chat_message(
         if intent == "remove_item":
             cart_result = await get_cart(cart_id=cart_id)
             requested_items = extract_requested_items(interpretation)
+            requested_items = resolve_requested_items_from_session(
+                intent,
+                requested_items,
+                interpretation,
+                session,
+            )
             if not validate_requested_items(
                 normalized_message,
                 intent,
@@ -593,6 +737,11 @@ async def process_chat_message(
         if intent in {"add_item", "add_items"}:
             menu_items = await fetch_menu_items()
             requested_items = extract_requested_items(interpretation)
+            requested_items = resolve_add_items_from_session(
+                requested_items,
+                interpretation,
+                session,
+            )
             if not validate_requested_items(
                 normalized_message,
                 intent,
