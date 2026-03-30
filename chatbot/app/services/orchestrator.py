@@ -8,11 +8,14 @@ from app.services.tools import (
     fetch_featured_items,
     get_cart,
     add_item_to_cart,
+    observe_combo,
     remove_from_cart,
     clear_cart,
 )
 from app.services.suggestions import suggest_popular_items, suggest_complementary_items
 from app.services.http_client import ExpressAPIError
+from app.services.upsell import get_upsell_suggestions
+from app.services.upsell_llm import generate_casual_suggestion_copy
 
 # Default options for smart defaults (SCRUM-91)
 DEFAULT_SIZE = "Medium"
@@ -140,6 +143,7 @@ async def process_chat_message(
         fetch_featured_items,
         get_cart,
         add_item_to_cart,
+        observe_combo,
         remove_from_cart,
         clear_cart,
     )
@@ -148,6 +152,8 @@ async def process_chat_message(
         suggest_complementary_items,
     )
     from app.services.http_client import ExpressAPIError
+    from app.services.upsell import get_upsell_suggestions
+    from app.services.upsell_llm import generate_casual_suggestion_copy
 
     normalized_message = normalize_user_message(message)
     intent = detect_intent(normalized_message)
@@ -309,13 +315,38 @@ async def process_chat_message(
             popular = suggest_popular_items(featured_items)
             complementary = suggest_complementary_items(menu_items, matched_item)
 
-            suggestions = popular + complementary
+            cart_items = cart_result["cart"]
+            anchor_menu_item_ids = sorted({
+                int(item.get("menuItemId"))
+                for item in cart_items
+                if item.get("menuItemId") is not None and int(item.get("menuItemId")) != int(menu_item_id)
+            })
+            if anchor_menu_item_ids:
+                await observe_combo(anchor_menu_item_ids, int(menu_item_id))
+
+            upsell = await get_upsell_suggestions(
+                session_id=session_id,
+                intent=intent,
+                cart_items=cart_items,
+                menu_items=menu_items,
+            )
+
+            suggestions = popular + complementary + upsell
             filtered_suggestions = [
                 s for s in suggestions
                 if s.get("item_name", "").lower() != matched_item.get("name", "").lower()
             ]
+
+            combo_only_pick = next(
+                (
+                    s for s in filtered_suggestions
+                    if s.get("type") == "upsell" and s.get("upsell_source") == "combo"
+                ),
+                None,
+            )
+            if combo_only_pick:
+                filtered_suggestions = [combo_only_pick]
             # Build cart summary with prices
-            cart_items = cart_result["cart"]
 
             cart_lines = []
             for item in cart_items:
@@ -336,7 +367,24 @@ async def process_chat_message(
                 f"{cart_summary}"
             )
 
-            if filtered_suggestions:
+            upsell_pick = next(
+                (
+                    s for s in filtered_suggestions
+                    if s.get("type") == "upsell"
+                    and s.get("upsell_source") == "combo"
+                    and s.get("item_name")
+                ),
+                None,
+            )
+
+            if upsell_pick:
+                reply_text += (
+                    f"\n\nWould you like to add {upsell_pick.get('item_name')}? "
+                    f"It pairs perfectly with {matched_item.get('name')}."
+                )
+                if upsell_pick.get("fun_fact"):
+                    reply_text += f"\nFun fact: {upsell_pick.get('fun_fact')}"
+            elif filtered_suggestions:
                 reply_text += "\n\nYou might also like:"
                         
             return ChatMessageResponse(
@@ -467,7 +515,14 @@ async def process_chat_message(
         if intent == "recommendation_query":
             featured_items = await fetch_featured_items()
             suggestions = suggest_popular_items(featured_items)
-            reply = "Here are some items you might like!"
+            suggestion_names = [
+                s.get("item_name") for s in suggestions if s.get("item_name")
+            ]
+            generated_line = await generate_casual_suggestion_copy(
+                context_item_name="today's menu",
+                suggestion_names=suggestion_names,
+            )
+            reply = generated_line or "Here are some items you might like!"
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
