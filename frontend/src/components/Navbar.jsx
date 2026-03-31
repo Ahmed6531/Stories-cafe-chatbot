@@ -449,7 +449,7 @@ export default function Navbar() {
   const pendingReplyTimeoutRef = useRef(null)
   const pendingCheckoutRef = useRef(false)
 
-  const { cartCount, refreshCart, state: cartState } = useCart()
+  const { cartCount, refreshCart, resetCart, state: cartState } = useCart()
   const items = useMemo(() => cartState?.items ?? [], [cartState?.items])
   const location = useLocation()
   const navigate = useNavigate()
@@ -487,6 +487,12 @@ export default function Navbar() {
 
   const handleLogout = async () => {
     await logout()
+    localStorage.removeItem('cartId')
+    localStorage.removeItem('chatSessionId')
+    localStorage.removeItem(CHAT_STORAGE_KEY)
+    localStorage.removeItem(CHAT_STORAGE_TS_KEY)
+    resetCart()
+    setMessages([])
     navigate('/login')
   }
 
