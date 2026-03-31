@@ -206,7 +206,8 @@ async def process_chat_message(
             )
 
             if suggestion_lines:
-                reply_text += f"\n\nYou might also like:\n{suggestion_text}"
+                 suggestion_text = "\n".join(suggestion_lines)
+                 reply_text += f"\n\n Would you like to add:\n {suggestion_text} "
                         
             return ChatMessageResponse(
                 session_id=session_id,

@@ -27,3 +27,13 @@ async def health_check() -> dict:
 
 app.include_router(chat_router)
 app.include_router(voice_router)
+sessions = {}  # existing dict keyed by session_id
+
+def get_session(session_id):
+    if session_id not in sessions:
+        sessions[session_id] = {
+            "history": [],
+            "last_intent": None,
+            "upsell_suggestions": []   # NEW field
+        }
+    return sessions[session_id]
