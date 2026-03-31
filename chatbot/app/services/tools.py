@@ -104,6 +104,9 @@ async def remove_item_from_cart(line_id, cart_id):
     except ExpressAPIError:
         return {"cart_id": cart_id, "cart": []}
 
+async def remove_from_cart(*args, **kwargs):
+    return await remove_item_from_cart(*args, **kwargs)
+
 async def clear_cart(cart_id):
     try:
         client = ExpressHttpClient()

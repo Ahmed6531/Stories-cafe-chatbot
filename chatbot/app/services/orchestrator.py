@@ -427,6 +427,9 @@ async def process_chat_message(
 
         if intent == "clear_cart":
             cart_result = await clear_cart(cart_id=cart_id)
+            if session is not None:
+                session["last_items"] = []
+                session["last_intent"] = None
 
             return ChatMessageResponse(
                 session_id=session_id,

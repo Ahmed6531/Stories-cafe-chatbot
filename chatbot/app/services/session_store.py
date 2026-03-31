@@ -10,6 +10,8 @@ class Session(TypedDict):
     cart_id: str | None
     last_items: list
     last_intent: str | None
+    stage: str | None
+    checkout_initiated: bool
 
 
 # Global in-memory sessions store
@@ -27,7 +29,10 @@ def get_session(session_id: str) -> Session:
         Session dictionary with all session data
     """
     if session_id in sessions:
-        return sessions[session_id]
+        session = sessions[session_id]
+        session.setdefault("stage", None)
+        session.setdefault("checkout_initiated", False)
+        return session
     
     # Create new session
     new_session: Session = {
@@ -35,6 +40,8 @@ def get_session(session_id: str) -> Session:
         "cart_id": None,
         "last_items": [],
         "last_intent": None,
+        "stage": None,
+        "checkout_initiated": False,
     }
     sessions[session_id] = new_session
     return new_session
@@ -59,3 +66,23 @@ def get_or_create_session(session_id: str | None) -> tuple[str, str | None]:
 def set_session_cart_id(session_id: str, cart_id: str | None) -> None:
     session = get_session(session_id)
     session["cart_id"] = cart_id
+
+
+def get_session_stage(session_id: str) -> str | None:
+    session = get_session(session_id)
+    return session.get("stage")
+
+
+def set_session_stage(session_id: str, stage: str | None) -> None:
+    session = get_session(session_id)
+    session["stage"] = stage
+
+
+def get_checkout_initiated(session_id: str) -> bool:
+    session = get_session(session_id)
+    return bool(session.get("checkout_initiated", False))
+
+
+def set_checkout_initiated(session_id: str, value: bool) -> None:
+    session = get_session(session_id)
+    session["checkout_initiated"] = bool(value)
