@@ -52,6 +52,8 @@ class TTSService:
         Convert text to base64 MP3 data URI.
         Returns None on any error so chat stays non-blocking.
         """
+        print("[TTS DEBUG] enabled =", settings.tts_enabled)
+        print("[TTS DEBUG] has creds =", bool(settings.google_credentials_json))
         if not settings.tts_enabled:
             return None
         if not text or not text.strip():
