@@ -54,3 +54,8 @@ def get_or_create_session(session_id: str | None) -> tuple[str, str | None]:
     new_session_id = str(uuid.uuid4())
     session = get_session(new_session_id)
     return new_session_id, session["cart_id"]
+
+
+def set_session_cart_id(session_id: str, cart_id: str | None) -> None:
+    session = get_session(session_id)
+    session["cart_id"] = cart_id
