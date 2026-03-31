@@ -124,6 +124,7 @@ export default function Checkout() {
         setSubmitted(true)
         navigate('/success', { state: { orderNumber: response.data.orderNumber } })
         localStorage.removeItem('cartId')
+        sessionStorage.removeItem('chatSessionId')
         resetCart()
       }
     } catch (err) {

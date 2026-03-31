@@ -679,6 +679,8 @@ export default function Navbar() {
         intent: data.intent || null,
       })
       if (data.intent === 'confirm_checkout' && data.metadata?.pipeline_stage === 'checkout_redirect') {
+        localStorage.removeItem('cartId')
+        sessionStorage.removeItem('chatSessionId')
         setTimeout(() => {
           pendingCheckoutRef.current = true
           closeChat()

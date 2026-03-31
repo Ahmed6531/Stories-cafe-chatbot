@@ -21,18 +21,24 @@ async def send_message(payload: ChatMessageRequest) -> ChatMessageResponse:
         session=session,
     )
 
-    if response.cart_id is not None:
-        session["cart_id"] = response.cart_id
+    if response.metadata.get("pipeline_stage") == "checkout_redirect":
+        session["last_items"] = []
+        session["last_intent"] = None
+        session["cart_id"] = None
+        session["stage"] = None
+        session["checkout_initiated"] = False
+    else:
+        if response.cart_id is not None:
+            session["cart_id"] = response.cart_id
 
-    session["last_intent"] = response.intent
+        session["last_intent"] = response.intent
 
-    requested_items = response.metadata.get("requested_items")
-    if (
-        response.intent in {"add_items", "update_quantity", "remove_item"}
-        and isinstance(requested_items, list)
-        and requested_items
-    ):
-        session["last_items"] = requested_items
-    print("SESSION LAST ITEMS:", session.get("last_items"))
+        requested_items = response.metadata.get("requested_items")
+        if (
+            response.intent in {"add_items", "update_quantity", "remove_item"}
+            and isinstance(requested_items, list)
+            and requested_items
+        ):
+            session["last_items"] = requested_items
 
     return response
