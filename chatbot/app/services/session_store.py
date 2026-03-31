@@ -1,49 +1,67 @@
-# app/services/session_store.py
-
-from typing import Tuple
-
-# In-memory store: session_id -> {"cart_id", "last_pipeline_stage", "checkout_initiated"}
-_sessions: dict[str, dict] = {}
-
-_DEFAULT_SESSION: dict = {"cart_id": None, "last_pipeline_stage": None, "checkout_initiated": False}
+from typing import TypedDict
+import uuid
 
 
-def _ensure(session_id: str) -> dict:
-    if session_id not in _sessions:
-        _sessions[session_id] = dict(_DEFAULT_SESSION)
-    return _sessions[session_id]
+class Session(TypedDict):
+    session_id: str
+    cart_id: str | None
+    last_items: list
+    last_intent: str | None
+    stage: str | None
+    checkout_initiated: bool
 
 
-def get_or_create_session(session_id: str | None) -> Tuple[str, str | None]:
-    """
-    Returns a session_id and cart_id.
-    If session_id is None or unknown, creates a new session.
-    """
-    import uuid
+sessions: dict[str, Session] = {}
 
-    if session_id:
-        return session_id, _ensure(session_id)["cart_id"]
+
+def get_session(session_id: str) -> Session:
+    if session_id in sessions:
+        session = sessions[session_id]
+        session.setdefault("stage", None)
+        session.setdefault("checkout_initiated", False)
+        return session
+
+    new_session: Session = {
+        "session_id": session_id,
+        "cart_id": None,
+        "last_items": [],
+        "last_intent": None,
+        "stage": None,
+        "checkout_initiated": False,
+    }
+    sessions[session_id] = new_session
+    return new_session
+
+
+def get_or_create_session(session_id: str | None) -> tuple[str, str | None]:
+    if session_id and session_id in sessions:
+        return session_id, sessions[session_id]["cart_id"]
 
     new_session_id = str(uuid.uuid4())
-    _sessions[new_session_id] = dict(_DEFAULT_SESSION)
-    return new_session_id, None
+    session = get_session(new_session_id)
+    return new_session_id, session["cart_id"]
 
 
 def set_session_cart_id(session_id: str, cart_id: str | None) -> None:
-    _ensure(session_id)["cart_id"] = cart_id
+    session = get_session(session_id)
+    session["cart_id"] = cart_id
 
 
 def get_session_stage(session_id: str) -> str | None:
-    return _sessions.get(session_id, {}).get("last_pipeline_stage")
+    session = get_session(session_id)
+    return session.get("stage")
 
 
 def set_session_stage(session_id: str, stage: str | None) -> None:
-    _ensure(session_id)["last_pipeline_stage"] = stage
+    session = get_session(session_id)
+    session["stage"] = stage
 
 
 def get_checkout_initiated(session_id: str) -> bool:
-    return _sessions.get(session_id, {}).get("checkout_initiated", False)
+    session = get_session(session_id)
+    return bool(session.get("checkout_initiated", False))
 
 
-def set_checkout_initiated(session_id: str) -> None:
-    _ensure(session_id)["checkout_initiated"] = True
+def set_checkout_initiated(session_id: str, value: bool = True) -> None:
+    session = get_session(session_id)
+    session["checkout_initiated"] = bool(value)

@@ -80,40 +80,90 @@ async def add_item_to_cart(menu_item_id, qty, selected_options, instructions, ca
     })
     return {"cart_id": resolved_cart_id, "cart": data.get("items", [])}
 
-async def find_menu_item_by_name(menu_items, query):
-    query_lower = query.lower()
-    for item in menu_items:
-        if query_lower in item["name"].lower():
-            return item
-    return None
-
-async def remove_from_cart(line_id: str, cart_id: str | None = None) -> dict:
+async def update_cart_item_quantity(line_id, qty, cart_id):
     try:
         client = ExpressHttpClient()
         headers = {"x-cart-id": cart_id} if cart_id else {}
-        logger.info({
-            "service": "express",
-            "method": "DELETE",
-            "path": f"/cart/items/{line_id}",
-            "cart_id": cart_id,
-        })
+        data, resp_headers = await client.patch(
+            f"/cart/items/{line_id}",
+            json={"qty": qty},
+            headers=headers,
+        )
+        resolved_cart_id = resp_headers.get("x-cart-id") or cart_id or data.get("cartId")
+        return {"cart_id": resolved_cart_id, "cart": data.get("items", [])}
+    except ExpressAPIError:
+        return {"cart_id": cart_id, "cart": []}
+
+async def remove_item_from_cart(line_id, cart_id):
+    try:
+        client = ExpressHttpClient()
+        headers = {"x-cart-id": cart_id} if cart_id else {}
         data, resp_headers = await client.delete(f"/cart/items/{line_id}", headers=headers)
         resolved_cart_id = resp_headers.get("x-cart-id") or cart_id or data.get("cartId")
         return {"cart_id": resolved_cart_id, "cart": data.get("items", [])}
     except ExpressAPIError:
         return {"cart_id": cart_id, "cart": []}
 
-async def clear_cart(cart_id: str | None = None) -> dict:
+async def remove_from_cart(*args, **kwargs):
+    return await remove_item_from_cart(*args, **kwargs)
+
+async def clear_cart(cart_id):
     try:
         client = ExpressHttpClient()
         headers = {"x-cart-id": cart_id} if cart_id else {}
-        logger.info({
-            "service": "express",
-            "method": "DELETE",
-            "path": "/cart",
-            "cart_id": cart_id,
-        })
-        await client.delete("/cart", headers=headers)
-        return {"cart_id": None, "cart": []}
+        data, resp_headers = await client.delete("/cart", headers=headers)
+        resolved_cart_id = resp_headers.get("x-cart-id") or cart_id or data.get("cartId")
+        return {"cart_id": resolved_cart_id, "cart": data.get("items", [])}
     except ExpressAPIError:
         return {"cart_id": cart_id, "cart": []}
+
+from difflib import get_close_matches
+
+
+async def find_menu_item_by_name(menu_items, item_query):
+    if not item_query:
+        return None
+
+    item_query = item_query.strip().lower()
+
+    # 1) exact match
+    for item in menu_items:
+        name = item.get("name", "").strip().lower()
+        if item_query == name:
+            return item
+
+    # 2) contains match
+    for item in menu_items:
+        name = item.get("name", "").strip().lower()
+        if item_query in name or name in item_query:
+            return item
+
+    # 3) word-overlap match
+    query_words = set(item_query.split())
+    best_item = None
+    best_overlap = 0
+
+    for item in menu_items:
+        name = item.get("name", "").strip().lower()
+        name_words = set(name.split())
+        overlap = len(query_words & name_words)
+
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_item = item
+
+    if best_item and best_overlap > 0:
+        return best_item
+
+    # 4) fuzzy match
+    menu_name_map = {
+        item.get("name", "").strip().lower(): item
+        for item in menu_items
+        if item.get("name")
+    }
+
+    matches = get_close_matches(item_query, menu_name_map.keys(), n=1, cutoff=0.6)
+    if matches:
+        return menu_name_map[matches[0]]
+
+    return None
