@@ -1,9 +1,12 @@
-import os
 import json
+import logging
+import os
 import re
 from typing import Optional, Dict, Any
 
 import google.generativeai as genai
+
+logger = logging.getLogger(__name__)
 
 
 WORD_TO_NUMBER = {
@@ -201,7 +204,7 @@ def try_interpret_message(message: str, context=None) -> Optional[Dict[str, Any]
         model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
         if not api_key:
-            print("LLM ERROR: GEMINI_API_KEY is missing")
+            logger.warning({"stage": "llm_api_key_missing"})
             return None
 
         genai.configure(api_key=api_key)
@@ -268,11 +271,23 @@ User message:
         response = model.generate_content(prompt)
         raw_text = (response.text or "").strip()
 
-        print("LLM RAW RESPONSE:", raw_text)
+        logger.info(
+            {
+                "stage": "llm_raw_response",
+                "message": message,
+                "raw_text": raw_text,
+            }
+        )
 
         parsed = _extract_json_object(raw_text)
         if not parsed:
-            print("LLM ERROR: could not parse Gemini JSON")
+            logger.warning(
+                {
+                    "stage": "llm_parse_failed",
+                    "message": message,
+                    "raw_text": raw_text,
+                }
+            )
             return None
 
         result = _base_result()
@@ -282,7 +297,7 @@ User message:
         if not result.get("intent"):
             result["intent"] = "unknown"
 
-        if result["items"] and result["intent"] in {"add_item", "unknown"}:
+        if result["items"] and result["intent"] in {"add_items", "unknown"}:
             result["intent"] = "add_items"
 
         if _looks_like_add_request(message) and result["intent"] in {"add_item", "add_items", "unknown"}:
@@ -290,13 +305,33 @@ User message:
             if heuristic_items and result["intent"] == "unknown":
                 result["intent"] = "add_items"
             if _should_use_heuristic_items(result["items"], heuristic_items):
-                print("LLM HEURISTIC ITEMS:", heuristic_items)
+                logger.info(
+                    {
+                        "stage": "llm_heuristic_items_applied",
+                        "message": message,
+                        "heuristic_items": heuristic_items,
+                    }
+                )
                 result["items"] = heuristic_items
 
-        print("LLM PARSED ITEMS:", result["items"])
+        logger.info(
+            {
+                "stage": "llm_interpretation_ready",
+                "message": message,
+                "intent": result["intent"],
+                "items": result["items"],
+                "fallback_needed": result.get("fallback_needed", True),
+            }
+        )
 
         return result
 
     except Exception as e:
-        print("LLM ERROR:", str(e))
+        logger.exception(
+            {
+                "stage": "llm_unexpected_error",
+                "message": message,
+                "error": str(e),
+            }
+        )
         return None
