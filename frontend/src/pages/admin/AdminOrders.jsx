@@ -69,7 +69,6 @@ export default function AdminOrders() {
           <option value="all">All Types</option>
           <option value="pickup">Pickup</option>
           <option value="dine_in">Dine In</option>
-          <option value="delivery">Delivery</option>
         </select>
       </div>
 

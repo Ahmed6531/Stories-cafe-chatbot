@@ -19,7 +19,6 @@ const STATUS_CONFIG = {
 const ORDER_TYPE_LABEL = {
   pickup:   'Pickup',
   dine_in:  'Dine In',
-  delivery: 'Delivery',
 }
 
 export default function Dashboard() {

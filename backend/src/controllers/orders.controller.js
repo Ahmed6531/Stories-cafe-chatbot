@@ -15,14 +15,11 @@ export async function createOrder(req, res) {
   const { orderType, customer, items, notesToBarista } = req.body || {};
   const cartId = req.get("x-cart-id") || req.body.cartId;
 
-  if (!orderType || !["pickup", "dine_in", "delivery"].includes(orderType)) {
+  if (!orderType || !["pickup", "dine_in"].includes(orderType)) {
     return res.status(400).json({ error: "Invalid orderType" });
   }
   if (!customer?.name || !customer?.phone) {
     return res.status(400).json({ error: "Customer name and phone are required" });
-  }
-  if (orderType === "delivery" && !customer?.address) {
-    return res.status(400).json({ error: "Address is required for delivery" });
   }
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "Order items are required" });
@@ -121,7 +118,7 @@ export async function listOrders(req, res) {
   const filter = {};
 
   const validStatuses = ["received", "in_progress", "completed", "cancelled"];
-  const validTypes = ["pickup", "dine_in", "delivery"];
+  const validTypes = ["pickup", "dine_in"];
 
   if (status && validStatuses.includes(status)) {
     filter.status = status;
@@ -153,23 +150,28 @@ export async function updateOrderStatus(req, res) {
   const validStatuses = ["received", "in_progress", "completed", "cancelled"];
 
   if (!validStatuses.includes(status)) {
-    return res.status(400).json({ error: "Invalid status" });
+    return res.status(400).json({ error: { code: "VALIDATION_ERROR", message: "Invalid status" } });
   }
 
-  const order = await Order.findById(id);
+  try {
+    const order = await Order.findByIdAndUpdate(
+      id,
+      { status },
+      { new: true, runValidators: true }
+    );
 
-  if (!order) {
-    return res.status(404).json({ error: "Order not found" });
-  }
-
-  order.status = status;
-  await order.save();
-
-  res.json({
-    order: {
-      _id: order._id,
-      orderNumber: order.orderNumber,
-      status: order.status
+    if (!order) {
+      return res.status(404).json({ error: { code: "NOT_FOUND", message: "Order not found" } });
     }
-  });
+
+    res.json({
+      order: {
+        _id: order._id,
+        orderNumber: order.orderNumber,
+        status: order.status
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Failed to update order status" } });
+  }
 }
