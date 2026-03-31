@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useCart } from '../state/useCart'
 import { styled, keyframes, useTheme } from '@mui/material/styles'
 import axios from 'axios'
+import { isDeadCart } from '../API/http'
 import Box from '@mui/material/Box'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
@@ -13,10 +14,10 @@ import '../styles/index.css'
 const CHATBOT_URL = import.meta.env.VITE_CHATBOT_URL || 'http://localhost:8000'
 
 function getChatSessionId() {
-  let id = sessionStorage.getItem('chatSessionId')
+  let id = localStorage.getItem('chatSessionId')
   if (!id) {
     id = crypto.randomUUID()
-    sessionStorage.setItem('chatSessionId', id)
+    localStorage.setItem('chatSessionId', id)
   }
   return id
 }
@@ -411,6 +412,7 @@ export default function Navbar() {
       if (!Number.isFinite(savedAt) || Date.now() - savedAt > CHAT_TTL_MS) {
         localStorage.removeItem(CHAT_STORAGE_KEY)
         localStorage.removeItem(CHAT_STORAGE_TS_KEY)
+        localStorage.removeItem('chatSessionId')
         return []
       }
       const parsed = JSON.parse(saved)
@@ -419,6 +421,7 @@ export default function Navbar() {
       console.error('Failed to restore chat history:', e)
       localStorage.removeItem(CHAT_STORAGE_KEY)
       localStorage.removeItem(CHAT_STORAGE_TS_KEY)
+      localStorage.removeItem('chatSessionId')
       return []
     }
   }, [])
@@ -594,6 +597,7 @@ export default function Navbar() {
     setChipsVisible(true)
     localStorage.removeItem(CHAT_STORAGE_KEY)
     localStorage.removeItem(CHAT_STORAGE_TS_KEY)
+    localStorage.removeItem('chatSessionId')
   }, [isSuccessRoute])
 
   const toggleVoiceCapture = () => {
@@ -663,7 +667,7 @@ export default function Navbar() {
         console.warn("[CHAT CART SYNC]", { previous: cart_id, new: data.cart_id })
       }
 
-      if (data.cart_id) {
+      if (data.cart_id && !isDeadCart(data.cart_id)) {
         localStorage.setItem('cartId', data.cart_id)
       } else if (data.cart_updated && !data.cart_id) {
         localStorage.removeItem('cartId')
@@ -679,8 +683,6 @@ export default function Navbar() {
         intent: data.intent || null,
       })
       if (data.intent === 'confirm_checkout' && data.metadata?.pipeline_stage === 'checkout_redirect') {
-        localStorage.removeItem('cartId')
-        sessionStorage.removeItem('chatSessionId')
         setTimeout(() => {
           pendingCheckoutRef.current = true
           closeChat()

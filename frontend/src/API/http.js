@@ -13,6 +13,19 @@ function isCartRequest(url) {
   return typeof url === "string" && url.includes("/cart");
 }
 
+/**
+ * Call after a successful order with the completed cart's ID.
+ * The response interceptor will block that specific ID from being
+ * re-saved, while allowing any new cartId through freely.
+ */
+export function lockDeadCart(cartId) {
+  if (cartId) sessionStorage.setItem("deadCartId", cartId);
+}
+
+export function isDeadCart(cartId) {
+  return cartId && cartId === sessionStorage.getItem("deadCartId");
+}
+
 // Request interceptor for cart session management
 http.interceptors.request.use((config) => {
   const cartId = localStorage.getItem("cartId");
@@ -36,7 +49,11 @@ http.interceptors.response.use(
       ? res.data.cartId
       : undefined;
 
-    if (cartIdFromHeader) {
+    const incomingCartId = cartIdFromHeader || cartIdFromBody;
+
+    if (isDeadCart(incomingCartId)) {
+      // This is the old completed-order cart — don't resurrect it
+    } else if (cartIdFromHeader) {
       localStorage.setItem("cartId", cartIdFromHeader);
     } else if (isCartRequest(res.config?.url) && cartIdFromBody === null) {
       localStorage.removeItem("cartId");
