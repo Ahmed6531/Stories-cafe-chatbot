@@ -500,7 +500,7 @@ Do not wrap the JSON in triple backticks.
 
 Use exactly this schema:
 {{
-  "intent": "add_items" | "update_quantity" | "remove_item" | "view_cart" | "unknown",
+  "intent": "add_items" | "update_quantity" | "remove_item" | "view_cart" | "checkout" | "unknown",
   "items": [
     {{
       "item_name": string,

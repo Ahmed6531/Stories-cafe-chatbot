@@ -87,6 +87,8 @@ def detect_intent(message: str) -> str:
         return "update_quantity"
     if "cart" in message:
         return "view_cart"
+    if any(phrase in message for phrase in ["checkout", "check out", "place order", "pay now"]):
+        return "checkout"
     if any(word in message for word in ["add", "get", "order", "want"]):
         return "add_items"
 
