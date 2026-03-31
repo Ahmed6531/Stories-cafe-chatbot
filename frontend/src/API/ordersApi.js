@@ -18,4 +18,7 @@ export const getFilteredOrders = ({ status, orderType } = {}) =>
       orderType: orderType || undefined
     }
   }).then(r => r.data);
+export const getOrderStatus = (orderNumber) =>
+  http.get(`/orders/${orderNumber}/status`).then(r => r.data);
+
 export const submitOrder = (payload) => http.post('/orders', payload);

@@ -163,6 +163,29 @@ export async function getMyOrders(req, res) {
   res.json({ orders });
 }
 
+const ALLOWED_TRANSITIONS = {
+  received:    ["in_progress", "cancelled"],
+  in_progress: ["completed", "cancelled"],
+  completed:   [],
+  cancelled:   [],
+};
+
+export async function getOrderStatus(req, res) {
+  const { orderNumber } = req.params;
+
+  try {
+    const order = await Order.findOne({ orderNumber }).select("orderNumber status updatedAt");
+
+    if (!order) {
+      return res.status(404).json({ error: { code: "NOT_FOUND", message: "Order not found" } });
+    }
+
+    res.json({ orderNumber: order.orderNumber, status: order.status, updatedAt: order.updatedAt });
+  } catch (err) {
+    res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Failed to fetch order status" } });
+  }
+}
+
 export async function updateOrderStatus(req, res) {
   const { id } = req.params;
   const { status } = req.body;
@@ -174,15 +197,24 @@ export async function updateOrderStatus(req, res) {
   }
 
   try {
-    const order = await Order.findByIdAndUpdate(
-      id,
-      { status },
-      { new: true, runValidators: true }
-    );
+    const order = await Order.findById(id);
 
     if (!order) {
       return res.status(404).json({ error: { code: "NOT_FOUND", message: "Order not found" } });
     }
+
+    const allowed = ALLOWED_TRANSITIONS[order.status] || [];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_TRANSITION",
+          message: `Cannot transition from '${order.status}' to '${status}'. Allowed: ${allowed.length ? allowed.join(", ") : "none (terminal state)"}.`,
+        },
+      });
+    }
+
+    order.status = status;
+    await order.save();
 
     res.json({
       order: {

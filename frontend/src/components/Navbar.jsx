@@ -493,7 +493,9 @@ export default function Navbar() {
     localStorage.removeItem(CHAT_STORAGE_TS_KEY)
     resetCart()
     setMessages([])
-    navigate('/login')
+    if (location.pathname.startsWith('/dashboard')) {
+      navigate('/')
+    }
   }
 
   const closeMenu = () => {
@@ -735,16 +737,16 @@ export default function Navbar() {
     <div className="app-shell">
       <div className="content-shell">
         <main className="main">
-          <Topbar>
-            <TopbarLeft>
-              <Box
-                component="img"
-                src="/stories-logo.png"
-                alt="Stories"
-                sx={{ maxWidth: '112px', maxHeight: '26px', objectFit: 'contain', flexShrink: 0 }}
-                onError={(e) => { e.currentTarget.style.display = 'none' }}
-              />
-              {!isSuccessRoute && (
+          {!isSuccessRoute && (
+            <Topbar>
+              <TopbarLeft>
+                <Box
+                  component="img"
+                  src="/stories-logo.png"
+                  alt="Stories"
+                  sx={{ maxWidth: '112px', maxHeight: '26px', objectFit: 'contain', flexShrink: 0 }}
+                  onError={(e) => { e.currentTarget.style.display = 'none' }}
+                />
                 <TopbarNavWrap>
                   <Box sx={{ width: '1px', height: '18px', bgcolor: '#e9e9e9', mx: '6px', flexShrink: 0 }} />
                   <TopNavLink to="/" isActive={location.pathname === '/'}>Home</TopNavLink>
@@ -755,36 +757,34 @@ export default function Navbar() {
                     </TopNavLink>
                   )}
                 </TopbarNavWrap>
-              )}
-            </TopbarLeft>
+              </TopbarLeft>
 
-            <TopbarActionsWrap sx={{ display: isSuccessRoute ? 'none' : undefined }}>
-              {isAuthed ? (
-                <TopPillBtn isAuth type="button" onClick={handleLogout}>Logout</TopPillBtn>
-              ) : (
-                <TopPillBtn type="button" onClick={() => navigate('/login')}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="8" r="4" />
-                    <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-                  </svg>
-                  <span>Login</span>
+              <TopbarActionsWrap>
+                {isAuthed ? (
+                  <TopPillBtn isAuth type="button" onClick={handleLogout}>Logout</TopPillBtn>
+                ) : (
+                  <TopPillBtn type="button" onClick={() => navigate('/login')}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="8" r="4" />
+                      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+                    </svg>
+                    <span>Login</span>
+                  </TopPillBtn>
+                )}
+
+                <TopPillBtn type="button" onClick={() => navigate('/cart')}>
+                  <Box component="span" aria-hidden="true" sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="9" cy="21" r="1" />
+                      <circle cx="20" cy="21" r="1" />
+                      <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.95-1.57L23 6H6" />
+                    </svg>
+                  </Box>
+                  <span>Cart</span>
+                  {cartCount > 0 && <CartBadge>{cartCount}</CartBadge>}
                 </TopPillBtn>
-              )}
+              </TopbarActionsWrap>
 
-              <TopPillBtn type="button" onClick={() => navigate('/cart')}>
-                <Box component="span" aria-hidden="true" sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="9" cy="21" r="1" />
-                    <circle cx="20" cy="21" r="1" />
-                    <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.95-1.57L23 6H6" />
-                  </svg>
-                </Box>
-                <span>Cart</span>
-                {cartCount > 0 && <CartBadge>{cartCount}</CartBadge>}
-              </TopPillBtn>
-            </TopbarActionsWrap>
-
-            {!isSuccessRoute && (
               <HamburgerBtn
                 type="button"
                 aria-label={menuOpen ? 'Close menu' : 'Open menu'}
@@ -807,11 +807,11 @@ export default function Navbar() {
                   </svg>
                 )}
               </HamburgerBtn>
-            )}
-          </Topbar>
+            </Topbar>
+          )}
 
           <div ref={pageRef} className="page">
-            <div className="page-content">
+            <div className={isSuccessRoute ? undefined : 'page-content'}>
               <Outlet />
             </div>
           </div>
