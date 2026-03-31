@@ -31,7 +31,6 @@ function transformMenuItem(item) {
       ...v,
       id: v.groupId || v.id // Map groupId to id for frontend compatibility
     })).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)),
-    mongoId: item._id,
   }
 }
 

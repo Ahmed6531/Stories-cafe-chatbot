@@ -5,6 +5,7 @@ export const getOrders = async () => {
   return response.data;
 };
 
+<<<<<<< HEAD
 export const getMyOrders = () =>
   http.get("/orders/my").then(r => r.data);
 
@@ -18,3 +19,6 @@ export const getFilteredOrders = ({ status, orderType } = {}) =>
       orderType: orderType || undefined
     }
   }).then(r => r.data);
+=======
+export const submitOrder = (payload) => http.post('/orders', payload);
+>>>>>>> origin/dev

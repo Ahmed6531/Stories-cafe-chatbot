@@ -174,11 +174,17 @@ export default function VoiceInput({ active, onTranscript, onListeningChange, on
   }
 
   async function transcribe(blob, mimeType) {
+    const startTime = performance.now();
     try {
       const ext = (mimeType || '').includes('wav') ? 'wav'
                 : (mimeType || '').includes('ogg') ? 'ogg' : 'webm';
       const formData = new FormData();
       formData.append('audio', blob, `speech.${ext}`);
+      console.log("[VOICE UPLOAD]", {
+        mime: blob.type,
+        bytes: blob.size,
+        started: startTime,
+      });
 
       // Use chatbot endpoint for transcription
       const chatbotUrl = import.meta.env.VITE_CHATBOT_URL || "http://localhost:8000";
@@ -188,7 +194,16 @@ export default function VoiceInput({ active, onTranscript, onListeningChange, on
       });
 
       const text = (response.data?.transcript || '').trim();
-      if (!text) { onError?.('Could not transcribe. Please try again.'); return; }
+      console.log("[VOICE TRANSCRIPT]", {
+        transcript: text,
+        duration_ms: performance.now() - startTime,
+        empty: !text,
+      });
+      if (!text) {
+        console.warn("[VOICE EMPTY TRANSCRIPT]");
+        onError?.('Could not transcribe. Please try again.');
+        return;
+      }
       onTranscript?.(text);
     } catch (err) {
       onError?.(err?.response?.data?.detail || err?.message || 'Transcription failed');

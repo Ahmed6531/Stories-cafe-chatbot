@@ -294,7 +294,6 @@ export default function Navbar() {
       if (!saved) return []
       const savedAtRaw = localStorage.getItem(CHAT_STORAGE_TS_KEY)
       const savedAt = Number(savedAtRaw)
-      // eslint-disable-next-line react-hooks/purity
       if (!Number.isFinite(savedAt) || Date.now() - savedAt > CHAT_TTL_MS) {
         localStorage.removeItem(CHAT_STORAGE_KEY)
         localStorage.removeItem(CHAT_STORAGE_TS_KEY)
@@ -330,6 +329,7 @@ export default function Navbar() {
   const pageRef = useRef(null)
   const msgsRef = useRef(null)
   const pendingReplyTimeoutRef = useRef(null)
+  const pendingCheckoutRef = useRef(false)
 
   const { cartCount, refreshCart } = useCart()
   const location = useLocation()
@@ -380,6 +380,10 @@ export default function Navbar() {
       setVoiceActive(false)
       setMicMode('idle')
       setTyping(false)
+      if (pendingCheckoutRef.current) {
+        pendingCheckoutRef.current = false
+        navigate('/checkout')
+      }
     }
   }
 
@@ -483,6 +487,8 @@ export default function Navbar() {
     const trimmed = text.trim()
     if (!trimmed) return
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    const session_id = getChatSessionId()
+    const cart_id = localStorage.getItem('cartId') || null
 
     setVoiceActive(false)
     appendMessage({ id: Date.now(), role: 'user', text: trimmed, time: now })
@@ -491,14 +497,38 @@ export default function Navbar() {
     setTyping(true)
 
     try {
-      const cartId = localStorage.getItem('cartId') || null
-      const response = await axios.post(`${CHATBOT_URL}/chat/message`, {
-        session_id: getChatSessionId(),
+      console.log("[CHAT REQUEST]", {
+        session_id,
+        cart_id,
         message: trimmed,
-        cart_id: cartId,
+        timestamp: Date.now(),
+      })
+
+      const response = await axios.post(`${CHATBOT_URL}/chat/message`, {
+        session_id,
+        message: trimmed,
+        cart_id,
       })
       const data = response.data
-      if (data.cart_id) localStorage.setItem('cartId', data.cart_id)
+
+      console.log("[CHAT RESPONSE]", {
+        status: response.status,
+        session_id: data.session_id,
+        cart_updated: data.cart_updated,
+        returned_cart_id: data.cart_id,
+        intent: data.intent,
+        suggestions: data.suggestions?.length,
+      })
+
+      if (cart_id !== data.cart_id) {
+        console.warn("[CHAT CART SYNC]", { previous: cart_id, new: data.cart_id })
+      }
+
+      if (data.cart_id) {
+        localStorage.setItem('cartId', data.cart_id)
+      } else if (data.cart_updated && !data.cart_id) {
+        localStorage.removeItem('cartId')
+      }
       if (data.cart_updated) refreshCart()
       appendMessage({
         id: Date.now() + 1,
@@ -507,7 +537,13 @@ export default function Navbar() {
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         suggestions: data.suggestions || [],
       })
-    } catch (err) {
+      if (data.intent === 'checkout' && data.metadata?.pipeline_stage === 'checkout_redirect') {
+        setTimeout(() => {
+          pendingCheckoutRef.current = true
+          closeChat()
+        }, 1500)
+      }
+    } catch {
       appendMessage({
         id: Date.now() + 1,
         role: 'bot',
@@ -621,7 +657,7 @@ export default function Navbar() {
           </div>
         </main>
 
-        {(chatClosing || (isChatAllowedRoute && chatOpen) || chatRouteClosing) && (
+        {(chatOpen || chatClosing || chatRouteClosing) && (
           <div
             className={`chat-unit${chatClosing ? ' chat-unit-closing' : ''}`}
             style={
@@ -731,8 +767,8 @@ export default function Navbar() {
                       <button className="chat-suggestion-chip" type="button" onClick={() => handleChipClick("What's good today?")}>
                         &quot;What&apos;s good today?&quot;
                       </button>
-                      <button className="chat-suggestion-chip" type="button" onClick={() => handleChipClick('Repeat my last order')}>
-                        &quot;Repeat my last order&quot;
+                      <button className="chat-suggestion-chip" type="button" onClick={() => handleChipClick("What's in my cart?")}>
+                        &quot;What&apos;s in my cart?&quot;
                       </button>
                       <button className="chat-suggestion-chip" type="button" onClick={() => handleChipClick('Surprise me')}>
                         &quot;Surprise me&quot;

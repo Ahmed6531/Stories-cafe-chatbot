@@ -85,12 +85,16 @@ router.post("/login", authLimiter, validate([
     if (!user.isVerified) {
       const verificationToken = generateVerificationToken(email);
       const actionLink = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
-      await sendEmail(
-        email,
-        "Verify Your Account",
-        accountVerifyTemplate,
-        { name: email.split("@")[0], actionLink }
-      );
+      try {
+        await sendEmail(
+          email,
+          "Verify Your Account",
+          accountVerifyTemplate,
+          { name: email.split("@")[0], actionLink }
+        );
+      } catch (e) {
+        console.error("Re-send verification email failed:", e);
+      }
       return res.status(403).json({ error: { code: "EMAIL_NOT_VERIFIED", message: "Please verify your email. A new verification email has been sent." } });
     }
 

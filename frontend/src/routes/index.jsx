@@ -19,11 +19,6 @@ import AuthGuard from "../components/auth/AuthGuard";
 import Unauthorized from "../pages/Unauthorized";
 import VerifyEmail from "../pages/VerifyEmail";
 
-// Layout wrapper: Navbar contains sidebar + top header + breadcrumb
-function Layout() {
-  return <Navbar />
-}
-
 export default function AppRoutes() {
   return (
     <Routes>

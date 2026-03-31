@@ -5,8 +5,8 @@ function cartHeaders() {
   return cartId ? { "x-cart-id": cartId } : {};
 }
 
-export async function fetchCart() {
-  const response = await http.get('/cart', { headers: cartHeaders() })
+export async function fetchCart({ signal } = {}) {
+  const response = await http.get('/cart', { signal }, { headers: cartHeaders() })
   return response.data
 }
 

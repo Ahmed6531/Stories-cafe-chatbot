@@ -5,13 +5,14 @@ import {
   getMyOrders,
   updateOrderStatus
 } from "../controllers/orders.controller.js";
+import { authenticateOptional } from "../middleware/auth.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = Router();
 
 router.get("/my", requireAuth, getMyOrders);
 
-router.post("/", requireAuth, createOrder);
+router.post("/", authenticateOptional, requireAuth, createOrder);
 
 // Admin only
 router.get("/", requireRole("admin"), listOrders);
