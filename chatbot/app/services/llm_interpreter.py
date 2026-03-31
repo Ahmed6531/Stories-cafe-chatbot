@@ -8,7 +8,6 @@ import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
-
 WORD_TO_NUMBER = {
     "a": 1,
     "an": 1,
@@ -24,6 +23,136 @@ WORD_TO_NUMBER = {
     "ten": 10,
 }
 
+SIZE_ALIASES = {
+    "small": "small",
+    "medium": "medium",
+    "med": "medium",
+    "large": "large",
+}
+
+MILK_CANONICAL = {
+    "almond milk": "almond milk",
+    "oat milk": "oat milk",
+    "soy milk": "soy milk",
+    "skim milk": "skim milk",
+    "whole milk": "whole milk",
+    "regular milk": "regular milk",
+    "full fat": "full fat",
+    "lactose free": "lactose free",
+    "coconut milk": "coconut milk",
+}
+
+SUGAR_CANONICAL = {
+    "no sugar": "no sugar",
+    "without sugar": "no sugar",
+    "less sugar": "less sugar",
+    "light sugar": "less sugar",
+    "extra sugar": "extra sugar",
+    "sugar free": "sugar free",
+}
+
+ADDON_CANONICAL = {
+    "extra shot": "extra shot",
+    "add shot": "extra shot",
+    "vanilla syrup": "vanilla syrup",
+    "vanilla": "vanilla syrup",
+    "caramel syrup": "caramel syrup",
+    "caramel": "caramel syrup",
+    "caramel sugar free": "caramel sugar free",
+    "vanilla sugar free": "vanilla sugar free",
+    "hazelnut": "hazelnut",
+    "white mocha": "white mocha",
+    "mocha": "mocha",
+    "whipped cream": "whipped cream",
+    "caramel drizzle": "caramel drizzle",
+    "chocolate drizzle": "chocolate drizzle",
+    "chocolate chips": "chocolate chips",
+    "extra bag": "extra bag",
+    "decaf": "decaf",
+    "decaffe": "decaf",
+    "shot decaffe": "decaf",
+    "yirgacheffe shot": "yirgacheffe shot",
+}
+
+INSTRUCTION_CANONICAL = {
+    "extra hot": "extra hot",
+    "less ice": "less ice",
+    "light ice": "light ice",
+    "extra ice": "extra ice",
+    "no ice": "no ice",
+    "light foam": "light foam",
+    "less foam": "less foam",
+    "extra foam": "extra foam",
+    "no foam": "no foam",
+    "no whip": "no whip",
+    "on the side": "on the side",
+}
+
+MODIFIER_LEADS = {
+    "with",
+    "without",
+    "no",
+    "less",
+    "light",
+    "extra",
+    "almond",
+    "oat",
+    "soy",
+    "skim",
+    "whole",
+    "regular",
+    "full",
+    "lactose",
+    "coconut",
+    "vanilla",
+    "caramel",
+    "hazelnut",
+    "white",
+    "mocha",
+    "chocolate",
+    "whipped",
+    "decaf",
+    "decaffe",
+    "yirgacheffe",
+    "on",
+}
+
+
+def _normalize_phrase(value: Any) -> str:
+    if value is None:
+        return ""
+
+    normalized = re.sub(r"[^a-z0-9\s]+", " ", str(value).lower())
+    return " ".join(normalized.split())
+
+
+def _unique_strings(values: list[str]) -> list[str]:
+    unique_values = []
+    seen = set()
+
+    for value in values:
+        cleaned_value = str(value).strip()
+        normalized_value = _normalize_phrase(cleaned_value)
+        if not cleaned_value or not normalized_value or normalized_value in seen:
+            continue
+        seen.add(normalized_value)
+        unique_values.append(cleaned_value)
+
+    return unique_values
+
+
+def _has_customization_data(item: dict[str, Any]) -> bool:
+    options = item.get("options") if isinstance(item.get("options"), dict) else {}
+    addons = item.get("addons") if isinstance(item.get("addons"), list) else []
+    instructions = item.get("instructions")
+
+    return bool(
+        item.get("size")
+        or any(value for value in options.values())
+        or addons
+        or (isinstance(instructions, str) and instructions.strip())
+    )
+
 
 def _base_item() -> Dict[str, Any]:
     return {
@@ -34,6 +163,8 @@ def _base_item() -> Dict[str, Any]:
             "milk": None,
             "sugar": None,
         },
+        "addons": [],
+        "instructions": "",
     }
 
 
@@ -55,6 +186,26 @@ def _normalize_item(item: Any, default_quantity: int | None = None) -> Optional[
 
     if isinstance(item.get("options"), dict):
         normalized_item["options"].update(item["options"])
+
+    raw_addons = item.get("addons")
+    if isinstance(raw_addons, list):
+        normalized_item["addons"] = _unique_strings(
+            [str(addon).strip() for addon in raw_addons if str(addon).strip()]
+        )
+    elif isinstance(raw_addons, str) and raw_addons.strip():
+        normalized_item["addons"] = [raw_addons.strip()]
+    else:
+        normalized_item["addons"] = []
+
+    raw_instructions = item.get("instructions")
+    if isinstance(raw_instructions, list):
+        normalized_item["instructions"] = ", ".join(
+            str(value).strip() for value in raw_instructions if str(value).strip()
+        ).strip()
+    elif isinstance(raw_instructions, str):
+        normalized_item["instructions"] = raw_instructions.strip()
+    else:
+        normalized_item["instructions"] = ""
 
     if normalized_item.get("quantity") is None and default_quantity is not None:
         normalized_item["quantity"] = default_quantity
@@ -129,6 +280,145 @@ def _normalize_add_message(message: str) -> str:
     return message.strip()
 
 
+def _looks_like_modifier_continuation(segment: str) -> bool:
+    if not segment:
+        return False
+
+    words = segment.split()
+    if not words:
+        return False
+
+    if words[0] in MODIFIER_LEADS:
+        return True
+
+    normalized_segment = _normalize_phrase(segment)
+    phrases = (
+        list(MILK_CANONICAL)
+        + list(SUGAR_CANONICAL)
+        + list(ADDON_CANONICAL)
+        + list(INSTRUCTION_CANONICAL)
+    )
+
+    return any(
+        normalized_segment.startswith(_normalize_phrase(phrase))
+        for phrase in phrases
+    )
+
+
+def _split_add_segments(normalized_message: str) -> list[str]:
+    comma_segments = [segment.strip() for segment in normalized_message.split(",") if segment.strip()]
+    segments: list[str] = []
+
+    for comma_segment in comma_segments:
+        and_parts = [
+            part.strip()
+            for part in re.split(r"\s+\band\b\s+", comma_segment)
+            if part.strip()
+        ]
+        if not and_parts:
+            continue
+
+        current_segment = and_parts[0]
+        for next_segment in and_parts[1:]:
+            if _looks_like_modifier_continuation(next_segment):
+                current_segment = f"{current_segment} and {next_segment}"
+            else:
+                segments.append(current_segment.strip())
+                current_segment = next_segment
+
+        segments.append(current_segment.strip())
+
+    return segments
+
+
+def _extract_first_match(segment: str, phrase_map: dict[str, str]) -> tuple[str | None, str]:
+    normalized_segment = _normalize_phrase(segment)
+
+    for phrase in sorted(phrase_map.keys(), key=len, reverse=True):
+        normalized_phrase = _normalize_phrase(phrase)
+        pattern = rf"\b{re.escape(normalized_phrase)}\b"
+        if re.search(pattern, normalized_segment):
+            updated_segment = re.sub(pattern, " ", normalized_segment, count=1)
+            return phrase_map[phrase], " ".join(updated_segment.split())
+
+    return None, normalized_segment
+
+
+def _extract_repeated_matches(segment: str, phrase_map: dict[str, str]) -> tuple[list[str], str]:
+    normalized_segment = _normalize_phrase(segment)
+    matches: list[str] = []
+
+    for phrase in sorted(phrase_map.keys(), key=len, reverse=True):
+        normalized_phrase = _normalize_phrase(phrase)
+        pattern = rf"\b{re.escape(normalized_phrase)}\b"
+
+        while re.search(pattern, normalized_segment):
+            matches.append(phrase_map[phrase])
+            normalized_segment = re.sub(pattern, " ", normalized_segment, count=1)
+
+    return _unique_strings(matches), " ".join(normalized_segment.split())
+
+
+def _parse_add_item_segment(segment: str) -> Dict[str, Any] | None:
+    segment = _normalize_phrase(segment)
+    if not segment:
+        return None
+
+    segment = re.sub(r"^(to\s+)?(order|add|get)\s+", "", segment).strip()
+    if not segment:
+        return None
+
+    quantity = 1
+    match = re.match(
+        r"^(?P<qty>\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?P<name>.+)$",
+        segment,
+    )
+    if match:
+        quantity = WORD_TO_NUMBER.get(match.group("qty"), None)
+        if quantity is None:
+            quantity = int(match.group("qty"))
+        segment = match.group("name").strip()
+
+    size, segment = _extract_first_match(segment, SIZE_ALIASES)
+    sugar, segment = _extract_first_match(segment, SUGAR_CANONICAL)
+    instruction_parts, segment = _extract_repeated_matches(segment, INSTRUCTION_CANONICAL)
+
+    modifier_source = ""
+    modifier_match = re.search(r"\b(with|without)\b", segment)
+    if modifier_match:
+        modifier_source = segment[modifier_match.end():].strip()
+        segment = segment[:modifier_match.start()].strip()
+    elif " and " in segment:
+        base_candidate, modifier_candidate = segment.rsplit(" and ", 1)
+        if _looks_like_modifier_continuation(modifier_candidate):
+            segment = base_candidate.strip()
+            modifier_source = modifier_candidate.strip()
+
+    milk, modifier_source = _extract_first_match(modifier_source, MILK_CANONICAL)
+    addons, modifier_source = _extract_repeated_matches(modifier_source, ADDON_CANONICAL)
+
+    leftover_modifier = re.sub(r"\b(and)\b", " ", modifier_source).strip()
+    if leftover_modifier:
+        instruction_parts.append(leftover_modifier)
+
+    item_name = re.sub(r"\b(with|without|and)\b", " ", segment)
+    item_name = " ".join(item_name.split())
+    if not item_name:
+        return None
+
+    return {
+        "item_name": item_name,
+        "quantity": quantity,
+        "size": size,
+        "options": {
+            "milk": milk,
+            "sugar": sugar,
+        },
+        "addons": addons,
+        "instructions": ", ".join(instruction_parts),
+    }
+
+
 def _looks_like_add_request(message: str) -> bool:
     return bool(
         re.search(
@@ -143,44 +433,34 @@ def _extract_add_items_from_message(message: str) -> list[Dict[str, Any]]:
     if not normalized_message:
         return []
 
-    raw_segments = re.split(r"\s*(?:,|\band\b)\s*", normalized_message)
+    raw_segments = _split_add_segments(normalized_message)
     items = []
 
     for segment in raw_segments:
-        segment = segment.strip()
-        if not segment:
-            continue
-
-        segment = re.sub(r"^(to\s+)?(order|add|get)\s+", "", segment).strip()
-
-        quantity = 1
-        match = re.match(r"^(?P<qty>\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?P<name>.+)$", segment)
-        if match:
-            quantity = WORD_TO_NUMBER.get(match.group("qty"), None)
-            if quantity is None:
-                quantity = int(match.group("qty"))
-            segment = match.group("name").strip()
-
-        if not segment:
-            continue
-
-        items.append(
-            {
-                "item_name": segment,
-                "quantity": quantity,
-                "size": None,
-                "options": {
-                    "milk": None,
-                    "sugar": None,
-                },
-            }
-        )
+        parsed_item = _parse_add_item_segment(segment)
+        if parsed_item:
+            items.append(parsed_item)
 
     return items
 
 
 def _should_use_heuristic_items(parsed_items: list[Dict[str, Any]], heuristic_items: list[Dict[str, Any]]) -> bool:
     if not heuristic_items:
+        return False
+
+    parsed_items_are_usable = bool(
+        parsed_items
+        and all(
+            (item.get("item_name") or "").strip()
+            and (item.get("quantity") is None or item.get("quantity") >= 1)
+            for item in parsed_items
+        )
+    )
+
+    # Preserve richer Gemini structure when it already extracted usable
+    # customizations. The heuristic parser is intentionally simpler and can
+    # flatten modifiers back into item_name.
+    if parsed_items_are_usable and any(_has_customization_data(item) for item in parsed_items):
         return False
 
     if not parsed_items or len(parsed_items) != len(heuristic_items):
@@ -222,7 +502,7 @@ Do not wrap the JSON in triple backticks.
 
 Use exactly this schema:
 {{
-  "intent": "add_items" | "update_quantity" | "remove_item" | "view_cart" | "unknown",
+  "intent": "add_items" | "update_quantity" | "remove_item" | "view_cart" | "checkout" | "unknown",
   "items": [
     {{
       "item_name": string,
@@ -231,7 +511,9 @@ Use exactly this schema:
       "options": {{
         "milk": string or null,
         "sugar": string or null
-      }}
+      }},
+      "addons": [string],
+      "instructions": string or null
     }}
   ],
   "confidence": number,
@@ -262,6 +544,9 @@ General Rules:
 - item_name should be only the menu item phrase (no quantity, no size, no options).
 - If the user says a size (small, medium, large), put it in each item's "size", not in item_name.
 - If the user mentions milk type, put it in each item's options.milk, not in item_name.
+- If the user mentions sugar preferences, put them in each item's options.sugar when possible.
+- Put selectable add-ons such as syrup flavors, extra shot, whipped cream, drizzle, or decaf into each item's addons array.
+- Put free-form prep requests such as extra hot, less ice, no whip, light foam, or on the side into each item's instructions field.
 - Set fallback_needed to false if you are confident in the interpretation. Set to true otherwise.
 
 User message:

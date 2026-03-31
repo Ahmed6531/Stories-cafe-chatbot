@@ -19,6 +19,20 @@ async def fetch_menu_items():
     except ExpressAPIError:
         return []
 
+async def fetch_menu_item_detail(menu_item_id):
+    try:
+        client = ExpressHttpClient()
+        logger.info({
+            "service": "express",
+            "method": "GET",
+            "path": f"/menu/{menu_item_id}",
+            "cart_id": None,
+        })
+        data, _ = await client.get(f"/menu/{menu_item_id}")
+        return data.get("item")
+    except ExpressAPIError:
+        return None
+
 async def fetch_featured_items():
     try:
         client = ExpressHttpClient()
