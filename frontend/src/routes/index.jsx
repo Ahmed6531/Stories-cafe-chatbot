@@ -17,6 +17,7 @@ import AdminLogin from "../pages/admin/AdminLogin"
 import AdminGuard from "../components/admin/AdminGuard";
 import AuthGuard from "../components/auth/AuthGuard";
 import Unauthorized from "../pages/Unauthorized";
+import VerifyEmail from "../pages/VerifyEmail";
 
 // Layout wrapper: Navbar contains sidebar + top header + breadcrumb
 function Layout() {
@@ -54,6 +55,7 @@ export default function AppRoutes() {
         <Route path="/register" element={<Register />} />
         <Route path="/dashboard" element={<AuthGuard><Dashboard /></AuthGuard>} />
         <Route path="/item/:id" element={<MenuItemDetails />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
       </Route>
 
       <Route path="/unauthorized" element={<Unauthorized />} />

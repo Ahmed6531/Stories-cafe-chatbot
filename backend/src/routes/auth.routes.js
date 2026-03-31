@@ -27,7 +27,7 @@ router.post("/register", validate([
   body("password").isLength({ min: 8 }).withMessage("Password must be at least 8 characters"),
   body("name").notEmpty().isLength({ min: 2, max: 50 }).withMessage("Name must be 2–50 characters"),
 ]), async (req, res) => {
-  const { email, password } = req.body;
+  const { name, email, password } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({ error: { code: "VALIDATION_ERROR", message: "Missing fields" } });
@@ -40,10 +40,10 @@ router.post("/register", validate([
     }
 
     const hashed = await bcrypt.hash(password, 10);
-    await User.create({ email, password: hashed });
+    await User.create({ name, email, password: hashed });
 
     const verificationToken = generateVerificationToken(email);
-    const actionLink = `${process.env.BACKEND_URL}/auth/verify-email?token=${verificationToken}`;
+    const actionLink = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
 
     sendEmail(
       email,
@@ -84,7 +84,7 @@ router.post("/login", authLimiter, validate([
 
     if (!user.isVerified) {
       const verificationToken = generateVerificationToken(email);
-      const actionLink = `${process.env.BACKEND_URL}/auth/verify-email?token=${verificationToken}`;
+      const actionLink = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
       await sendEmail(
         email,
         "Verify Your Account",
@@ -126,7 +126,7 @@ router.get("/me", requireAuth, async (req, res) => {
     if (!user) {
       return res.status(401).json({ error: { code: "INVALID_CREDENTIALS", message: "User not found" } });
     }
-    res.json({ user: { id: user._id, email: user.email, role: user.role, isVerified: user.isVerified } });
+    res.json({ user: { id: user._id, name: user.name, email: user.email, role: user.role, isVerified: user.isVerified } });
   } catch (err) {
     res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Server error" } });
   }
@@ -143,7 +143,7 @@ router.post("/send-verification", authLimiter, validate([
     if (!user) return res.status(404).json({ error: { code: "NOT_FOUND", message: "User not found" } });
 
     const verificationToken = generateVerificationToken(email);
-    const actionLink = `${process.env.BACKEND_URL}/auth/verify-email?token=${verificationToken}`;
+    const actionLink = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
 
     await sendEmail(
       email,

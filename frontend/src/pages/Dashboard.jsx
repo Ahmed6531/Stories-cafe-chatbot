@@ -288,7 +288,7 @@ export default function Dashboard() {
                 color: theme.brand.primary,
                 fontFamily: theme.brand.fontBase,
               }}>
-                {formlaatLL(order.total)}
+                {formatLL(order.total)}
               </Typography>
             </Stack>
           </CardContent>

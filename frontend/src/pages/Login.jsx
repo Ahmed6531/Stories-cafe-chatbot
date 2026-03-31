@@ -21,7 +21,15 @@ export default function Login() {
       await refreshSession()
       navigate('/dashboard')
     } catch (err) {
-      const message = err.response?.data?.error?.message || 'Login failed'
+      const raw = err.response?.data?.message
+        || err.response?.data?.error?.message
+        || ''
+      const message =
+        raw.toLowerCase().includes('verify')
+          ? 'Check your inbox — we sent you a verification email.'
+          : raw.toLowerCase().includes('invalid')
+            ? 'Email or password is incorrect.'
+            : 'Something went wrong, please try again.'
       setStatus({ type: 'error', message })
     }
   }

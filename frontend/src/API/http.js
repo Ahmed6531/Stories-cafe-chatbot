@@ -18,11 +18,14 @@ http.interceptors.response.use(
     return res;
   },
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
+    const requestUrl = error.config?.url || "";
+    const isSessionBootstrap = requestUrl.includes("/auth/me");
+    if (!isSessionBootstrap) {
+      console.error('API Error:', error.response?.data || error.message);
+    }
 
     if (error.response?.status === 401) {
       const pathname = window.location.pathname;
-      const requestUrl = error.config?.url || "";
       const isSessionBootstrap = requestUrl.includes("/auth/me");
       const isAuthPage =
         pathname === "/login" ||

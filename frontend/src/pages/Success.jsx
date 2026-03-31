@@ -1,10 +1,12 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Box, Typography, useTheme } from '@mui/material'
+import { useSession } from '../hooks/useSession'
 
 export default function Success() {
   const navigate = useNavigate()
   const location = useLocation()
   const theme = useTheme()
+  const { user } = useSession()
   // Bug fix: show real order number from backend response
   const orderNumber = location.state?.orderNumber || 'SC-2026020712345'
 
@@ -83,6 +85,34 @@ export default function Success() {
         >
           Back to Home
         </Box>
+
+        {user && (
+          <Box
+            component="button"
+            type="button"
+            onClick={() => navigate('/dashboard')}
+            sx={{
+              border: `1.5px solid ${theme.brand.primaryDark}`,
+              backgroundColor: 'transparent',
+              color: theme.brand.primaryDark,
+              fontWeight: 600,
+              borderRadius: '8px',
+              padding: '1rem 2rem',
+              cursor: 'pointer',
+              width: '220px',
+              fontSize: '1rem',
+              fontFamily: theme.brand.fontBase,
+              letterSpacing: '0.5px',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                backgroundColor: 'rgba(30,86,49,0.06)',
+                transform: 'translateY(-2px)',
+              },
+            }}
+          >
+            View order history →
+          </Box>
+        )}
       </Box>
     </Box>
   )

@@ -38,7 +38,11 @@ export default function Register() {
       if (res.ok) {
         setStatus({ type: 'success', message: 'Registration successful. Check your email to verify your account.' })
       } else {
-        setStatus({ type: 'error', message: data.message || 'Registration failed' })
+        const message = data.message
+          || data.error?.fields?.[0]?.message
+          || data.error?.message
+          || 'Registration failed'
+        setStatus({ type: 'error', message })
       }
     } catch (err) {
       console.error(err)
@@ -86,6 +90,7 @@ export default function Register() {
           {status.message}
         </p>
       )}
+
     </AuthShell>
   )
 }
