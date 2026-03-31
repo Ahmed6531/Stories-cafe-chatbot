@@ -12,7 +12,7 @@ const router = Router();
 
 router.get("/my", requireAuth, getMyOrders);
 
-router.post("/", authenticateOptional, requireAuth, createOrder);
+router.post("/", authenticateOptional, createOrder);
 
 // Admin only
 router.get("/", requireRole("admin"), listOrders);

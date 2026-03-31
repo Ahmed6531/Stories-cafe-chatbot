@@ -20,15 +20,22 @@ export function requireAuth(req, res, next) {
 }
 
 export function authenticateOptional(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+  const bearer = req.headers.authorization;
+  const cookieToken = req.cookies?.token;
+
+  let token = null;
+  if (bearer && bearer.startsWith("Bearer ")) {
+    token = bearer.split(" ")[1];
+  } else if (cookieToken) {
+    token = cookieToken;
+  }
+
+  if (!token) {
     return next();
   }
 
-  const token = authHeader.split(" ")[1];
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
+    req.user = verifyToken(token);
   } catch {
     // Ignore invalid optional auth so anonymous checkout continues to work.
   }

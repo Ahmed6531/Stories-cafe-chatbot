@@ -102,9 +102,8 @@ export async function createOrder(req, res) {
   }
 
   const order = await Order.create({
-    userId: req.user?.id || null,
-    orderNumber,
     userId,
+    orderNumber,
     orderType,
     customer: {
       name: customer.name,
