@@ -3,7 +3,13 @@ import httpx
 
 from app.schemas.chat import ChatMessageResponse
 from app.services.llm_interpreter import try_interpret_message, _extract_add_items_from_message
-from app.services.session_store import Session
+from app.services.session_store import (
+    Session,
+    get_session_stage,
+    set_session_stage,
+    get_checkout_initiated,
+    set_checkout_initiated,
+)
 
 SIZE_CANDIDATES = {
     "small": ["small"],
@@ -662,6 +668,39 @@ def map_requested_item_to_selected_options(
     return selected_options, "; ".join(instruction_parts)
 
 
+def _build_bill(cart_items: list[dict]) -> dict:
+    _TAX_RATE = 0.08
+    bill_items = []
+    subtotal = 0.0
+    item_count = 0
+
+    for item in cart_items:
+        qty = item.get("qty", 1)
+        name = item.get("name", "item")
+        unit_price = float(item.get("price", 0))
+        line_total = unit_price * qty
+        subtotal += line_total
+        item_count += qty
+
+        bill_items.append({
+            "item_name": name,
+            "quantity": qty,
+            "unit_price": unit_price,
+            "line_total": line_total,
+        })
+
+    tax_amount = subtotal * _TAX_RATE
+
+    return {
+        "items": bill_items,
+        "subtotal": subtotal,
+        "tax_rate": _TAX_RATE,
+        "tax_amount": tax_amount,
+        "total": subtotal + tax_amount,
+        "item_count": item_count,
+    }
+
+
 def build_cart_summary(cart_items: list[dict]) -> str:
     cart_lines = []
 
@@ -778,6 +817,18 @@ async def process_chat_message(
         interpretation["intent"] = "add_items"
         intent = "add_items"
 
+    last_stage = get_session_stage(session_id)
+    bare_affirmations = {"yes", "yep", "ok", "okay", "sure", "sounds good", "do it", "go ahead"}
+    explicit_confirm = {"confirm", "confirm order", "proceed", "place it", "let's go"}
+    stripped_message = normalized_message.strip()
+    if stripped_message in explicit_confirm or (
+        stripped_message in bare_affirmations and last_stage == "checkout_summary"
+    ):
+        interpretation["intent"] = "confirm_checkout"
+        interpretation["items"] = []
+        interpretation["fallback_needed"] = False
+        intent = "confirm_checkout"
+
     try:
         if intent in {"add_item", "add_items", "update_quantity", "remove_item"} and has_mixed_intent(normalized_message):
             return ChatMessageResponse(
@@ -839,6 +890,127 @@ async def process_chat_message(
                     "normalized_message": normalized_message,
                     "cart": cart_result["cart"],
                     "pipeline_stage": "view_cart_done",
+                },
+            )
+
+        if intent == "checkout":
+            cart_result = await get_cart(cart_id=cart_id)
+            if not cart_result["cart"]:
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply="Your cart is empty. Add some items first, then head to checkout.",
+                    intent=intent,
+                    cart_updated=False,
+                    cart_id=cart_result["cart_id"],
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "cart": cart_result["cart"],
+                        "pipeline_stage": "checkout_empty_cart",
+                    },
+                )
+
+            bill = _build_bill(cart_result["cart"])
+            set_session_stage(session_id, "checkout_summary")
+            return ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply="Ready to checkout? Here's your order summary.",
+                intent=intent,
+                cart_updated=False,
+                cart_id=cart_result["cart_id"],
+                defaults_used=[],
+                suggestions=[],
+                metadata={
+                    "normalized_message": normalized_message,
+                    "pipeline_stage": "checkout_summary",
+                    "bill": bill,
+                },
+            )
+
+        if intent == "confirm_checkout":
+            last_stage = get_session_stage(session_id)
+
+            if last_stage != "checkout_summary":
+                cart_result = await get_cart(cart_id=cart_id)
+                if not cart_result["cart"]:
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="ok",
+                        reply="Your cart is empty. Add some items first!",
+                        intent=intent,
+                        cart_updated=False,
+                        cart_id=cart_id,
+                        defaults_used=[],
+                        suggestions=[],
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "pipeline_stage": "checkout_empty_cart",
+                        },
+                    )
+
+                bill = _build_bill(cart_result["cart"])
+                set_session_stage(session_id, "checkout_summary")
+                been_through_checkout = get_checkout_initiated(session_id)
+
+                reply = (
+                    "Welcome back! Here's your order - ready when you are."
+                    if been_through_checkout
+                    else "Ready to checkout? Here's your order summary."
+                )
+
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply=reply,
+                    intent=intent,
+                    cart_updated=False,
+                    cart_id=cart_result["cart_id"],
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "checkout_summary",
+                        "bill": bill,
+                    },
+                )
+
+            cart_result = await get_cart(cart_id=cart_id)
+            if not cart_result["cart"]:
+                set_session_stage(session_id, None)
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply="Uh oh - your cart is empty now! Add some items and we'll get you checked out.",
+                    intent=intent,
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "checkout_empty_cart",
+                    },
+                )
+
+            set_session_stage(session_id, "checkout_redirect")
+            set_checkout_initiated(session_id, True)
+
+            return ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply="Great! Taking you to checkout now.",
+                intent=intent,
+                cart_updated=False,
+                cart_id=cart_result["cart_id"],
+                defaults_used=[],
+                suggestions=[],
+                metadata={
+                    "normalized_message": normalized_message,
+                    "cart": cart_result["cart"],
+                    "pipeline_stage": "checkout_redirect",
                 },
             )
 
