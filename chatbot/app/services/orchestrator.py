@@ -5,6 +5,43 @@ from app.schemas.chat import ChatMessageResponse
 from app.services.llm_interpreter import try_interpret_message, _extract_add_items_from_message
 from app.services.session_store import Session
 
+SIZE_CANDIDATES = {
+    "small": ["small"],
+    "medium": ["medium", "med"],
+    "large": ["large"],
+}
+
+MILK_CANDIDATES = {
+    "almond milk": ["almond milk"],
+    "oat milk": ["oat milk"],
+    "soy milk": ["soy milk"],
+    "skim milk": ["skim milk"],
+    "whole milk": ["whole milk", "full fat"],
+    "regular milk": ["regular milk", "whole milk", "full fat"],
+    "full fat": ["full fat", "whole milk", "regular milk"],
+    "lactose free": ["lactose free"],
+    "coconut milk": ["coconut milk"],
+}
+
+ADDON_CANDIDATES = {
+    "extra shot": ["extra shot", "add shot"],
+    "add shot": ["add shot", "extra shot"],
+    "vanilla syrup": ["vanilla syrup", "vanilla"],
+    "caramel syrup": ["caramel syrup", "caramel"],
+    "caramel sugar free": ["caramel sugar free"],
+    "vanilla sugar free": ["vanilla sugar free"],
+    "hazelnut": ["hazelnut"],
+    "white mocha": ["white mocha"],
+    "mocha": ["mocha"],
+    "whipped cream": ["whipped cream"],
+    "caramel drizzle": ["caramel drizzle"],
+    "chocolate drizzle": ["chocolate drizzle"],
+    "chocolate chips": ["chocolate chips"],
+    "decaf": ["decaf", "decaffe", "shot decaffe"],
+    "yirgacheffe shot": ["yirgacheffe shot"],
+    "extra bag": ["extra bag"],
+}
+
 
 def detect_special_command(message: str) -> str | None:
     message = message.lower()
@@ -118,6 +155,12 @@ def extract_requested_items(interpretation: dict) -> list[dict]:
                     "options": item.get("options")
                     if isinstance(item.get("options"), dict)
                     else {"milk": None, "sugar": None},
+                    "addons": item.get("addons")
+                    if isinstance(item.get("addons"), list)
+                    else [],
+                    "instructions": item.get("instructions")
+                    if isinstance(item.get("instructions"), str)
+                    else "",
                 }
             )
 
@@ -140,6 +183,12 @@ def extract_requested_items(interpretation: dict) -> list[dict]:
             "options": interpretation.get("options")
             if isinstance(interpretation.get("options"), dict)
             else {"milk": None, "sugar": None},
+            "addons": interpretation.get("addons")
+            if isinstance(interpretation.get("addons"), list)
+            else [],
+            "instructions": interpretation.get("instructions")
+            if isinstance(interpretation.get("instructions"), str)
+            else "",
         }
     ]
 
@@ -179,6 +228,8 @@ def resolve_requested_items_from_session(
                 "quantity": interpretation.get("quantity"),
                 "size": interpretation.get("size"),
                 "options": interpretation.get("options"),
+                "addons": interpretation.get("addons"),
+                "instructions": interpretation.get("instructions"),
             }
 
         if (current_item.get("item_name") or "").strip():
@@ -187,10 +238,18 @@ def resolve_requested_items_from_session(
     current_quantity = current_item.get("quantity")
     current_size = current_item.get("size")
     current_options = current_item.get("options")
+    current_addons = current_item.get("addons")
+    current_instructions = current_item.get("instructions")
     session_options = session_item.get("options")
     options = current_options if isinstance(current_options, dict) else session_options
     if not isinstance(options, dict):
         options = {"milk": None, "sugar": None}
+    addons = current_addons if isinstance(current_addons, list) else session_item.get("addons", [])
+    if not isinstance(addons, list):
+        addons = []
+    instructions = current_instructions if isinstance(current_instructions, str) else session_item.get("instructions", "")
+    if not isinstance(instructions, str):
+        instructions = ""
 
     return [
         {
@@ -200,6 +259,8 @@ def resolve_requested_items_from_session(
             ),
             "size": current_size if current_size is not None else session_item.get("size"),
             "options": options,
+            "addons": addons,
+            "instructions": instructions,
         }
     ]
 
@@ -237,6 +298,10 @@ def resolve_add_items_from_session(
             current_item = {
                 "item_name": interpretation.get("item_name"),
                 "quantity": interpretation.get("quantity"),
+                "size": interpretation.get("size"),
+                "options": interpretation.get("options"),
+                "addons": interpretation.get("addons"),
+                "instructions": interpretation.get("instructions"),
             }
 
         current_item_name = (current_item.get("item_name") or "").strip().lower()
@@ -263,8 +328,22 @@ def resolve_add_items_from_session(
     if not session_item_name:
         return requested_items
 
+    current_size = current_item.get("size")
+    current_options = current_item.get("options")
+    current_addons = current_item.get("addons")
+    current_instructions = current_item.get("instructions")
     session_options = session_item.get("options")
-    options = session_options if isinstance(session_options, dict) else {"milk": None, "sugar": None}
+    options = current_options if isinstance(current_options, dict) else session_options
+    if not isinstance(options, dict):
+        options = {"milk": None, "sugar": None}
+    session_addons = session_item.get("addons") if isinstance(session_item.get("addons"), list) else []
+    addons = current_addons if isinstance(current_addons, list) else session_addons
+    if not isinstance(addons, list):
+        addons = []
+    session_instructions = session_item.get("instructions") if isinstance(session_item.get("instructions"), str) else ""
+    instructions = current_instructions if isinstance(current_instructions, str) else session_instructions
+    if not isinstance(instructions, str):
+        instructions = ""
     quantity = current_item.get("quantity")
     if quantity is None:
         quantity = interpretation.get("quantity")
@@ -275,8 +354,10 @@ def resolve_add_items_from_session(
         {
             "item_name": session_item_name,
             "quantity": quantity,
-            "size": session_item.get("size"),
+            "size": current_size if current_size is not None else session_item.get("size"),
             "options": options,
+            "addons": addons,
+            "instructions": instructions,
         }
     ]
 
@@ -325,6 +406,262 @@ def validate_requested_items(
     return True
 
 
+def normalize_modifier_text(value: str | None) -> str:
+    if value is None:
+        return ""
+
+    normalized = re.sub(r"[^a-z0-9\s]+", " ", str(value).lower())
+    return " ".join(normalized.split())
+
+
+def add_unique_phrase(parts: list[str], value: str | None) -> None:
+    if not isinstance(value, str):
+        return
+
+    cleaned_value = value.strip()
+    normalized_value = normalize_modifier_text(cleaned_value)
+    if not cleaned_value or not normalized_value:
+        return
+
+    if any(normalize_modifier_text(existing) == normalized_value for existing in parts):
+        return
+
+    parts.append(cleaned_value)
+
+
+def expand_candidates(raw_value: str | None, candidate_map: dict[str, list[str]]) -> list[str]:
+    normalized_value = normalize_modifier_text(raw_value)
+    if not normalized_value:
+        return []
+
+    candidates = [normalized_value]
+    for key, aliases in candidate_map.items():
+        normalized_key = normalize_modifier_text(key)
+        normalized_aliases = [normalize_modifier_text(alias) for alias in aliases]
+        if normalized_value == normalized_key or normalized_value in normalized_aliases:
+            candidates.extend(normalized_aliases)
+
+    unique_candidates = []
+    seen = set()
+    for candidate in candidates:
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            unique_candidates.append(candidate)
+
+    return unique_candidates
+
+
+def build_customization_instruction_parts(requested_item: dict) -> list[str]:
+    parts: list[str] = []
+    options = requested_item.get("options") if isinstance(requested_item.get("options"), dict) else {}
+
+    add_unique_phrase(parts, requested_item.get("size"))
+    add_unique_phrase(parts, options.get("milk"))
+    add_unique_phrase(parts, options.get("sugar"))
+
+    addons = requested_item.get("addons")
+    if isinstance(addons, list):
+        for addon in addons:
+            add_unique_phrase(parts, addon)
+
+    add_unique_phrase(parts, requested_item.get("instructions"))
+    return parts
+
+
+def requested_item_has_customization(requested_item: dict) -> bool:
+    return bool(build_customization_instruction_parts(requested_item))
+
+
+def iter_variant_options(menu_detail: dict | None) -> list[tuple[dict, dict]]:
+    if not isinstance(menu_detail, dict):
+        return []
+
+    variants = menu_detail.get("variants")
+    if not isinstance(variants, list):
+        return []
+
+    variant_options: list[tuple[dict, dict]] = []
+    for group in variants:
+        if not isinstance(group, dict):
+            continue
+        options = group.get("options")
+        if not isinstance(options, list):
+            continue
+        for option in options:
+            if isinstance(option, dict) and option.get("name"):
+                variant_options.append((group, option))
+
+    return variant_options
+
+
+def score_variant_option(
+    group: dict,
+    option: dict,
+    candidates: list[str],
+    *,
+    group_keywords: list[str] | None = None,
+    preferred_size: str | None = None,
+    allow_contains: bool = True,
+    enforce_preferred_size: bool = False,
+) -> int:
+    option_name = normalize_modifier_text(option.get("name"))
+    if not option_name:
+        return 0
+
+    group_name = normalize_modifier_text(group.get("name"))
+    if group_keywords and not any(keyword in group_name for keyword in group_keywords):
+        return 0
+
+    option_sizes = [size for size in ("small", "medium", "large") if size in option_name]
+    if enforce_preferred_size and option_sizes:
+        if not preferred_size or preferred_size not in option_sizes:
+            return 0
+
+    score = 0
+    for candidate in candidates:
+        if not candidate:
+            continue
+        if option_name == candidate:
+            score = max(score, 100)
+        elif allow_contains and (candidate in option_name or option_name in candidate):
+            score = max(score, 80)
+
+    if score and preferred_size and preferred_size in option_name:
+        score += 5
+
+    is_active = option.get("isActive")
+    if score and is_active is False:
+        score -= 2
+
+    return score
+
+
+def find_variant_option(
+    menu_detail: dict | None,
+    candidates: list[str],
+    *,
+    group_keywords: list[str] | None = None,
+    preferred_size: str | None = None,
+    allow_contains: bool = True,
+    enforce_preferred_size: bool = False,
+) -> dict | None:
+    best_option = None
+    best_score = 0
+
+    for group, option in iter_variant_options(menu_detail):
+        score = score_variant_option(
+            group,
+            option,
+            candidates,
+            group_keywords=group_keywords,
+            preferred_size=preferred_size,
+            allow_contains=allow_contains,
+            enforce_preferred_size=enforce_preferred_size,
+        )
+        if score > best_score:
+            best_score = score
+            best_option = option
+
+    return best_option
+
+
+def append_selected_option(selected_options: list[dict], option_name: str | None) -> None:
+    if not isinstance(option_name, str) or not option_name.strip():
+        return
+
+    option_key = normalize_modifier_text(option_name)
+    for existing in selected_options:
+        existing_name = existing.get("optionName") if isinstance(existing, dict) else None
+        if normalize_modifier_text(existing_name) == option_key:
+            return
+
+    selected_options.append({"optionName": option_name.strip()})
+
+
+def map_requested_item_to_selected_options(
+    requested_item: dict,
+    menu_detail: dict | None,
+) -> tuple[list[dict], str]:
+    if not isinstance(requested_item, dict):
+        return [], ""
+
+    selected_options: list[dict] = []
+    instruction_parts: list[str] = []
+    options = requested_item.get("options") if isinstance(requested_item.get("options"), dict) else {}
+
+    resolved_size = None
+    size_value = requested_item.get("size")
+    if isinstance(size_value, str) and size_value.strip():
+        size_candidates = expand_candidates(size_value, SIZE_CANDIDATES)
+        preferred_size = next(
+            (candidate for candidate in size_candidates if candidate in {"small", "medium", "large"}),
+            size_candidates[0] if size_candidates else None,
+        )
+        matched_size = find_variant_option(
+            menu_detail,
+            size_candidates,
+            group_keywords=["size"],
+            allow_contains=True,
+        )
+        if matched_size:
+            append_selected_option(selected_options, matched_size.get("name"))
+            resolved_size = normalize_modifier_text(matched_size.get("name")) or preferred_size
+        else:
+            add_unique_phrase(instruction_parts, size_value)
+            resolved_size = preferred_size
+
+    milk_value = options.get("milk")
+    if isinstance(milk_value, str) and milk_value.strip():
+        milk_candidates = expand_candidates(milk_value, MILK_CANDIDATES)
+        if resolved_size:
+            milk_candidates.extend(
+                f"{candidate} {resolved_size}"
+                for candidate in list(milk_candidates)
+            )
+        matched_milk = find_variant_option(
+            menu_detail,
+            milk_candidates,
+            group_keywords=["milk"],
+            preferred_size=resolved_size,
+            allow_contains=True,
+            enforce_preferred_size=True,
+        )
+        if matched_milk:
+            append_selected_option(selected_options, matched_milk.get("name"))
+        else:
+            add_unique_phrase(instruction_parts, milk_value)
+
+    sugar_value = options.get("sugar")
+    if isinstance(sugar_value, str) and sugar_value.strip():
+        matched_sugar = find_variant_option(
+            menu_detail,
+            [normalize_modifier_text(sugar_value)],
+            allow_contains=False,
+        )
+        if matched_sugar:
+            append_selected_option(selected_options, matched_sugar.get("name"))
+        else:
+            add_unique_phrase(instruction_parts, sugar_value)
+
+    addons = requested_item.get("addons")
+    if isinstance(addons, list):
+        for addon in addons:
+            addon_candidates = expand_candidates(addon, ADDON_CANDIDATES)
+            matched_addon = find_variant_option(
+                menu_detail,
+                addon_candidates,
+                allow_contains=True,
+            )
+            if matched_addon:
+                append_selected_option(selected_options, matched_addon.get("name"))
+            else:
+                add_unique_phrase(instruction_parts, str(addon))
+
+    add_unique_phrase(instruction_parts, requested_item.get("instructions"))
+
+    return selected_options, "; ".join(instruction_parts)
+
+
 def build_cart_summary(cart_items: list[dict]) -> str:
     cart_lines = []
 
@@ -348,6 +685,7 @@ async def process_chat_message(
         add_item_to_cart,
         clear_cart,
         fetch_featured_items,
+        fetch_menu_item_detail,
         fetch_menu_items,
         find_menu_item_by_name,
         get_cart,
@@ -407,6 +745,8 @@ async def process_chat_message(
                                 "milk": None,
                                 "sugar": None,
                             },
+                            "addons": [],
+                            "instructions": "",
                         }
                     )
 
@@ -853,11 +1193,20 @@ async def process_chat_message(
                     failed_items.append(item_query or matched_item.get("name", "item"))
                     continue
 
+                menu_detail = None
+                if requested_item_has_customization(requested_item):
+                    menu_detail = await fetch_menu_item_detail(menu_item_id)
+
+                selected_options, instructions = map_requested_item_to_selected_options(
+                    requested_item,
+                    menu_detail,
+                )
+
                 cart_result = await add_item_to_cart(
                     menu_item_id=menu_item_id,
                     qty=quantity,
-                    selected_options=[],
-                    instructions="",
+                    selected_options=selected_options,
+                    instructions=instructions,
                     cart_id=current_cart_id,
                 )
                 current_cart_id = cart_result["cart_id"]
@@ -868,6 +1217,8 @@ async def process_chat_message(
                         "matched_name": matched_item.get("name", "item"),
                         "quantity": quantity,
                         "matched_item": matched_item,
+                        "selected_options": selected_options,
+                        "instructions": instructions,
                     }
                 )
 
