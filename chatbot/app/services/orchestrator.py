@@ -212,7 +212,17 @@ def resolve_add_items_from_session(
     if session is None or not interpretation.get("fallback_needed", False):
         return requested_items
 
-    follow_up_item_names = {"same one", "another one", "one more", "more", "another"}
+    follow_up_item_names = {
+        "same one",
+        "another one",
+        "one more",
+        "more",
+        "another",
+        "item",
+        "it",
+        "that",
+        "this",
+    }
 
     if requested_items:
         current_item = requested_items[0]
@@ -368,9 +378,9 @@ async def process_chat_message(
     else:
         llm_result = try_interpret_message(normalized_message)
 
-        if llm_result and not llm_result.get("fallback_needed", True):
+        if llm_result:
             interpretation = llm_result
-            intent = interpretation.get("intent", "unknown")
+            intent = interpretation.get("intent", fallback_intent or "unknown")
 
             if fallback_intent in {"remove_item", "update_quantity"} and intent == "add_items":
                 interpretation["intent"] = fallback_intent
@@ -407,6 +417,26 @@ async def process_chat_message(
                 "fallback_needed": True,
             }
             intent = interpretation["intent"]
+
+    if (
+        interpretation.get("intent") == "unknown"
+        and interpretation.get("fallback_needed", False)
+        and any(char.isdigit() for char in normalized_message)
+        and any(word in normalized_message for word in ["make", "change", "set", "update"])
+    ):
+        interpretation["intent"] = "update_quantity"
+        intent = "update_quantity"
+
+    if (
+        interpretation.get("intent") == "unknown"
+        and interpretation.get("fallback_needed", False)
+        and session is not None
+        and isinstance(session.get("last_items"), list)
+        and session.get("last_items")
+        and any(phrase in normalized_message.lower() for phrase in ["another one", "same one", "one more", "more", "another"])
+    ):
+        interpretation["intent"] = "add_items"
+        intent = "add_items"
 
     try:
         if intent in {"add_item", "add_items", "update_quantity", "remove_item"} and has_mixed_intent(normalized_message):

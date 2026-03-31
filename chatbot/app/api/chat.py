@@ -33,5 +33,6 @@ async def send_message(payload: ChatMessageRequest) -> ChatMessageResponse:
         and requested_items
     ):
         session["last_items"] = requested_items
+    print("SESSION LAST ITEMS:", session.get("last_items"))
 
     return response
