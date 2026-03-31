@@ -341,7 +341,7 @@ function BillSummaryCard({ bill, stale = false, onConfirm }) {
           transition: 'background 0.2s',
         }}
       >
-        {stale ? 'Order changed. request a new summary' : 'Confirm & go to checkout →'}
+        {stale ? 'Looks like something changed' : 'Go to checkout'}
       </button>
     </div>
   )

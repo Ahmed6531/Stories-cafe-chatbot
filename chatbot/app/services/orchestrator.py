@@ -1,3 +1,4 @@
+import logging
 import re
 import httpx
 
@@ -10,6 +11,8 @@ from app.services.session_store import (
     get_checkout_initiated,
     set_checkout_initiated,
 )
+
+logger = logging.getLogger(__name__)
 
 SIZE_CANDIDATES = {
     "small": ["small"],
@@ -49,11 +52,68 @@ ADDON_CANDIDATES = {
 }
 
 
+def _fmt_price(value) -> str:
+    return f"L.L {int(float(value or 0)):,}"
+
+
+def _build_failed_item(item_name: str | None, message: str) -> dict:
+    return {
+        "item_name": (item_name or "item").strip() or "item",
+        "message": message,
+    }
+
+
+def _format_failed_item_line(failed_item: dict) -> str:
+    item_name = failed_item.get("item_name", "item")
+    message = failed_item.get("message")
+    return f"- {item_name}: {message}" if message else f"- {item_name}"
+
+
 def detect_special_command(message: str) -> str | None:
     message = message.lower()
 
-    if any(phrase in message for phrase in ["clear cart", "remove all", "empty cart"]):
+    if any(
+        phrase in message
+        for phrase in [
+            "clear cart",
+            "empty cart",
+            "remove all",
+            "start over",
+            "reset cart",
+            "clear my cart",
+            "delete my cart",
+            "empty my cart",
+            "delete cart",
+        ]
+    ):
         return "clear_cart"
+    if any(
+        phrase in message
+        for phrase in [
+            "checkout",
+            "check out",
+            "place order",
+            "pay now",
+            "confirm order",
+            "proceed to pay",
+            "i want to pay",
+        ]
+    ):
+        return "checkout"
+    if any(
+        phrase in message
+        for phrase in [
+            "recommend",
+            "suggest",
+            "good today",
+            "what's good",
+            "whats good",
+            "surprise",
+            "popular",
+            "what do you have",
+        ]
+    ):
+        return "recommendation_query"
 
     return None
 
@@ -709,7 +769,11 @@ def build_cart_summary(cart_items: list[dict]) -> str:
     for item in cart_items:
         qty = item.get("qty", 1)
         name = item.get("name", "item")
-        cart_lines.append(f"- {qty}x {name}")
+        price = item.get("price", item.get("basePrice", 0))
+        if price:
+            cart_lines.append(f"- {qty}x {name} - {_fmt_price(price)} each")
+        else:
+            cart_lines.append(f"- {qty}x {name}")
 
     return "\n".join(cart_lines)
 
@@ -746,7 +810,14 @@ async def process_chat_message(
     special_command = detect_special_command(normalized_message)
     fallback_intent = detect_intent(normalized_message)
 
-    if special_command == "clear_cart":
+    if special_command is not None:
+        logger.info(
+            {
+                "stage": "special_command_detected",
+                "normalized_message": normalized_message,
+                "intent": special_command,
+            }
+        )
         interpretation = {
             "intent": special_command,
             "items": [],
@@ -892,6 +963,31 @@ async def process_chat_message(
                     "normalized_message": normalized_message,
                     "cart": cart_result["cart"],
                     "pipeline_stage": "view_cart_done",
+                },
+            )
+
+        if intent == "recommendation_query":
+            featured_items = await fetch_featured_items()
+            suggestions = suggest_popular_items(featured_items)
+            suggestion_lines = [f"- {item['item_name']}" for item in suggestions if item.get("item_name")]
+
+            if suggestion_lines:
+                reply_text = "Here are some items you might like:\n" + "\n".join(suggestion_lines)
+            else:
+                reply_text = "Here are some items you might like!"
+
+            return ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply=reply_text,
+                intent=intent,
+                cart_updated=False,
+                cart_id=cart_id,
+                defaults_used=[],
+                suggestions=suggestions,
+                metadata={
+                    "normalized_message": normalized_message,
+                    "pipeline_stage": "recommendation_done",
                 },
             )
 
@@ -1359,12 +1455,17 @@ async def process_chat_message(
 
                 matched_item = await find_menu_item_by_name(menu_items, item_query or "")
                 if not matched_item:
-                    failed_items.append(item_query)
+                    failed_items.append(_build_failed_item(item_query, "not found on the menu"))
                     continue
 
                 menu_item_id = matched_item.get("id") or matched_item.get("_id")
                 if menu_item_id is None:
-                    failed_items.append(item_query or matched_item.get("name", "item"))
+                    failed_items.append(
+                        _build_failed_item(
+                            item_query or matched_item.get("name", "item"),
+                            "missing menu item id",
+                        )
+                    )
                     continue
 
                 menu_detail = None
@@ -1376,13 +1477,37 @@ async def process_chat_message(
                     menu_detail,
                 )
 
-                cart_result = await add_item_to_cart(
-                    menu_item_id=menu_item_id,
-                    qty=quantity,
-                    selected_options=selected_options,
-                    instructions=instructions,
-                    cart_id=current_cart_id,
-                )
+                try:
+                    cart_result = await add_item_to_cart(
+                        menu_item_id=menu_item_id,
+                        qty=quantity,
+                        selected_options=selected_options,
+                        instructions=instructions,
+                        cart_id=current_cart_id,
+                    )
+                except ExpressAPIError as add_err:
+                    err_lower = str(add_err).lower()
+                    is_unavailable = "unavailable" in err_lower or "not available" in err_lower
+                    failed_message = (
+                        "currently unavailable"
+                        if is_unavailable
+                        else "could not add right now"
+                    )
+                    failed_item_name = matched_item.get("name") or item_query
+                    failed_items.append(_build_failed_item(failed_item_name, failed_message))
+                    logger.warning(
+                        {
+                            "stage": "add_item_failed",
+                            "normalized_message": normalized_message,
+                            "item_name": failed_item_name,
+                            "menu_item_id": menu_item_id,
+                            "cart_id": current_cart_id,
+                            "unavailable": is_unavailable,
+                            "error": str(add_err),
+                        }
+                    )
+                    continue
+
                 current_cart_id = cart_result["cart_id"]
                 last_matched_item = matched_item
                 successful_items.append(
@@ -1397,7 +1522,9 @@ async def process_chat_message(
                 )
 
             if not successful_items:
-                if interpretation.get("fallback_needed"):
+                if interpretation.get("fallback_needed") and failed_items and all(
+                    item.get("message") == "not found on the menu" for item in failed_items
+                ):
                     return ChatMessageResponse(
                         session_id=session_id,
                         status="ok",
@@ -1415,11 +1542,11 @@ async def process_chat_message(
                         },
                     )
 
-                if len(failed_items) == 1:
-                    reply_text = f"I could not find '{failed_items[0]}' on the menu."
+                if len(failed_items) == 1 and failed_items[0].get("message") == "not found on the menu":
+                    reply_text = f"I could not find '{failed_items[0]['item_name']}' on the menu."
                 else:
-                    failed_lines = [f"- {item}" for item in failed_items if item]
-                    reply_text = "I could not find these items on the menu."
+                    failed_lines = [_format_failed_item_line(item) for item in failed_items if item]
+                    reply_text = "I couldn't add these items."
                     if failed_lines:
                         reply_text += "\n" + "\n".join(failed_lines)
 
@@ -1436,7 +1563,7 @@ async def process_chat_message(
                         "normalized_message": normalized_message,
                         "requested_items": requested_items,
                         "failed_items": failed_items,
-                        "pipeline_stage": "menu_match_failed",
+                        "pipeline_stage": "add_items_failed",
                     },
                 )
 
@@ -1472,10 +1599,10 @@ async def process_chat_message(
                 ]
 
                 if failed_items:
-                    failed_lines = [f"- {item}" for item in failed_items if item]
+                    failed_lines = [_format_failed_item_line(item) for item in failed_items if item]
                     if failed_lines:
                         reply_parts.append(
-                            "I could not find these items on the menu:\n"
+                            "I couldn't add these items:\n"
                             + "\n".join(failed_lines)
                         )
 
