@@ -13,24 +13,76 @@ from app.services.tools import (
 )
 from app.services.suggestions import suggest_popular_items, suggest_complementary_items
 from app.services.http_client import ExpressAPIError
+from app.services.session_store import (
+    get_session_stage, set_session_stage,
+    get_checkout_initiated, set_checkout_initiated,
+)
 
 # Default options for smart defaults (SCRUM-91)
 DEFAULT_SIZE = "Medium"
 DEFAULT_MILK = "Regular"
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(_name_)
 
 def _fmt_price(n) -> str:
     """Format a price as Lebanese Pounds, matching the frontend formatLL utility."""
     return f"L.L {int(n or 0):,}"
 
-def detect_intent(normalized_message: str) -> str:
+def _build_bill(cart_items: list[dict]) -> dict:
+    """Build a structured bill object from cart items (8% tax)."""
+    _TAX_RATE = 0.08
+    bill_items = []
+    subtotal = 0.0
+    item_count = 0
+    for item in cart_items:
+        qty = item.get("qty", 1)
+        name = item.get("name", "item")
+        unit_price = float(item.get("price", 0))
+        line_total = unit_price * qty
+        subtotal += line_total
+        item_count += qty
+        bill_items.append({
+            "item_name": name,
+            "quantity": qty,
+            "unit_price": unit_price,
+            "line_total": line_total,
+        })
+    tax_amount = subtotal * _TAX_RATE
+    return {
+        "items": bill_items,
+        "subtotal": subtotal,
+        "tax_rate": _TAX_RATE,
+        "tax_amount": tax_amount,
+        "total": subtotal + tax_amount,
+        "item_count": item_count,
+    }
+
+
+def detect_intent(normalized_message: str, session: dict | None = None) -> str:
     """Detects the intent of the user message.
     More-specific phrases are checked before loose single-word keywords to
     prevent accidental keyword matches (e.g. 'order' in 'repeat my last order').
     """
-    # checkout: user wants to pay/confirm
+    session = session or {}
+    text = normalized_message.strip()
+
+    # Bare affirmations are context-dependent: only map to confirm_checkout
+    # when the session already has an active checkout summary.
+    _BARE_AFFIRMATIONS = {"yes", "yep", "ok", "okay", "sure", "sounds good", "do it", "go ahead"}
+    if text in _BARE_AFFIRMATIONS:
+        if session.get("last_pipeline_stage") == "checkout_summary":
+            return "confirm_checkout"
+        return "unknown"
+
+    # Explicit confirm phrases always route to confirm_checkout regardless of stage.
+    _EXPLICIT_CONFIRM = {"confirm", "confirm order", "proceed", "place it", "let's go"}
+    if text in _EXPLICIT_CONFIRM:
+        return "confirm_checkout"
+
+    # checkout: user expresses intent to start the checkout flow
     if any(phrase in normalized_message for phrase in [
-        "checkout", "place order", "confirm order", "proceed to pay", "i want to pay",
+        "checkout", "check out", "place order", "place my order",
+        "i want to order", "i'm ready", "ready to order",
+        "let's order", "finalize", "pay now", "pay", "i want to pay",
     ]):
         return "checkout"
 
@@ -150,7 +202,8 @@ async def process_chat_message(
     from app.services.http_client import ExpressAPIError
 
     normalized_message = normalize_user_message(message)
-    intent = detect_intent(normalized_message)
+    session_context = {"last_pipeline_stage": get_session_stage(session_id)}
+    intent = detect_intent(normalized_message, session_context)
     logger.info({
         "stage": "intent_detection",
         "normalized_message": normalized_message,
@@ -282,7 +335,7 @@ async def process_chat_message(
                 err_suggestions = suggest_popular_items(featured_items)
                 if is_unavailable:
                     err_reply = (
-                        f"Sorry, **{matched_item.get('name')}** is currently unavailable."
+                        f"Sorry, *{matched_item.get('name')}* is currently unavailable."
                     )
                     if err_suggestions:
                         err_reply += "\n\nYou might also like:"
@@ -338,7 +391,8 @@ async def process_chat_message(
 
             if filtered_suggestions:
                 reply_text += "\n\nYou might also like:"
-                        
+
+            set_session_stage(session_id, "add_item_done")
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
@@ -399,6 +453,7 @@ async def process_chat_message(
 
             line_id = str(matched_line.get("lineId", ""))
             remove_result = await remove_from_cart(line_id=line_id, cart_id=cart_result["cart_id"])
+            set_session_stage(session_id, "remove_item_done")
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
@@ -417,6 +472,7 @@ async def process_chat_message(
 
         if intent == "clear_cart":
             await clear_cart(cart_id=cart_id)
+            set_session_stage(session_id, "clear_cart_done")
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
@@ -449,10 +505,92 @@ async def process_chat_message(
                         "pipeline_stage": "checkout_empty_cart",
                     },
                 )
+            bill = _build_bill(cart_result["cart"])
+            set_session_stage(session_id, "checkout_summary")
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
-                reply="Ready to checkout! Head to the checkout page to enter your details and place your order.",
+                reply="Here's your order summary — take a look before we finalize it.",
+                intent=intent,
+                cart_updated=False,
+                cart_id=cart_result["cart_id"],
+                defaults_used=[],
+                suggestions=[],
+                metadata={
+                    "normalized_message": normalized_message,
+                    "pipeline_stage": "checkout_summary",
+                    "bill": bill,
+                },
+            )
+
+        if intent == "confirm_checkout":
+            last_stage = get_session_stage(session_id)
+            if last_stage != "checkout_summary":
+                # No active summary — re-run the checkout summary path
+                cart_result = await get_cart(cart_id=cart_id)
+                if not cart_result["cart"]:
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="ok",
+                        reply="Your cart is empty. Add some items first!",
+                        intent=intent,
+                        cart_updated=False,
+                        cart_id=cart_id,
+                        defaults_used=[],
+                        suggestions=[],
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "pipeline_stage": "checkout_empty_cart",
+                        },
+                    )
+                bill = _build_bill(cart_result["cart"])
+                set_session_stage(session_id, "checkout_summary")
+                been_through_checkout = get_checkout_initiated(session_id)
+                reply = (
+                    "Welcome back! Here's your order — ready when you are."
+                    if been_through_checkout
+                    else "Ready to checkout? Here's your order summary."
+                )
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply=reply,
+                    intent=intent,
+                    cart_updated=False,
+                    cart_id=cart_result["cart_id"],
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "checkout_summary",
+                        "bill": bill,
+                    },
+                )
+            # Stage is "checkout_summary" — re-fetch cart before confirming
+            cart_result = await get_cart(cart_id=cart_id)
+            if not cart_result["cart"]:
+                set_session_stage(session_id, None)
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply="Uh oh — your cart is empty now! Add some items and we'll get you checked out.",
+                    intent=intent,
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "checkout_empty_cart",
+                    },
+                )
+            # Cart still valid — proceed with redirect
+            set_session_stage(session_id, "checkout_redirect")
+            set_checkout_initiated(session_id)
+            return ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply="Great! Taking you to checkout now.",
                 intent=intent,
                 cart_updated=False,
                 cart_id=cart_result["cart_id"],
