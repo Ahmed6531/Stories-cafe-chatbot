@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from fastapi import HTTPException
 from app.schemas.chat import ChatMessageRequest, ChatMessageResponse
 from app.services.orchestrator import process_chat_message
-from app.services.session_store import get_or_create_session
+from app.services.session_store import get_or_create_session, set_session_cart_id
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -15,7 +15,8 @@ async def send_message(payload: ChatMessageRequest) -> ChatMessageResponse:
     """
     try:
         # Retrieve existing session or create a new one
-        session_id, cart_id = get_or_create_session(payload.session_id)
+        session_id, stored_cart_id = get_or_create_session(payload.session_id)
+        cart_id = payload.cart_id or stored_cart_id
 
         # Call orchestrator to process the chat
         response = await process_chat_message(
@@ -23,6 +24,8 @@ async def send_message(payload: ChatMessageRequest) -> ChatMessageResponse:
             message=payload.message,
             cart_id=cart_id,
         )
+
+        set_session_cart_id(session_id, response.cart_id)
 
         return response
 

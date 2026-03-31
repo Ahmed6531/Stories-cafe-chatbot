@@ -1,7 +1,7 @@
 import http from './http'
 
-export async function fetchCart() {
-  const response = await http.get('/cart')
+export async function fetchCart({ signal } = {}) {
+  const response = await http.get('/cart', { signal })
   return response.data
 }
 

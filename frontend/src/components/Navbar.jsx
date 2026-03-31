@@ -233,11 +233,125 @@ const CHAT_STORAGE_KEY = 'chatMessages'
 const CHAT_STORAGE_TS_KEY = 'chatMessagesSavedAt'
 const CHAT_TTL_MS = 24 * 60 * 60 * 1000
 
-function Bubble({ msg, prevTime, onSuggestionClick }) {
+const formatLL = (amount) => 'LBP ' + Number(amount).toLocaleString('en-US')
+
+function BillSummaryCard({ bill, stale = false, onConfirm }) {
+  return (
+    <div style={{
+      width: '100%',
+      maxWidth: '310px',
+      background: '#fff',
+      border: '0.5px solid #e5e7eb',
+      borderRadius: '12px',
+      overflow: 'hidden',
+      marginTop: '8px',
+    }}>
+      <div style={{
+        padding: '10px 14px 8px',
+        borderBottom: '0.5px solid #e5e7eb',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+      }}>
+        <div style={{
+          width: 28, height: 28,
+          background: '#e1f5ee',
+          borderRadius: '50%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke="#0f6e56" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 11 12 14 22 4"/>
+            <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
+          </svg>
+        </div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500, color: '#111' }}>Your order</div>
+          <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 1 }}>
+            {bill.item_count} {bill.item_count === 1 ? 'item' : 'items'}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ padding: '10px 14px' }}>
+        {bill.items.map((item, i) => (
+          <div key={i} style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'baseline',
+            padding: '5px 0',
+            fontSize: 13,
+            borderBottom: i < bill.items.length - 1 ? '0.5px solid #e5e7eb' : 'none',
+          }}>
+            <span style={{ color: '#111' }}>
+              {item.item_name}
+              <span style={{ fontSize: 11.5, color: '#9ca3af', marginLeft: 4 }}>×{item.quantity}</span>
+            </span>
+            <span style={{ color: '#111', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+              {formatLL(item.line_total)}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{
+        padding: '8px 14px 12px',
+        borderTop: '0.5px solid #e5e7eb',
+        background: '#f9fafb',
+      }}>
+        {[
+          ['Subtotal', formatLL(bill.subtotal)],
+          [`Tax (${Math.round(bill.tax_rate * 100)}%)`, formatLL(bill.tax_amount)],
+        ].map(([label, value]) => (
+          <div key={label} style={{
+            display: 'flex', justifyContent: 'space-between',
+            fontSize: 12.5, color: '#6b7280', padding: '3px 0',
+          }}>
+            <span>{label}</span><span>{value}</span>
+          </div>
+        ))}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between',
+          fontSize: 14, fontWeight: 500, color: '#111',
+          paddingTop: 7, marginTop: 4,
+          borderTop: '0.5px solid #e5e7eb',
+        }}>
+          <span>Total</span>
+          <span>{formatLL(bill.total)}</span>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={stale ? undefined : onConfirm}
+        disabled={stale}
+        style={{
+          display: 'block',
+          width: 'calc(100% - 28px)',
+          margin: '0 14px 12px',
+          padding: '9px 0',
+          background: stale ? '#9ca3af' : '#00704a',
+          color: '#fff',
+          border: 'none',
+          borderRadius: 8,
+          fontSize: 13,
+          fontWeight: 500,
+          cursor: stale ? 'not-allowed' : 'pointer',
+          transition: 'background 0.2s',
+        }}
+      >
+        {stale ? 'Order changed. request a new summary' : 'Confirm & go to checkout →'}
+      </button>
+    </div>
+  )
+}
+
+function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
   const isUser = msg.role === 'user'
   const showTime = msg.time !== prevTime
   const hasSuggestions = msg.suggestions && msg.suggestions.length > 0
-  
+
   return (
     <div className={`msg-row ${isUser ? 'msg-row-user' : 'msg-row-bot'}`}>
       <div className={`msg-bubble ${isUser ? 'msg-bubble-user' : 'msg-bubble-bot'}`}>
@@ -279,6 +393,7 @@ function Bubble({ msg, prevTime, onSuggestionClick }) {
           </div>
         )}
       </div>
+      {msg.bill && <BillSummaryCard bill={msg.bill} stale={msg.billStale ?? false} onConfirm={onConfirm} />}
       {showTime && <span className="msg-time">{msg.time}</span>}
     </div>
   )
@@ -293,7 +408,6 @@ export default function Navbar() {
       if (!saved) return []
       const savedAtRaw = localStorage.getItem(CHAT_STORAGE_TS_KEY)
       const savedAt = Number(savedAtRaw)
-      // eslint-disable-next-line react-hooks/purity
       if (!Number.isFinite(savedAt) || Date.now() - savedAt > CHAT_TTL_MS) {
         localStorage.removeItem(CHAT_STORAGE_KEY)
         localStorage.removeItem(CHAT_STORAGE_TS_KEY)
@@ -309,7 +423,7 @@ export default function Navbar() {
     }
   }, [])
 
-  const [isAuthed] = useState(false)
+  const [isAuthed, setIsAuthed] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuClosing, setMenuClosing] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
@@ -328,8 +442,10 @@ export default function Navbar() {
   const pageRef = useRef(null)
   const msgsRef = useRef(null)
   const pendingReplyTimeoutRef = useRef(null)
+  const pendingCheckoutRef = useRef(false)
 
-  const { cartCount, refreshCart } = useCart()
+  const { cartCount, refreshCart, state: cartState } = useCart()
+  const items = useMemo(() => cartState?.items ?? [], [cartState?.items])
   const location = useLocation()
   const navigate = useNavigate()
   const hasConversation = messages.length > 0
@@ -345,6 +461,35 @@ export default function Navbar() {
   useEffect(() => {
     pageRef.current?.scrollTo({ top: 0, behavior: 'auto' })
   }, [location.pathname, location.search])
+
+  useEffect(() => {
+    setMessages((prev) => {
+      if (!prev.some((m) => m.bill && !m.billStale)) return prev
+      return prev.map((m) => {
+        if (!m.bill || m.billStale) return m
+        const billSig = m.bill.items
+          .map((i) => `${i.item_name}:${i.quantity}`)
+          .sort()
+          .join(',')
+        const cartSig = items
+          .map((i) => `${i.name}:${i.qty}`)
+          .sort()
+          .join(',')
+        return billSig === cartSig ? m : { ...m, billStale: true }
+      })
+    })
+  }, [items])
+
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    setIsAuthed(!!token)
+  }, [location.pathname])
+
+  const handleLogout = () => {
+    localStorage.removeItem('token')
+    setIsAuthed(false)
+    navigate('/login')
+  }
 
   const closeMenu = () => {
     if (menuClosing) return
@@ -373,6 +518,10 @@ export default function Navbar() {
       setVoiceActive(false)
       setMicMode('idle')
       setTyping(false)
+      if (pendingCheckoutRef.current) {
+        pendingCheckoutRef.current = false
+        navigate('/checkout')
+      }
     }
   }
 
@@ -475,7 +624,10 @@ export default function Navbar() {
   const sendMessage = async (text) => {
     const trimmed = text.trim()
     if (!trimmed) return
+
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    const session_id = getChatSessionId()
+    const cart_id = localStorage.getItem('cartId') || null
 
     setVoiceActive(false)
     appendMessage({ id: Date.now(), role: 'user', text: trimmed, time: now })
@@ -484,14 +636,38 @@ export default function Navbar() {
     setTyping(true)
 
     try {
-      const cartId = localStorage.getItem('cartId') || null
-      const response = await axios.post(`${CHATBOT_URL}/chat/message`, {
-        session_id: getChatSessionId(),
+      console.log("[CHAT REQUEST]", {
+        session_id,
+        cart_id,
         message: trimmed,
-        cart_id: cartId,
+        timestamp: Date.now(),
+      })
+
+      const response = await axios.post(`${CHATBOT_URL}/chat/message`, {
+        session_id,
+        message: trimmed,
+        cart_id,
       })
       const data = response.data
-      if (data.cart_id) localStorage.setItem('cartId', data.cart_id)
+
+      console.log("[CHAT RESPONSE]", {
+        status: response.status,
+        session_id: data.session_id,
+        cart_updated: data.cart_updated,
+        returned_cart_id: data.cart_id,
+        intent: data.intent,
+        suggestions: data.suggestions?.length,
+      })
+
+      if (cart_id !== data.cart_id) {
+        console.warn("[CHAT CART SYNC]", { previous: cart_id, new: data.cart_id })
+      }
+
+      if (data.cart_id) {
+        localStorage.setItem('cartId', data.cart_id)
+      } else if (data.cart_updated && !data.cart_id) {
+        localStorage.removeItem('cartId')
+      }
       if (data.cart_updated) refreshCart()
       appendMessage({
         id: Date.now() + 1,
@@ -499,8 +675,16 @@ export default function Navbar() {
         text: data.reply,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         suggestions: data.suggestions || [],
+        bill: data.metadata?.bill || null,
+        intent: data.intent || null,
       })
-    } catch (err) {
+      if (data.intent === 'confirm_checkout' && data.metadata?.pipeline_stage === 'checkout_redirect') {
+        setTimeout(() => {
+          pendingCheckoutRef.current = true
+          closeChat()
+        }, 1500)
+      }
+    } catch {
       appendMessage({
         id: Date.now() + 1,
         role: 'bot',
@@ -514,6 +698,19 @@ export default function Navbar() {
   }
 
   const handleChipClick = (text) => sendMessage(text)
+  const handleConfirmCheckout = () => {
+    if (cartCount === 0) {
+      appendMessage({
+        id: Date.now(),
+        role: 'bot',
+        text: "Oops! Your cart is empty now! Add some items and we'll get you checked out.",
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      })
+      return
+    }
+    pendingCheckoutRef.current = true
+    closeChat()
+  }
   const handleSend = () => sendMessage(chatInput)
   const openChat = () => {
     if (!isOnline) return
@@ -552,7 +749,7 @@ export default function Navbar() {
 
             <TopbarActionsWrap sx={{ display: isSuccessRoute ? 'none' : undefined }}>
               {isAuthed ? (
-                <TopPillBtn isAuth type="button" onClick={() => navigate(-1)}>Back</TopPillBtn>
+                <TopPillBtn isAuth type="button" onClick={handleLogout}>Logout</TopPillBtn>
               ) : (
                 <TopPillBtn type="button" onClick={() => navigate('/login')}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -609,7 +806,7 @@ export default function Navbar() {
           </div>
         </main>
 
-        {(chatClosing || (isChatAllowedRoute && chatOpen) || chatRouteClosing) && (
+        {(chatOpen || chatClosing || chatRouteClosing) && (
           <div
             className={`chat-unit${chatClosing ? ' chat-unit-closing' : ''}`}
             style={
@@ -666,11 +863,12 @@ export default function Navbar() {
                   {(hasConversation || micMode === 'thinking') && (
                     <div ref={msgsRef} className="chat-msgs" role="log" aria-live="polite" aria-relevant="additions text">
                       {messages.map((msg, i) => (
-                        <Bubble 
-                          key={msg.id} 
-                          msg={msg} 
+                        <Bubble
+                          key={msg.id}
+                          msg={msg}
                           prevTime={i > 0 ? messages[i - 1].time : null}
                           onSuggestionClick={sendMessage}
+                          onConfirm={handleConfirmCheckout}
                         />
                       ))}
                       {typing && (
@@ -719,8 +917,8 @@ export default function Navbar() {
                       <button className="chat-suggestion-chip" type="button" onClick={() => handleChipClick("What's good today?")}>
                         &quot;What&apos;s good today?&quot;
                       </button>
-                      <button className="chat-suggestion-chip" type="button" onClick={() => handleChipClick('Repeat my last order')}>
-                        &quot;Repeat my last order&quot;
+                      <button className="chat-suggestion-chip" type="button" onClick={() => handleChipClick("What's in my cart?")}>
+                        &quot;What&apos;s in my cart?&quot;
                       </button>
                       <button className="chat-suggestion-chip" type="button" onClick={() => handleChipClick('Surprise me')}>
                         &quot;Surprise me&quot;
