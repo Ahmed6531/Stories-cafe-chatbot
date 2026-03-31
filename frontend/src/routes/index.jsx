@@ -11,15 +11,30 @@ import MenuItemDetails from '../pages/MenuItemDetails.jsx'
 import Dashboard from '../pages/Dashboard.jsx'
 import AdminLayout from "../components/admin/AdminLayout"
 import AdminDashboard from "../pages/admin/AdminDashboard"
+import AdminItems from "../pages/admin/AdminItems"
+import AdminOrders from "../pages/admin/AdminOrders"; 
+import AdminLogin from "../pages/admin/AdminLogin"
+import AdminGuard from "../components/admin/AdminGuard";
+import AuthGuard from "../components/auth/AuthGuard";
 
 export default function AppRoutes() {
   return (
     <Routes>
+      <Route path="/admin/login" element={<AdminLogin />} />
+      
       {/* Admin routes (separate layout) */}
-      <Route path="/admin" element={<AdminLayout />}>
+        <Route
+        path="/admin"
+        element={
+        <AdminGuard>
+        <AdminLayout />
+        </AdminGuard>
+      }
+    >
         <Route index element={<AdminDashboard />} />
-        <Route path="items" element={<div>Admin Items (next ticket)</div>} />
-        <Route path="categories" element={<div>Admin Categories (next ticket)</div>} />
+        <Route path="items" element={<AdminItems />} />
+        <Route path="categories" element={<div>Admin Categories (later)</div>} />
+        <Route path="orders" element={<AdminOrders />} />
       </Route>
 
       {/* Public / customer routes (Navbar layout) */}
@@ -31,10 +46,12 @@ export default function AppRoutes() {
         <Route path="/success" element={<Success />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/dashboard" element={<AuthGuard><Dashboard /></AuthGuard>} />
         <Route path="/item/:id" element={<MenuItemDetails />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
+
+      {/* Catch-all: top-level so it never competes with /admin */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }

@@ -6,12 +6,32 @@ import { authInputStyle, authLabelStyle } from '../components/auth/authStyles'
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [status, setStatus] = useState({ type: '', message: '' })
   const navigate = useNavigate()
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    // TODO: Implement actual login logic
-    navigate('/')
+    setStatus({ type: '', message: '' })
+
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+
+      const data = await res.json()
+
+      if (res.ok && data.token) {
+        localStorage.setItem('token', data.token)
+        navigate('/dashboard')
+      } else {
+        setStatus({ type: 'error', message: data.message || 'Login failed' })
+      }
+    } catch (err) {
+      console.error(err)
+      setStatus({ type: 'error', message: 'Server error, please try again' })
+    }
   }
 
   return (
@@ -44,6 +64,21 @@ export default function Login() {
           style={authInputStyle}
         />
       </div>
+
+      {status.message && (
+        <p
+          role="status"
+          style={{
+            margin: '-6px 0 0 0',
+            color: status.type === 'error' ? '#d93025' : '#00704a',
+            fontStyle: 'italic',
+            fontWeight: 600,
+            fontSize: '12px',
+          }}
+        >
+          {status.message}
+        </p>
+      )}
     </AuthShell>
   )
 }

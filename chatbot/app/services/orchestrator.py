@@ -979,3 +979,19 @@ async def process_chat_message(
                 "pipeline_stage": "backend_unavailable",
             },
         )
+    except Exception as e:
+        return ChatMessageResponse(
+            session_id=session_id,
+            status="error",
+            reply="Something went wrong while processing your request.",
+            intent=intent,
+            cart_updated=False,
+            cart_id=cart_id,
+            defaults_used=[],
+            suggestions=[],
+            metadata={
+                "normalized_message": normalized_message,
+                "error": str(e),
+                "pipeline_stage": "unexpected_error",
+            },
+        )
