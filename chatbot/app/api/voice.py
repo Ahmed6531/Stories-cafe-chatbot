@@ -197,7 +197,7 @@ async def transcribe_stream(websocket: WebSocket):
         recognition_config_kwargs: dict = dict(
             encoding=encoding,
             language_code="en-US",
-            #alternative_language_codes=["ar-LB"],
+            alternative_language_codes=["ar-LB"],
             enable_automatic_punctuation=True,
             sample_rate_hertz=48000,
         )
