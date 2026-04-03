@@ -123,6 +123,7 @@ export default function Checkout() {
       const response = await submitOrder(payload)
       if (response.data.orderNumber) {
         setSubmitted(true)
+        localStorage.setItem('activeOrder', response.data.orderNumber)
         lockDeadCart(localStorage.getItem('cartId'))
         localStorage.removeItem('cartId')
         localStorage.removeItem('chatSessionId')

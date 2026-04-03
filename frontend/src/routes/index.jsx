@@ -19,6 +19,13 @@ import AuthGuard from "../components/auth/AuthGuard";
 import Unauthorized from "../pages/Unauthorized";
 import VerifyEmail from "../pages/VerifyEmail";
 
+function ActiveOrderRedirect({ children }) {
+  if (localStorage.getItem('activeOrder')) {
+    return <Navigate to="/success" replace />
+  }
+  return children
+}
+
 export default function AppRoutes() {
   return (
     <Routes>
@@ -41,7 +48,7 @@ export default function AppRoutes() {
 
       {/* Public / customer routes (Navbar layout) */}
       <Route element={<Navbar />}>
-        <Route path="/" element={<Home />} />
+        <Route path="/" element={<ActiveOrderRedirect><Home /></ActiveOrderRedirect>} />
         <Route path="/menu/:category?" element={<Menu />} />
         <Route path="/cart" element={<Cart />} />
         <Route path="/checkout" element={<Checkout />} />
