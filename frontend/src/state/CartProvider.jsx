@@ -111,6 +111,8 @@ export function CartProvider({ children }) {
   }, [])
 
   const resetCart = useCallback(() => {
+    abortRef.current?.abort()
+    seqRef.current += 1
     dispatch({ type: 'CART_RESET' })
   }, [])
 
