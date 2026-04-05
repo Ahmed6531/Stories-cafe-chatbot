@@ -749,6 +749,8 @@ def _build_bill(cart_items: list[dict]) -> dict:
             "quantity": qty,
             "unit_price": unit_price,
             "line_total": line_total,
+            "selectedOptions": item.get("selectedOptions", []),
+            "instructions": item.get("instructions", ""),
         })
 
     tax_amount = subtotal * _TAX_RATE
