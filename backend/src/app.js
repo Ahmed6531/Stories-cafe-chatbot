@@ -34,7 +34,7 @@ export function createApp() {
     origin: ENV.CORS_ORIGIN,
     credentials: true,
     exposedHeaders: ["x-cart-id"],
-    allowedHeaders: ["Content-Type", "x-cart-id"],
+    allowedHeaders: ["Content-Type", "x-cart-id", "Cache-Control"],
   }));
 
   app.use(express.json());

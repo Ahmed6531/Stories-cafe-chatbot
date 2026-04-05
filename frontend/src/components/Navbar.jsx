@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useCart } from '../state/useCart'
 import { useSession } from '../hooks/useSession'
 import { styled, keyframes, useTheme } from '@mui/material/styles'
-import axios from 'axios'
+import chatbotHttp from '../API/chatbotHttp'
 import { isDeadCart } from '../API/http'
 import Box from '@mui/material/Box'
 import Snackbar from '@mui/material/Snackbar'
@@ -11,8 +11,6 @@ import Alert from '@mui/material/Alert'
 import Tooltip from '@mui/material/Tooltip'
 import VoiceInput from './VoiceInput'
 import '../styles/index.css'
-
-const CHATBOT_URL = import.meta.env.VITE_CHATBOT_URL || 'http://localhost:8000'
 
 function getChatSessionId() {
   let id = localStorage.getItem('chatSessionId')
@@ -427,8 +425,9 @@ export default function Navbar() {
     }
   }, [])
 
-  const { user, logout } = useSession()
-  const isAuthed = !!user
+  const { user, loading: sessionLoading, logout } = useSession()
+  const isAuthed = !sessionLoading && !!user
+  const showGuestActions = !sessionLoading && !user
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuClosing, setMenuClosing] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
@@ -651,7 +650,7 @@ export default function Navbar() {
         timestamp: Date.now(),
       })
 
-      const response = await axios.post(`${CHATBOT_URL}/chat/message`, {
+      const response = await chatbotHttp.post('/chat/message', {
         session_id,
         message: trimmed,
         cart_id,
@@ -762,7 +761,7 @@ export default function Navbar() {
               <TopbarActionsWrap>
                 {isAuthed ? (
                   <TopPillBtn isAuth type="button" onClick={handleLogout}>Logout</TopPillBtn>
-                ) : (
+                ) : showGuestActions ? (
                   <TopPillBtn type="button" onClick={() => navigate('/login')}>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="12" cy="8" r="4" />
@@ -770,7 +769,7 @@ export default function Navbar() {
                     </svg>
                     <span>Login</span>
                   </TopPillBtn>
-                )}
+                ) : null}
 
                 <TopPillBtn type="button" onClick={() => navigate('/cart')}>
                   <Box component="span" aria-hidden="true" sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1020,14 +1019,14 @@ export default function Navbar() {
                 </svg>
                 Logout
               </MenuPanelItem>
-            ) : (
+            ) : showGuestActions ? (
               <MenuPanelItem type="button" isActive={location.pathname.startsWith('/login')} onClick={() => { closeMenu(); navigate('/login') }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
                 </svg>
                 Login
               </MenuPanelItem>
-            )}
+            ) : null}
           </MenuPanel>
         </>
       )}

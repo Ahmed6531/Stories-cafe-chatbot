@@ -51,8 +51,9 @@ export default function AppRoutes() {
         <Route path="/register" element={<Register />} />
         <Route path="/dashboard" element={<AuthGuard><Dashboard /></AuthGuard>} />
         <Route path="/item/:id" element={<MenuItemDetails />} />
-        <Route path="/verify-email" element={<VerifyEmail />} />
       </Route>
+
+      <Route path="/verify-email" element={<VerifyEmail />} />
 
       <Route path="/unauthorized" element={<Unauthorized />} />
 

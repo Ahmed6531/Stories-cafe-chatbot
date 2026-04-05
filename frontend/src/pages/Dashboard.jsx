@@ -31,7 +31,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     let active = true
-    setLoading(true)
     getMyOrders()
       .then(data => { if (active) setOrders(data.orders || []) })
       .catch(() => { if (active) setError('Failed to load your orders.') })

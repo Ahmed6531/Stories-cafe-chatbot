@@ -29,8 +29,11 @@ export function isDeadCart(cartId) {
 
 // Request interceptor for cart session management
 http.interceptors.request.use((config) => {
-  const cartId = localStorage.getItem("cartId");
-  if (cartId) config.headers["x-cart-id"] = cartId;
+  const url = config.url || "";
+  if (url.startsWith("/cart") || url.startsWith("/orders")) {
+    const cartId = localStorage.getItem("cartId");
+    if (cartId) config.headers["x-cart-id"] = cartId;
+  }
   return config;
 });
 

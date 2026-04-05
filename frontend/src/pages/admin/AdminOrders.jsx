@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { getFilteredOrders, updateOrderStatus } from "../../API/ordersApi";
 
 export default function AdminOrders() {
@@ -8,11 +8,7 @@ export default function AdminOrders() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    fetchOrders();
-  }, [statusFilter, typeFilter]);
-
-  async function fetchOrders() {
+  const fetchOrders = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getFilteredOrders({
@@ -21,7 +17,6 @@ export default function AdminOrders() {
       });
       const fetchedOrders = Array.isArray(data.orders) ? data.orders : [];
       setOrders(fetchedOrders);
-
       setError("");
     } catch (err) {
       console.error(err);
@@ -29,7 +24,11 @@ export default function AdminOrders() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [statusFilter, typeFilter]);
+
+  useEffect(() => {
+    fetchOrders();
+  }, [fetchOrders]);
 
   const handleStatusChange = async (orderId, newStatus) => {
     try {

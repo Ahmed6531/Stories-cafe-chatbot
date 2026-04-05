@@ -33,6 +33,7 @@ export const adminLogin = async (req, res) => {
     res.clearCookie("user_token", cookieOpts);
     res.cookie("admin_token", token, cookieOpts);
 
+    res.set("Cache-Control", "no-store");
     res.json({ user: { id: user._id, email: user.email, role: user.role } });
   } catch (err) {
     res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Server error" } });

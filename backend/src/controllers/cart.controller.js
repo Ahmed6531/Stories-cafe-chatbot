@@ -198,6 +198,7 @@ export async function getCart(req, res) {
     }
 
     res.set("x-cart-id", cartId);
+    res.set("Cache-Control", "no-store");
     res.json(payload);
   } catch {
     res.status(500).json({ error: "Failed to load cart" });
@@ -259,6 +260,7 @@ export async function addToCart(req, res) {
       cartTotal,
     });
     res.set("x-cart-id", cartId);
+    res.set("Cache-Control", "no-store");
     res.status(201).json(payload);
   } catch (err) {
     console.error("Add to cart error:", err);
@@ -288,6 +290,7 @@ export async function updateCartItem(req, res) {
     await cart.save();
     const payload = await buildCartResponse(cart);
     res.set("x-cart-id", cartId);
+    res.set("Cache-Control", "no-store");
     res.json(payload);
   } catch (err) {
     res.status(500).json({ error: "Failed to update cart" });
@@ -315,6 +318,7 @@ export async function removeFromCart(req, res) {
 
     const payload = await buildCartResponse(cart);
     res.set("x-cart-id", cartId);
+    res.set("Cache-Control", "no-store");
     res.json(payload);
   } catch (err) {
     console.error("Remove from cart error:", err);
@@ -330,6 +334,7 @@ export async function clearCart(req, res) {
     }
 
     await Cart.findOneAndDelete({ cartId });
+    res.set("Cache-Control", "no-store");
     res.json(emptyCartResponse());
   } catch (err) {
     res.status(500).json({ error: "Failed to clear cart" });

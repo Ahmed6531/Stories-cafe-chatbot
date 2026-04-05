@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import axios from "axios";
+import chatbotHttp from "../API/chatbotHttp";
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 // THRESHOLD : raise if background noise falsely triggers; lower for quiet speakers (range 5–20)
@@ -187,10 +187,8 @@ export default function VoiceInput({ active, onTranscript, onListeningChange, on
       });
 
       // Use chatbot endpoint for transcription
-      const chatbotUrl = import.meta.env.VITE_CHATBOT_URL || "http://localhost:8000";
-      const response = await axios.post(`${chatbotUrl}/voice/transcribe`, formData, {
+      const response = await chatbotHttp.post('/voice/transcribe', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 30000,
       });
 
       const text = (response.data?.transcript || '').trim();

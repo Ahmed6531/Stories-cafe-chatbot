@@ -1,95 +1,152 @@
 import { useEffect, useState } from 'react'
-import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
+import http from '../API/http'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
+import { useTheme } from '@mui/material/styles'
 
 export default function VerifyEmail() {
   const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
-  const [status, setStatus] = useState('loading') // 'loading' | 'success' | 'error'
-  const [message, setMessage] = useState('')
+  const theme = useTheme()
+  const token = searchParams.get('token')
+  const [status, setStatus] = useState(token ? 'loading' : 'error')
+  const [message, setMessage] = useState(token ? '' : 'No verification token found.')
 
   useEffect(() => {
-    const token = searchParams.get('token')
-    if (!token) {
-      setStatus('error')
-      setMessage('No verification token found.')
-      return
-    }
+    if (!token) return
 
-    fetch(`${import.meta.env.VITE_API_BASE_URL}/auth/verify-email?token=${encodeURIComponent(token)}`)
-      .then(async (res) => {
-        const data = await res.json()
-        if (res.ok) {
-          setStatus('success')
-          setTimeout(() => navigate('/login'), 3000)
-        } else {
-          setStatus('error')
-          setMessage(data.error?.message || 'Verification failed.')
-        }
+    http.get(`/auth/verify-email?token=${encodeURIComponent(token)}`)
+      .then(() => {
+        setStatus('success')
       })
-      .catch(() => {
+      .catch((err) => {
         setStatus('error')
-        setMessage('Server error. Please try again.')
+        setMessage(err.response?.data?.error?.message || 'Verification failed.')
       })
-  }, [])
+  }, [token])
+
+  if (status === 'loading') {
+    return (
+      <Box
+        sx={{
+          width: '100%',
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          '& .MuiTypography-root': { fontFamily: theme.brand.fontBase },
+        }}
+      >
+        <Typography sx={{ fontSize: '15px', color: theme.brand.textSecondary }}>
+          Verifying your email...
+        </Typography>
+      </Box>
+    )
+  }
+
+  if (status === 'error') {
+    return (
+      <Box
+        sx={{
+          width: '100%',
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '48px 24px',
+          '& .MuiTypography-root': { fontFamily: theme.brand.fontBase },
+        }}
+      >
+        <Typography
+          component="h1"
+          sx={{
+            fontFamily: theme.brand.fontDisplay,
+            fontSize: '22px',
+            fontWeight: 700,
+            color: theme.brand.textPrimary,
+            margin: '0 0 8px',
+            textAlign: 'center',
+          }}
+        >
+          Verification failed
+        </Typography>
+        <Typography
+          sx={{
+            fontSize: '15px',
+            color: theme.brand.textSecondary,
+            textAlign: 'center',
+          }}
+        >
+          {message}
+        </Typography>
+      </Box>
+    )
+  }
 
   return (
-    <Box sx={{ maxWidth: '400px', margin: '80px auto', width: '100%', textAlign: 'center', padding: '0 16px' }}>
+    <Box
+      sx={{
+        width: '100%',
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '48px 24px',
+        '& .MuiTypography-root': { fontFamily: theme.brand.fontBase },
+      }}
+    >
+      <Box
+        sx={{
+          width: 76,
+          height: 76,
+          borderRadius: '50%',
+          backgroundColor: '#e1f5ee',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: '20px',
+        }}
+      >
+        <svg
+          width="36"
+          height="36"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#0f6e56"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      </Box>
+
       <Typography
         component="h1"
         sx={{
-          fontFamily: (theme) => theme.brand.fontDisplay,
-          fontSize: '28px',
+          fontFamily: theme.brand.fontDisplay,
+          fontSize: '22px',
           fontWeight: 700,
-          color: (theme) => theme.brand.primary,
-          marginBottom: '24px',
+          color: theme.brand.primary,
+          margin: '0 0 8px',
+          textAlign: 'center',
         }}
       >
-        Email Verification
+        Email verified
       </Typography>
 
-      <Box sx={{ padding: '24px', border: '1px solid #e0e0e0', borderRadius: '12px' }}>
-        {status === 'loading' && (
-          <Typography sx={{ color: '#555', fontSize: '14px' }}>Verifying your email...</Typography>
-        )}
-
-        {status === 'success' && (
-          <>
-            <Typography sx={{ color: '#00704a', fontWeight: 600, fontSize: '15px', marginBottom: '8px' }}>
-              Your email has been verified!
-            </Typography>
-            <Typography sx={{ color: '#555', fontSize: '13px' }}>
-              Redirecting you to login...
-            </Typography>
-          </>
-        )}
-
-        {status === 'error' && (
-          <>
-            <Typography sx={{ color: '#d93025', fontWeight: 600, fontSize: '15px', marginBottom: '16px' }}>
-              {message}
-            </Typography>
-            <button
-              type="button"
-              onClick={() => navigate('/login')}
-              style={{
-                padding: '10px 24px',
-                backgroundColor: '#1e5631',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                fontWeight: 700,
-                fontSize: '14px',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              Go to Login
-            </button>
-          </>
-        )}
-      </Box>
+      <Typography
+        sx={{
+          fontSize: '15px',
+          color: theme.brand.textSecondary,
+          margin: 0,
+          textAlign: 'center',
+        }}
+      >
+        Your account is ready to go. You can close this tab and log in.
+      </Typography>
     </Box>
   )
 }

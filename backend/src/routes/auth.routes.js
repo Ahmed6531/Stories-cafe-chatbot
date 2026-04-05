@@ -110,6 +110,7 @@ router.post("/login", authLimiter, validate([
     res.clearCookie("admin_token", cookieOpts);
     res.cookie("user_token", token, cookieOpts);
 
+    res.set("Cache-Control", "no-store");
     res.json({ user: { id: user._id, email: user.email, role: user.role } });
   } catch (err) {
     res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Server error" } });
@@ -125,11 +126,13 @@ router.post("/logout", (_req, res) => {
   };
   res.clearCookie("user_token", cookieOpts);
   res.clearCookie("admin_token", cookieOpts);
+  res.set("Cache-Control", "no-store");
   res.json({ success: true });
 });
 
 // SESSION — returns current user from cookie
 router.get("/me", requireAuth, async (req, res) => {
+  res.set("Cache-Control", "no-store");
   try {
     const user = await User.findById(req.user.id).select("-password");
     if (!user) {
@@ -161,6 +164,7 @@ router.post("/send-verification", authLimiter, validate([
       { name: email.split("@")[0], actionLink }
     );
 
+    res.set("Cache-Control", "no-store");
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Server error" } });
@@ -182,6 +186,7 @@ router.get("/verify-email", async (req, res) => {
     user.isVerified = true;
     await user.save();
 
+    res.set("Cache-Control", "no-store");
     res.json({ success: true });
   } catch (err) {
     res.status(400).json({ error: { code: "VALIDATION_ERROR", message: err.message } });

@@ -124,6 +124,7 @@ export async function createOrder(req, res) {
     });
   }
 
+  res.set("Cache-Control", "no-store");
   res.status(201).json({
     orderId: order._id,
     orderNumber: order.orderNumber,
@@ -152,6 +153,7 @@ export async function listOrders(req, res) {
     .sort({ createdAt: -1 })
     .limit(50);
 
+  res.set("Cache-Control", "no-store");
   res.json({ orders });
 }
 
@@ -160,6 +162,7 @@ export async function getMyOrders(req, res) {
     .sort({ createdAt: -1 })
     .limit(20);
 
+  res.set("Cache-Control", "no-store");
   res.json({ orders });
 }
 
@@ -180,6 +183,7 @@ export async function getOrderStatus(req, res) {
       return res.status(404).json({ error: { code: "NOT_FOUND", message: "Order not found" } });
     }
 
+    res.set("Cache-Control", "no-store");
     res.json({ orderNumber: order.orderNumber, status: order.status, updatedAt: order.updatedAt });
   } catch (err) {
     res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Failed to fetch order status" } });
@@ -216,6 +220,7 @@ export async function updateOrderStatus(req, res) {
     order.status = status;
     await order.save();
 
+    res.set("Cache-Control", "no-store");
     res.json({
       order: {
         _id: order._id,

@@ -1,31 +1,26 @@
 import http from './http'
 
-function cartHeaders() {
-  const cartId = localStorage.getItem("cartId");
-  return cartId ? { "x-cart-id": cartId } : {};
-}
-
 export async function fetchCart({ signal } = {}) {
-  const response = await http.get('/cart', { signal }, { headers: cartHeaders() })
+  const response = await http.get('/cart', { signal })
   return response.data
 }
 
 export async function addToCartApi(payload) {
-  const response = await http.post('/cart/items', payload, { headers: cartHeaders() })
+  const response = await http.post('/cart/items', payload)
   return response.data
 }
 
 export async function updateCartItemApi(lineId, qty) {
-  const response = await http.patch(`/cart/items/${lineId}`, { qty }, { headers: cartHeaders() })
+  const response = await http.patch(`/cart/items/${lineId}`, { qty })
   return response.data
 }
 
 export async function removeFromCartApi(lineId) {
-  const response = await http.delete(`/cart/items/${lineId}`, { headers: cartHeaders() })
+  const response = await http.delete(`/cart/items/${lineId}`)
   return response.data
 }
 
 export async function clearCartApi() {
-  const response = await http.delete('/cart', { headers: cartHeaders() })
+  const response = await http.delete('/cart')
   return response.data
 }
