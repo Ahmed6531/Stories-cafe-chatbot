@@ -55,7 +55,6 @@ export default function AdminDashboard() {
 
   const handleLogout = async () => {
     await logout()
-    localStorage.removeItem("adminToken")
     navigate("/admin/login")
   }
 

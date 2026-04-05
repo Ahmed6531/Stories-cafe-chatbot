@@ -33,14 +33,7 @@ http.interceptors.request.use((config) => {
   if (cartId) config.headers["x-cart-id"] = cartId;
   return config;
 });
-http.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token') || localStorage.getItem('adminToken')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
 
-  return config
-})
 // Response interceptor for cart ID capturing and error handling
 http.interceptors.response.use(
   (res) => {

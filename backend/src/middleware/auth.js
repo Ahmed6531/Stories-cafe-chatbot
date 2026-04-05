@@ -1,7 +1,11 @@
 import { verifyToken } from "../utils/jwt.js";
 
+function extractToken(req) {
+  return req.cookies?.admin_token || req.cookies?.user_token || null;
+}
+
 export function requireAuth(req, res, next) {
-  const token = req.cookies?.token;
+  const token = extractToken(req);
 
   if (!token) {
     return res.status(401).json({
@@ -20,15 +24,7 @@ export function requireAuth(req, res, next) {
 }
 
 export function authenticateOptional(req, res, next) {
-  const bearer = req.headers.authorization;
-  const cookieToken = req.cookies?.token;
-
-  let token = null;
-  if (bearer && bearer.startsWith("Bearer ")) {
-    token = bearer.split(" ")[1];
-  } else if (cookieToken) {
-    token = cookieToken;
-  }
+  const token = extractToken(req);
 
   if (!token) {
     return next();

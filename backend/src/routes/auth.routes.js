@@ -100,12 +100,15 @@ router.post("/login", authLimiter, validate([
 
     const token = signToken({ id: user._id, email: user.email, role: user.role });
 
-    res.cookie("token", token, {
+    const cookieOpts = {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    };
+
+    res.clearCookie("admin_token", cookieOpts);
+    res.cookie("user_token", token, cookieOpts);
 
     res.json({ user: { id: user._id, email: user.email, role: user.role } });
   } catch (err) {
@@ -115,11 +118,13 @@ router.post("/login", authLimiter, validate([
 
 // LOGOUT
 router.post("/logout", (_req, res) => {
-  res.clearCookie("token", {
+  const cookieOpts = {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-  });
+  };
+  res.clearCookie("user_token", cookieOpts);
+  res.clearCookie("admin_token", cookieOpts);
   res.json({ success: true });
 });
 

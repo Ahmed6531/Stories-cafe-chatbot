@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Box, Typography, useTheme } from '@mui/material'
 import { useOrderStatus } from '../hooks/useOrderStatus'
+import { getActiveOrder, clearActiveOrder } from '../utils/activeOrder'
 
 const STATUS_CONFIG = {
   received: { label: 'Order confirmed', bg: '#f0f4ff', color: '#4b6bcc' },
@@ -17,7 +18,7 @@ export default function Success() {
   const location = useLocation()
   const theme = useTheme()
   const orderNumber =
-    location.state?.orderNumber || localStorage.getItem('activeOrder')
+    location.state?.orderNumber || getActiveOrder()
 
   const { status, loading } = useOrderStatus(orderNumber)
   const cfg = STATUS_CONFIG[status]
@@ -26,7 +27,7 @@ export default function Success() {
   // Clear stored order once it reaches a terminal state
   useEffect(() => {
     if (status && TERMINAL.includes(status)) {
-      localStorage.removeItem('activeOrder')
+      clearActiveOrder()
     }
   }, [status])
 
