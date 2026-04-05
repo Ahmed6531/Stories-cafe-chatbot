@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useReducer, useCallback, useRef } from 'react'
 import { CartContext } from './CartContext'
 import { cartReducer, initialCartState } from './cartReducer'
-import { fetchCart, addToCartApi, updateCartItemApi, removeFromCartApi, clearCartApi } from '../API/cartApi'
+import { fetchCart, addToCartApi, updateCartItemApi, updateCartItemFull, removeFromCartApi, clearCartApi } from '../API/cartApi'
 
 function normalizeCartPayload(data) {
   return {
@@ -70,6 +70,17 @@ export function CartProvider({ children }) {
     }
   }, [])
 
+  const editCartItem = useCallback(async (lineId, payload) => {
+  abortRef.current?.abort()
+  try {
+    const data = await updateCartItemFull(lineId, payload)
+    dispatch({ type: 'CART_LOADED', payload: normalizeCartPayload(data) })
+  } catch (err) {
+    dispatch({ type: 'CART_ERROR', payload: err.message })
+    throw err
+  }
+}, [])
+
   const removeFromCart = useCallback(async (lineId) => {
     abortRef.current?.abort()
     const snapshot = snapshotCartState(stateRef.current)
@@ -106,18 +117,19 @@ export function CartProvider({ children }) {
   }, [])
 
   const value = useMemo(
-    () => ({
-      state,
-      cartCount: state.count,
-      addToCart,
-      updateQty,
-      removeFromCart,
-      clearCart,
-      resetCart,
-      refreshCart: loadCart
-    }),
-    [state, addToCart, updateQty, removeFromCart, clearCart, resetCart, loadCart]
-  )
+  () => ({
+    state,
+    cartCount: state.count,
+    addToCart,
+    updateQty,
+    editCartItem,
+    removeFromCart,
+    clearCart,
+    resetCart,
+    refreshCart: loadCart
+  }),
+  [state, addToCart, updateQty, editCartItem, removeFromCart, clearCart, resetCart, loadCart]
+)
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>
 }

@@ -470,12 +470,13 @@ export default function Navbar() {
       if (!prev.some((m) => m.bill && !m.billStale)) return prev
       return prev.map((m) => {
         if (!m.bill || m.billStale) return m
+        const optSig = (opts) => (opts || []).map((o) => `${o.optionName}:${o.suboptionName || ''}`).sort().join('|')
         const billSig = m.bill.items
-          .map((i) => `${i.item_name}:${i.quantity}`)
+          .map((i) => `${i.item_name}:${i.quantity}:${optSig(i.selectedOptions)}:${i.instructions || ''}`)
           .sort()
           .join(',')
         const cartSig = items
-          .map((i) => `${i.name}:${i.qty}`)
+          .map((i) => `${i.name}:${i.qty}:${optSig(i.selectedOptions)}:${i.instructions || ''}`)
           .sort()
           .join(',')
         return billSig === cartSig ? m : { ...m, billStale: true }

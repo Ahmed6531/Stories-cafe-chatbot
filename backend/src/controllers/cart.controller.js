@@ -162,7 +162,10 @@ async function buildCartResponse(cart) {
       image: menuItem.image,
       qty: line.qty,
       price: price,
-      selectedOptions: sortSelectedOptionsForDisplay(line.selectedOptions, resolvedVariantGroups),
+      selectedOptions: sortSelectedOptionsForDisplay(line.selectedOptions, resolvedVariantGroups).map((s) => ({
+        ...(s.toObject?.() ?? s),
+        groupName: variantGroupsById.get(s.groupId)?.name ?? null,
+      })),
       instructions: line.instructions || "",
       isAvailable: !!menuItem.isAvailable,
     };
@@ -271,14 +274,22 @@ export async function updateCartItem(req, res) {
     if (!cart) return res.status(404).json({ error: "Cart not found" });
 
     const { lineId } = req.params;
-    const { qty } = req.body;
+    const { qty, selectedOptions, instructions } = req.body;
+    const nQty = Number(qty);
 
     const item = cart.items.id(lineId);
     if (!item) return res.status(404).json({ error: "Item not found in cart" });
 
-    const nQty = Number(qty);
-    if (!Number.isFinite(nQty) || nQty <= 0) cart.items.pull(lineId);
-    else item.qty = nQty;
+    if (!Number.isFinite(nQty) || nQty < 0) {
+      return res.status(400).json({ error: 'qty must be a non-negative number' });
+    }
+    if (nQty === 0) {
+      cart.items.pull(lineId);
+    } else {
+      item.qty = nQty;
+      if (selectedOptions !== undefined) item.selectedOptions = sanitizeSelectedOptions(selectedOptions);
+      if (instructions !== undefined) item.instructions = instructions.trim();
+    }
 
     if (cart.items.length === 0) {
       await Cart.findOneAndDelete({ cartId });
