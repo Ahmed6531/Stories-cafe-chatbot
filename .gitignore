@@ -2,6 +2,7 @@
 node_modules/
 node_modulesnpm
 chatbot/venv/
+chatbot/.venv/
 chatbot/.env
 __pycache__/
 *.pyc"chatbot/gcp-credentials.json" 
