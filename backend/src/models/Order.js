@@ -23,6 +23,7 @@ const OrderItemSchema = new mongoose.Schema(
 
 const OrderSchema = new mongoose.Schema(
   {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     orderNumber: { type: String, required: true, unique: true },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false },
     status: {
@@ -30,7 +31,7 @@ const OrderSchema = new mongoose.Schema(
       enum: ["received", "in_progress", "completed", "cancelled"],
       default: "received"
     },
-    orderType: { type: String, enum: ["pickup", "dine_in", "delivery"], required: true },
+    orderType: { type: String, enum: ["pickup", "dine_in"], required: true },
 
     customer: {
       name: { type: String, required: true },

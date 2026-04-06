@@ -1,8 +1,9 @@
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useCart } from '../state/useCart'
+import { useSession } from '../hooks/useSession'
 import { styled, keyframes, useTheme } from '@mui/material/styles'
-import axios from 'axios'
+import chatbotHttp from '../API/chatbotHttp'
 import { isDeadCart } from '../API/http'
 import Box from '@mui/material/Box'
 import Snackbar from '@mui/material/Snackbar'
@@ -10,8 +11,6 @@ import Alert from '@mui/material/Alert'
 import Tooltip from '@mui/material/Tooltip'
 import VoiceInput from './VoiceInput'
 import '../styles/index.css'
-
-const CHATBOT_URL = import.meta.env.VITE_CHATBOT_URL || 'http://localhost:8000'
 
 function getChatSessionId() {
   let id = localStorage.getItem('chatSessionId')
@@ -426,7 +425,9 @@ export default function Navbar() {
     }
   }, [])
 
-  const [isAuthed, setIsAuthed] = useState(false)
+  const { user, loading: sessionLoading, logout } = useSession()
+  const isAuthed = !sessionLoading && !!user
+  const showGuestActions = !sessionLoading && !user
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuClosing, setMenuClosing] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
@@ -447,7 +448,7 @@ export default function Navbar() {
   const pendingReplyTimeoutRef = useRef(null)
   const pendingCheckoutRef = useRef(false)
 
-  const { cartCount, refreshCart, state: cartState } = useCart()
+  const { cartCount, refreshCart, resetCart, state: cartState } = useCart()
   const items = useMemo(() => cartState?.items ?? [], [cartState?.items])
   const location = useLocation()
   const navigate = useNavigate()
@@ -484,15 +485,17 @@ export default function Navbar() {
     })
   }, [items])
 
-  useEffect(() => {
-    const token = localStorage.getItem('token')
-    setIsAuthed(!!token)
-  }, [location.pathname])
-
-  const handleLogout = () => {
-    localStorage.removeItem('token')
-    setIsAuthed(false)
-    navigate('/login')
+  const handleLogout = async () => {
+    await logout()
+    localStorage.removeItem('cartId')
+    localStorage.removeItem('chatSessionId')
+    localStorage.removeItem(CHAT_STORAGE_KEY)
+    localStorage.removeItem(CHAT_STORAGE_TS_KEY)
+    resetCart()
+    setMessages([])
+    if (location.pathname.startsWith('/dashboard')) {
+      navigate('/')
+    }
   }
 
   const closeMenu = () => {
@@ -648,7 +651,7 @@ export default function Navbar() {
         timestamp: Date.now(),
       })
 
-      const response = await axios.post(`${CHATBOT_URL}/chat/message`, {
+      const response = await chatbotHttp.post('/chat/message', {
         session_id,
         message: trimmed,
         cart_id,
@@ -734,51 +737,54 @@ export default function Navbar() {
     <div className="app-shell">
       <div className="content-shell">
         <main className="main">
-          <Topbar>
-            <TopbarLeft>
-              <Box
-                component="img"
-                src="/stories-logo.png"
-                alt="Stories"
-                sx={{ maxWidth: '112px', maxHeight: '26px', objectFit: 'contain', flexShrink: 0 }}
-                onError={(e) => { e.currentTarget.style.display = 'none' }}
-              />
-              {!isSuccessRoute && (
+          {!isSuccessRoute && (
+            <Topbar>
+              <TopbarLeft>
+                <Box
+                  component="img"
+                  src="/stories-logo.png"
+                  alt="Stories"
+                  sx={{ maxWidth: '112px', maxHeight: '26px', objectFit: 'contain', flexShrink: 0 }}
+                  onError={(e) => { e.currentTarget.style.display = 'none' }}
+                />
                 <TopbarNavWrap>
                   <Box sx={{ width: '1px', height: '18px', bgcolor: '#e9e9e9', mx: '6px', flexShrink: 0 }} />
                   <TopNavLink to="/" isActive={location.pathname === '/'}>Home</TopNavLink>
                   <TopNavLink to="/menu" isActive={location.pathname.startsWith('/menu')}>Menu</TopNavLink>
+                  {isAuthed && (
+                    <TopNavLink to="/dashboard" isActive={location.pathname === '/dashboard'}>
+                      My Orders
+                    </TopNavLink>
+                  )}
                 </TopbarNavWrap>
-              )}
-            </TopbarLeft>
+              </TopbarLeft>
 
-            <TopbarActionsWrap sx={{ display: isSuccessRoute ? 'none' : undefined }}>
-              {isAuthed ? (
-                <TopPillBtn isAuth type="button" onClick={handleLogout}>Logout</TopPillBtn>
-              ) : (
-                <TopPillBtn type="button" onClick={() => navigate('/login')}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="8" r="4" />
-                    <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-                  </svg>
-                  <span>Login</span>
+              <TopbarActionsWrap>
+                {isAuthed ? (
+                  <TopPillBtn isAuth type="button" onClick={handleLogout}>Logout</TopPillBtn>
+                ) : showGuestActions ? (
+                  <TopPillBtn type="button" onClick={() => navigate('/login')}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="8" r="4" />
+                      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+                    </svg>
+                    <span>Login</span>
+                  </TopPillBtn>
+                ) : null}
+
+                <TopPillBtn type="button" onClick={() => navigate('/cart')}>
+                  <Box component="span" aria-hidden="true" sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="9" cy="21" r="1" />
+                      <circle cx="20" cy="21" r="1" />
+                      <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.95-1.57L23 6H6" />
+                    </svg>
+                  </Box>
+                  <span>Cart</span>
+                  {cartCount > 0 && <CartBadge>{cartCount}</CartBadge>}
                 </TopPillBtn>
-              )}
+              </TopbarActionsWrap>
 
-              <TopPillBtn type="button" onClick={() => navigate('/cart')}>
-                <Box component="span" aria-hidden="true" sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="9" cy="21" r="1" />
-                    <circle cx="20" cy="21" r="1" />
-                    <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.95-1.57L23 6H6" />
-                  </svg>
-                </Box>
-                <span>Cart</span>
-                {cartCount > 0 && <CartBadge>{cartCount}</CartBadge>}
-              </TopPillBtn>
-            </TopbarActionsWrap>
-
-            {!isSuccessRoute && (
               <HamburgerBtn
                 type="button"
                 aria-label={menuOpen ? 'Close menu' : 'Open menu'}
@@ -801,11 +807,11 @@ export default function Navbar() {
                   </svg>
                 )}
               </HamburgerBtn>
-            )}
-          </Topbar>
+            </Topbar>
+          )}
 
           <div ref={pageRef} className="page">
-            <div className="page-content">
+            <div className={isSuccessRoute ? undefined : 'page-content'}>
               <Outlet />
             </div>
           </div>
@@ -991,12 +997,37 @@ export default function Navbar() {
               Cart
             </MenuPanelItem>
 
-            <MenuPanelItem type="button" isActive={location.pathname.startsWith('/login')} onClick={() => { closeMenu(); navigate('/login') }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-              </svg>
-              Login
-            </MenuPanelItem>
+            {isAuthed && (
+              <MenuPanelItem
+                type="button"
+                isActive={location.pathname === '/dashboard'}
+                onClick={() => { closeMenu(); navigate('/dashboard') }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
+                  <rect x="9" y="3" width="6" height="4" rx="1" />
+                  <path d="M9 12h6M9 16h4" />
+                </svg>
+                My Orders
+              </MenuPanelItem>
+            )}
+
+            {isAuthed ? (
+              <MenuPanelItem type="button" onClick={() => { closeMenu(); handleLogout() }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                Logout
+              </MenuPanelItem>
+            ) : showGuestActions ? (
+              <MenuPanelItem type="button" isActive={location.pathname.startsWith('/login')} onClick={() => { closeMenu(); navigate('/login') }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+                </svg>
+                Login
+              </MenuPanelItem>
+            ) : null}
           </MenuPanel>
         </>
       )}

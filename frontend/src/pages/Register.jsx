@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import http from '../API/http'
 import AuthShell from '../components/auth/AuthShell'
 import { authInputStyle, authLabelStyle } from '../components/auth/authStyles'
 
@@ -23,26 +24,19 @@ export default function Register() {
     }
 
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: formData.name,
-          email: formData.email,
-          password: formData.password,
-        }),
+      await http.post('/auth/register', {
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
       })
-
-      const data = await res.json()
-
-      if (res.ok) {
-        setStatus({ type: 'success', message: 'Registration successful. Check your email to verify your account.' })
-      } else {
-        setStatus({ type: 'error', message: data.message || 'Registration failed' })
-      }
+      setStatus({ type: 'success', message: 'Registration successful. Check your email to verify your account.' })
     } catch (err) {
-      console.error(err)
-      setStatus({ type: 'error', message: 'Server error, please try again' })
+      const data = err.response?.data
+      const message = data?.message
+        || data?.error?.fields?.[0]?.message
+        || data?.error?.message
+        || 'Registration failed'
+      setStatus({ type: 'error', message: err.response ? message : 'Server error, please try again' })
     }
   }
 
@@ -86,6 +80,7 @@ export default function Register() {
           {status.message}
         </p>
       )}
+
     </AuthShell>
   )
 }
