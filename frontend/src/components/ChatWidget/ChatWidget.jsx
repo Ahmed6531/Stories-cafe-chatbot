@@ -51,6 +51,12 @@ function getMicAriaLabel(mode) {
   return 'Tap to speak'
 }
 
+function joinTranscript(a, b) {
+  if (!a) return b
+  if (!b) return a
+  return /^[.,!?:;]/.test(b) ? a + b : a + ' ' + b
+}
+
 function Bubble({ msg, prevTime, onSuggestionClick }) {
   const isUser = msg.role === 'user'
   const showTime = msg.time !== prevTime
@@ -143,49 +149,44 @@ export default function ChatWidget({
   const displayRef = useRef(null)
   const pendingReplyTimeoutRef = useRef(null)
   const partialTranscriptTimeoutRef = useRef(null)
-  const pendingPartialTranscriptRef = useRef('')
+  const pendingPartialRef = useRef({ confirmed: '', interim: '' })
   const firstPartialRenderedRef = useRef(false)
   const errorResetTimeoutRef = useRef(null)
 
   const hasConversation = messages.length > 0
 
-  // Define before the effects that call it
-  const flushPartialTranscript = (nextText = pendingPartialTranscriptRef.current) => {
+  const clearPartials = () => {
     if (partialTranscriptTimeoutRef.current) {
       window.clearTimeout(partialTranscriptTimeoutRef.current)
       partialTranscriptTimeoutRef.current = null
     }
-    const normalized = normalizeTranscriptForUi(nextText)
-    pendingPartialTranscriptRef.current = normalized
-    firstPartialRenderedRef.current = Boolean(normalized)
-    if (voice.interimText !== normalized) {
-      voice.setInterimText(normalized)
-    }
+    firstPartialRenderedRef.current = false
+    pendingPartialRef.current = { confirmed: '', interim: '' }
+    voice.setPartial('', '')
   }
 
-  const schedulePartialTranscript = (nextText) => {
-    const normalized = normalizeTranscriptForUi(nextText)
-    pendingPartialTranscriptRef.current = normalized
-
-    if (!normalized) {
-      flushPartialTranscript('')
-      return
+  const flushPartial = () => {
+    if (partialTranscriptTimeoutRef.current) {
+      window.clearTimeout(partialTranscriptTimeoutRef.current)
+      partialTranscriptTimeoutRef.current = null
     }
+    const { confirmed, interim } = pendingPartialRef.current
+    voice.setPartial(confirmed, interim)
+  }
 
+  const schedulePartial = (confirmed, interim) => {
+    pendingPartialRef.current = { confirmed, interim }
     if (!firstPartialRenderedRef.current) {
-      flushPartialTranscript(normalized)
+      firstPartialRenderedRef.current = true
+      flushPartial()
       return
     }
-
     if (partialTranscriptTimeoutRef.current) {
       window.clearTimeout(partialTranscriptTimeoutRef.current)
     }
-
     partialTranscriptTimeoutRef.current = window.setTimeout(() => {
       partialTranscriptTimeoutRef.current = null
-      if (voice.interimText !== pendingPartialTranscriptRef.current) {
-        voice.setInterimText(pendingPartialTranscriptRef.current)
-      }
+      flushPartial()
     }, PARTIAL_TRANSCRIPT_DEBOUNCE_MS)
   }
 
@@ -194,7 +195,7 @@ export default function ChatWidget({
       window.clearTimeout(pendingReplyTimeoutRef.current)
       pendingReplyTimeoutRef.current = null
     }
-    flushPartialTranscript('')
+    clearPartials()
     voice.stopReply()
   }
 
@@ -206,6 +207,13 @@ export default function ChatWidget({
     if (displayRef.current) displayRef.current.scrollLeft = displayRef.current.scrollWidth
   }, [voice.confirmedText, voice.interimText])
 
+  useEffect(() => () => {
+    if (partialTranscriptTimeoutRef.current) {
+      window.clearTimeout(partialTranscriptTimeoutRef.current)
+      partialTranscriptTimeoutRef.current = null
+    }
+  }, [])
+
   useEffect(() => {
     if (messages.length === 0) {
       localStorage.removeItem(CHAT_STORAGE_KEY)
@@ -216,13 +224,6 @@ export default function ChatWidget({
     localStorage.setItem(CHAT_STORAGE_TS_KEY, String(Date.now()))
   }, [messages])
 
-  useEffect(() => () => {
-    if (partialTranscriptTimeoutRef.current) {
-      window.clearTimeout(partialTranscriptTimeoutRef.current)
-      partialTranscriptTimeoutRef.current = null
-    }
-  }, [])
-
   useEffect(() => {
     if (!isSuccessRoute) return
     if (pendingReplyTimeoutRef.current) {
@@ -230,7 +231,7 @@ export default function ChatWidget({
       pendingReplyTimeoutRef.current = null
     }
     voice.resetAll()
-    flushPartialTranscript('')
+    clearPartials()
     setMessages([])
     setChipsVisible(true)
     localStorage.removeItem(CHAT_STORAGE_KEY)
@@ -317,7 +318,7 @@ export default function ChatWidget({
     const routedText = normalizeTranscriptForRouting(trimmed) || trimmed
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
-    flushPartialTranscript('')
+    clearPartials()
     voice.beginReply()
     appendMessage({ id: Date.now(), role: 'user', text: trimmed, time: now })
 
@@ -351,7 +352,7 @@ export default function ChatWidget({
   }
 
   const handleChipClick = (text) => sendMessage(text)
-  const handleSend = () => sendMessage((voice.confirmedText + (voice.interimText ? ' ' + voice.interimText : '')).trim())
+  const handleSend = () => sendMessage(joinTranscript(voice.confirmedText, voice.interimText).trim())
 
   const handleCloseClick = () => {
     if (pendingReplyTimeoutRef.current) {
@@ -386,14 +387,16 @@ export default function ChatWidget({
     }
 
     if (event.type === 'partial') {
-      schedulePartialTranscript(event.text || '')
+      const confirmed = normalizeTranscriptForUi(event.confirmed ?? '')
+      const interim = normalizeTranscriptForUi(event.interim ?? event.text ?? '')
+      schedulePartial(confirmed, interim)
       return
     }
 
     if (event.type === 'final') {
       const finalText = normalizeTranscriptForUi(event.text || '').trim()
       if (!finalText) return
-      flushPartialTranscript('')
+      clearPartials()
       voice.receiveFinalTranscript(finalText)
       if (pendingReplyTimeoutRef.current) {
         window.clearTimeout(pendingReplyTimeoutRef.current)
@@ -406,7 +409,7 @@ export default function ChatWidget({
     }
 
     if (event.type === 'error') {
-      flushPartialTranscript('')
+      clearPartials()
       const kind = event.kind || MIC_MODE.ERROR
       const message = event.message
         ? `Couldn't hear that, try again. ${event.message}`
@@ -440,7 +443,6 @@ export default function ChatWidget({
           <aside className="chat-panel">
             <VoiceInput
               active={voice.active}
-              sourceName="Navbar"
               onEvent={handleVoiceEvent}
             />
             <div className="cp-header">
@@ -546,7 +548,7 @@ export default function ChatWidget({
                         )}
                         {voice.interimText && (
                           <span className="chat-input-interim">
-                            {voice.confirmedText ? ' ' : ''}{voice.interimText}
+                            {voice.confirmedText && !/^[.,!?:;]/.test(voice.interimText) ? ' ' : ''}{voice.interimText}
                           </span>
                         )}
                       </span>

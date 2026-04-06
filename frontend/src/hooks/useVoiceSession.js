@@ -50,6 +50,12 @@ function voiceSessionReducer(state, action) {
         micMode: action.micMode,
         voiceError: shouldClearVoiceError(action.micMode) ? '' : state.voiceError,
       }
+    case 'PARTIAL_RECEIVED':
+      return {
+        ...state,
+        confirmedText: action.confirmed,
+        interimText: action.interim,
+      }
     case 'INTERIM_CHANGED':
       return {
         ...state,
@@ -165,6 +171,9 @@ export function useVoiceSession() {
     },
     setVoiceState(micMode) {
       dispatch({ type: 'VOICE_STATE_CHANGED', micMode })
+    },
+    setPartial(confirmed, interim) {
+      dispatch({ type: 'PARTIAL_RECEIVED', confirmed, interim })
     },
     setInterimText(text) {
       dispatch({ type: 'INTERIM_CHANGED', text })
