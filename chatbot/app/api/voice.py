@@ -4,32 +4,20 @@ import json
 import uuid
 from contextlib import suppress
 from enum import Enum
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from starlette.concurrency import run_in_threadpool
-from app.core.config import settings
 from google.cloud import speech
 from google.oauth2 import service_account
+from starlette.concurrency import run_in_threadpool
 
-# ── Google Cloud STT Setup ─────────────────────────────────────────
-# 1. Create a GCP project at console.cloud.google.com
-# 2. Enable the Cloud Speech-to-Text API
-# 3. Create a service account:
-#    IAM & Admin → Service Accounts → Create
-#    Grant role: "Cloud Speech Client"
-# 4. Download the JSON key file
-# 5. Set GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json in .env
-# 6. pip install google-cloud-speech==2.27.0
-# ──────────────────────────────────────────────────────────────────
+from app.core.config import settings
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
 MAX_BYTES = 25 * 1024 * 1024
-ALLOWED_MIME_PREFIX = "audio/"
-CHUNK_ACK_EVERY = 8
 POST_STOP_FINALIZATION_TIMEOUT_SEC = 12.0
-
-# Magic bytes that begin every Opus ID header (RFC 7845 §5.1)
-_OPUS_HEAD_MAGIC = b"OpusHead"
+DEFAULT_SAMPLE_RATE_HERTZ = 16000
+SUPPORTED_AUDIO_FORMATS = {"linear16", "pcm_s16le"}
 
 
 class UtteranceState(str, Enum):
@@ -39,48 +27,6 @@ class UtteranceState(str, Enum):
     FINALIZING = "finalizing"
     TERMINAL_SENT = "terminal_sent"
     CLOSED = "closed"
-
-
-def _mime_to_encoding(mime_type: str):
-    if "ogg" in mime_type:
-        return speech.RecognitionConfig.AudioEncoding.OGG_OPUS
-    return speech.RecognitionConfig.AudioEncoding.WEBM_OPUS
-
-
-def _patch_webm_opus_sample_rate(data: bytes, sample_rate: int = 48000) -> tuple[bool, bytes]:
-    """
-    Chrome's MediaRecorder writes 0 in the Opus ID header's "Input Sample Rate"
-    field (bytes 12–15, little-endian).  Zero is technically valid per RFC 7845
-    (it means "use the native Opus output rate"), but Google Cloud STT rejects it.
-    When sample_rate_hertz is omitted from the STT config (required for WEBM_OPUS),
-    we must patch the header in the bitstream instead.
-
-    Returns (patched, data):
-      patched=True  — OpusHead was found; sample-rate field was 0 and has been set
-                      to sample_rate (or was already non-zero, treated as "done").
-      patched=False — OpusHead magic not found in this chunk; try the next one.
-    """
-    idx = data.find(_OPUS_HEAD_MAGIC)
-    if idx == -1:
-        return False, data                          # not in this chunk — keep searching
-
-    # OpusHead layout (RFC 7845 §5.1):
-    #   0–7  : "OpusHead"  (8 bytes)
-    #   8    : version     (1 byte)
-    #   9    : channels    (1 byte)
-    #   10–11: pre-skip    (2 bytes LE)
-    #   12–15: Input Sample Rate (4 bytes LE)  ← Chrome writes 0 here
-    rate_offset = idx + 12
-    if rate_offset + 4 > len(data):
-        # Chunk is truncated mid-header — extremely unlikely but treat as not found
-        return False, data
-
-    current_rate = int.from_bytes(data[rate_offset: rate_offset + 4], "little")
-    if current_rate != 0:
-        return True, data                           # already valid — nothing to rewrite
-
-    patched = data[:rate_offset] + sample_rate.to_bytes(4, "little") + data[rate_offset + 4:]
-    return True, patched
 
 
 def create_speech_client() -> speech.SpeechClient:
@@ -100,11 +46,11 @@ async def voice_health() -> dict:
 async def transcribe_stream(websocket: WebSocket):
     """
     WebSocket protocol:
-    - Client sends JSON {"type":"start","session_id":"...","utterance_id":"...","mime_type":"audio/webm"}
-    - Client streams binary audio chunks (or JSON {"type":"audio_chunk","audio_base64":"..."})
+    - Client sends JSON
+      {"type":"start","session_id":"...","utterance_id":"...","audio_format":"linear16","sample_rate_hertz":16000}
+    - Client streams binary PCM chunks (or JSON {"type":"audio_chunk","audio_base64":"..."})
     - Client sends JSON {"type":"stop"} to finalize
-    - Server replies with JSON events: ready, recording_started, progress, partial_transcript,
-      final_transcript, no_speech, timeout, error, pong
+    - Server replies with JSON events: partial, final, no_speech, error
     """
     await websocket.accept()
     conn_id = uuid.uuid4().hex[:8]
@@ -115,7 +61,8 @@ async def transcribe_stream(websocket: WebSocket):
     total_bytes = 0
     session_id = ""
     utterance_id = ""
-    mime_type = "audio/webm"
+    audio_format = "linear16"
+    sample_rate_hertz = DEFAULT_SAMPLE_RATE_HERTZ
     final_segments: list[str] = []
     latest_interim = ""
     terminal_event_type: str | None = None
@@ -186,69 +133,53 @@ async def transcribe_stream(websocket: WebSocket):
         result_queue = _result_queue
         loop = asyncio.get_running_loop()
 
-        encoding = _mime_to_encoding(mime_type)
-        print(
-            f"[VOICE][{conn_id}] stt_stream_start session={session_id} utterance={utterance_id} "
-            f"encoding={encoding} mime_type={mime_type}"
-        )
-        # Google validates Opus sample rate against the recognition config. In practice
-        # WEBM_OPUS and OGG_OPUS both need an explicit supported Opus output rate here.
-        is_ogg = "ogg" in mime_type
-        recognition_config_kwargs: dict = dict(
-            encoding=encoding,
+        recognition_config = speech.RecognitionConfig(
+            encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
             language_code="en-US",
             alternative_language_codes=["ar-LB"],
             enable_automatic_punctuation=True,
-            sample_rate_hertz=48000,
+            sample_rate_hertz=sample_rate_hertz,
+            speech_contexts=[
+                speech.SpeechContext(
+                    phrases=[
+                        # Drinks
+                        "latte", "iced latte", "vanilla latte", "caramel latte",
+                        "espresso", "double espresso", "shot of espresso",
+                        "cappuccino", "americano", "mocha", "macchiato",
+                        "flat white", "cold brew", "cortado", "affogato",
+                        "matcha latte", "chai latte", "hot chocolate",
+                        # Food / common café words
+                        "croissant", "muffin", "brownie", "cheesecake",
+                        "sandwich", "bagel", "scone",
+                        # Sizes and modifiers
+                        "small", "medium", "large",
+                        "hot", "iced", "oat milk", "almond milk", "soy milk",
+                        "extra shot", "no sugar", "decaf",
+                        # Order phrases
+                        "add", "remove", "order", "repeat my last order",
+                        "what's good today", "surprise me",
+                    ],
+                    boost=15.0,
+                )
+            ],
         )
-        print(
-            f"[VOICE][{conn_id}] google_config "
-            f"encoding={encoding} mime_type={mime_type} "
-            f"sample_rate_included={'sample_rate_hertz' in recognition_config_kwargs} "
-            f"sample_rate={recognition_config_kwargs.get('sample_rate_hertz')}"
-        )
-
         config = speech.StreamingRecognitionConfig(
-            config=speech.RecognitionConfig(**recognition_config_kwargs),
+            config=recognition_config,
             interim_results=True,
         )
 
-        # For WEBM_OPUS we must patch the OpusHead "Input Sample Rate" field in the
-        # bitstream (Chrome writes 0; Google STT rejects it).  The OpusHead lives in
-        # the WebM Tracks→TrackEntry→CodecPrivate element, which is always in the
-        # initialization segment.  Chrome normally flushes it in the first timeslice
-        # chunk, but we scan every chunk until it is found to be safe.
-        need_opus_patch = not is_ogg
-        opus_header_patched = [False]
+        print(
+            f"[VOICE][{conn_id}] stt_stream_start session={session_id} utterance={utterance_id} "
+            f"encoding=LINEAR16 audio_format={audio_format} sample_rate_hertz={sample_rate_hertz}"
+        )
 
         def _audio_gen():
             """Sync generator that drains the async audio_queue for the STT thread."""
-            chunk_num = 0
             while True:
                 future = asyncio.run_coroutine_threadsafe(_audio_queue.get(), loop)
                 chunk = future.result()
-                if chunk is None:   # sentinel — stop the stream
-                    if need_opus_patch and not opus_header_patched[0]:
-                        print(
-                            f"[VOICE][{conn_id}] opus_patch_not_found — "
-                            f"OpusHead magic never seen in {chunk_num} chunks; "
-                            f"Google STT may reject the stream"
-                        )
+                if chunk is None:
                     return
-                chunk_num += 1
-                if need_opus_patch and not opus_header_patched[0]:
-                    patched, chunk = _patch_webm_opus_sample_rate(chunk)
-                    if patched:
-                        opus_header_patched[0] = True
-                        print(
-                            f"[VOICE][{conn_id}] opus_patch_applied chunk={chunk_num} "
-                            f"size={len(chunk)}"
-                        )
-                    else:
-                        print(
-                            f"[VOICE][{conn_id}] opus_patch_miss chunk={chunk_num} "
-                            f"size={len(chunk)} — OpusHead not yet seen"
-                        )
                 yield speech.StreamingRecognizeRequest(audio_content=chunk)
 
         def _run_stt() -> None:
@@ -271,7 +202,6 @@ async def transcribe_stream(websocket: WebSocket):
                     _result_queue.put(exc), loop
                 ).result(timeout=5)
             finally:
-                # Always put the sentinel so _read_results can exit cleanly
                 asyncio.run_coroutine_threadsafe(
                     _result_queue.put(None), loop
                 ).result(timeout=5)
@@ -303,11 +233,8 @@ async def transcribe_stream(websocket: WebSocket):
                 if not snapshot:
                     continue
 
-                # App-level terminal transcript events should only be sent after
-                # the browser sends {type:"stop"}. Google may emit multiple
-                # is_final segments while the utterance is still in progress.
                 await websocket.send_json({
-                    "type": "partial_transcript",
+                    "type": "partial",
                     "snapshot": snapshot,
                     "delta": text,
                     "utterance_id": utterance_id,
@@ -334,7 +261,7 @@ async def transcribe_stream(websocket: WebSocket):
             deadline = loop.time() + timeout_seconds
 
         if audio_queue is not None:
-            await audio_queue.put(None)  # sentinel wakes up _audio_gen
+            await audio_queue.put(None)
         if stt_task is not None:
             try:
                 timeout = remaining_timeout(deadline)
@@ -351,7 +278,7 @@ async def transcribe_stream(websocket: WebSocket):
             except Exception:
                 pass
         if result_queue is not None and result_task is not None and not result_task.done():
-            result_queue.put_nowait(None)  # fallback in case the worker never delivered its sentinel
+            result_queue.put_nowait(None)
         if result_task is not None:
             try:
                 timeout = remaining_timeout(deadline)
@@ -384,12 +311,6 @@ async def transcribe_stream(websocket: WebSocket):
         )
         return not timed_out
 
-    await websocket.send_json({
-        "type": "ready",
-        "message": "voice websocket connected",
-        "max_bytes": MAX_BYTES,
-    })
-
     try:
         while True:
             message = await websocket.receive()
@@ -399,7 +320,6 @@ async def transcribe_stream(websocket: WebSocket):
                 set_utterance_state(UtteranceState.CLOSED)
                 break
 
-            # ── Binary audio chunk ──────────────────────────────────────────
             if message.get("bytes") is not None:
                 if utterance_state != UtteranceState.RECEIVING_AUDIO:
                     if utterance_state in {
@@ -431,16 +351,8 @@ async def transcribe_stream(websocket: WebSocket):
                 if audio_queue is not None:
                     await audio_queue.put(raw)
 
-                if chunk_count % CHUNK_ACK_EVERY == 0:
-                    await websocket.send_json({
-                        "type": "progress",
-                        "chunks": chunk_count,
-                        "bytes": total_bytes,
-                        "utterance_id": utterance_id,
-                    })
                 continue
 
-            # ── JSON control message ────────────────────────────────────────
             text_payload = message.get("text")
             if text_payload is None:
                 continue
@@ -453,13 +365,24 @@ async def transcribe_stream(websocket: WebSocket):
 
             event_type = payload.get("type")
 
-            if event_type == "ping":
-                await websocket.send_json({"type": "pong"})
-                continue
-
             if event_type == "start":
                 if has_active_utterance():
                     await emit_terminal("error", message="utterance already in progress")
+                    continue
+
+                requested_format = str(payload.get("audio_format") or "linear16").lower()
+                if requested_format not in SUPPORTED_AUDIO_FORMATS:
+                    await websocket.send_json({"type": "error", "message": "unsupported audio format"})
+                    continue
+
+                try:
+                    requested_sample_rate = int(payload.get("sample_rate_hertz") or DEFAULT_SAMPLE_RATE_HERTZ)
+                except (TypeError, ValueError):
+                    await websocket.send_json({"type": "error", "message": "invalid sample_rate_hertz"})
+                    continue
+
+                if requested_sample_rate <= 0:
+                    await websocket.send_json({"type": "error", "message": "invalid sample_rate_hertz"})
                     continue
 
                 chunk_count = 0
@@ -469,23 +392,15 @@ async def transcribe_stream(websocket: WebSocket):
                 terminal_event_type = None
                 session_id = str(payload.get("session_id") or "")
                 utterance_id = str(payload.get("utterance_id") or uuid.uuid4())
-                mime_type = str(payload.get("mime_type") or "audio/webm")
-                if not mime_type.startswith(ALLOWED_MIME_PREFIX):
-                    mime_type = "audio/webm"
+                audio_format = requested_format
+                sample_rate_hertz = requested_sample_rate
                 print(
-                    f"[VOICE][{conn_id}] start session={session_id} "
-                    f"utterance={utterance_id} mime_type={mime_type}"
+                    f"[VOICE][{conn_id}] start session={session_id} utterance={utterance_id} "
+                    f"audio_format={audio_format} sample_rate_hertz={sample_rate_hertz}"
                 )
 
                 await start_stt_session()
                 set_utterance_state(UtteranceState.RECEIVING_AUDIO)
-
-                await websocket.send_json({
-                    "type": "recording_started",
-                    "session_id": session_id,
-                    "utterance_id": utterance_id,
-                    "mime_type": mime_type,
-                })
                 continue
 
             if event_type == "audio_chunk":
@@ -525,13 +440,6 @@ async def transcribe_stream(websocket: WebSocket):
                 if audio_queue is not None:
                     await audio_queue.put(raw)
 
-                if chunk_count % CHUNK_ACK_EVERY == 0:
-                    await websocket.send_json({
-                        "type": "progress",
-                        "chunks": chunk_count,
-                        "bytes": total_bytes,
-                        "utterance_id": utterance_id,
-                    })
                 continue
 
             if event_type == "stop":
@@ -553,13 +461,12 @@ async def transcribe_stream(websocket: WebSocket):
                     )
                     continue
 
-                # Signal STT stream to close, then emit one app-level terminal
-                # outcome built from the collected Google results.
                 set_utterance_state(UtteranceState.FINALIZING)
                 finalized = await stop_stt(timeout_seconds=POST_STOP_FINALIZATION_TIMEOUT_SEC)
                 if not finalized:
                     await emit_terminal(
-                        "timeout",
+                        "error",
+                        kind="timeout",
                         message="STT finalization timed out",
                         phase="post_stop_finalization",
                     )
@@ -570,7 +477,7 @@ async def transcribe_stream(websocket: WebSocket):
                 transcript = build_transcript(latest_interim)
                 if transcript:
                     await emit_terminal(
-                        "final_transcript",
+                        "final",
                         transcript=transcript,
                         chunks=chunk_count,
                         bytes=total_bytes,

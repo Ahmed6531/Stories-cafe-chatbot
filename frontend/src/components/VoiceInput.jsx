@@ -8,9 +8,14 @@ const SILENCE_DURATION = 2000;
 const MAX_VOICED_FRAME_MS = 80;
 const SAMPLE_RATE = 16000;
 const CHUNK_MS = 90;
+const PCM_CHUNK_SAMPLES = Math.max(1, Math.round((SAMPLE_RATE * CHUNK_MS) / 1000));
+const PCM_WORKLET_NAME = "pcm-chunk-capture";
+const PCM_PROCESSOR_BUFFER_SIZE = 2048;
+const PCM_WORKLET_FLUSH_TIMEOUT_MS = 500;
 const INITIAL_SPEECH_TIMEOUT_MS = 5000;
 const STREAMING_INACTIVITY_TIMEOUT_MS = 6000;
 const POST_STOP_FINALIZATION_TIMEOUT_MS = 15000;
+const PCM_WORKLET_MODULE_URL = new URL("../audio/pcm-capture.worklet.js", import.meta.url);
 
 const SESSION_PHASE = {
   IDLE: "idle",
@@ -36,24 +41,13 @@ function toWebSocketUrl(baseUrl) {
   return trimmed;
 }
 
-function pickMimeType() {
-  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/ogg"];
-  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? "";
-}
-
 function isBusyPhase(phase) {
   return phase !== SESSION_PHASE.IDLE;
 }
 
 export default function VoiceInput({
   active,
-  onTranscript,
-  onPartialTranscript,
-  onListeningChange,
-  onProcessingChange,
-  onError,
-  onSessionBusyChange,
-  onVoiceStateChange,
+  onEvent,
   sourceName = "unknown",
 }) {
   const mountedRef = useRef(false);
@@ -61,15 +55,21 @@ export default function VoiceInput({
   const phaseRef = useRef(SESSION_PHASE.IDLE);
   const streamRef = useRef(null);
   const ctxRef = useRef(null);
-  const recRef = useRef(null);
+  const sourceNodeRef = useRef(null);
+  const processorNodeRef = useRef(null);
+  const monitorNodeRef = useRef(null);
+  const analyserRef = useRef(null);
   const rafRef = useRef(null);
   const wsRef = useRef(null);
   const initialSpeechTimeoutRef = useRef(null);
   const streamingInactivityTimeoutRef = useRef(null);
   const postStopFinalizationTimeoutRef = useRef(null);
   const liveTranscriptRef = useRef("");
+  const pcmBufferRef = useRef(new Int16Array(0));
   const instanceId = useRef(Math.random().toString(36).slice(2, 8));
-  const pendingChunkSendsRef = useRef(new Set());
+  const captureModeRef = useRef("idle");
+  const pendingWorkletFlushRef = useRef(null);
+  const workletFlushRequestIdRef = useRef(0);
   const speechDetectedRef = useRef(false);
   const speechConfirmedRef = useRef(false);
   const lastVoicedTickAtRef = useRef(null);
@@ -88,7 +88,7 @@ export default function VoiceInput({
 
   function emitVoiceState(state) {
     logVoiceUi("voice_state", state);
-    onVoiceStateChange?.(state);
+    onEvent?.({ type: "state", state });
   }
 
   function setPhase(nextPhase) {
@@ -96,7 +96,7 @@ export default function VoiceInput({
     if (previousPhase === nextPhase) return;
     phaseRef.current = nextPhase;
     logVoiceUi("phase_change", { from: previousPhase, to: nextPhase });
-    onSessionBusyChange?.(isBusyPhase(nextPhase));
+    onEvent?.({ type: "busy", busy: isBusyPhase(nextPhase) });
   }
 
   function clearInitialSpeechTimeout() {
@@ -154,12 +154,6 @@ export default function VoiceInput({
     }, STREAMING_INACTIVITY_TIMEOUT_MS);
   }
 
-  async function waitForPendingChunkSends() {
-    while (pendingChunkSendsRef.current.size > 0) {
-      await Promise.allSettled(Array.from(pendingChunkSendsRef.current));
-    }
-  }
-
   function getSpeechStats() {
     const now = Date.now();
     const recordingStartedAt = recordingStartedAtRef.current;
@@ -176,18 +170,52 @@ export default function VoiceInput({
     };
   }
 
-  function releaseResources() {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+  function stopAudioCapture() {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+
+    if (pendingWorkletFlushRef.current) {
+      window.clearTimeout(pendingWorkletFlushRef.current.timeoutId);
+      pendingWorkletFlushRef.current.resolve(false);
+      pendingWorkletFlushRef.current = null;
+    }
+
+    if (processorNodeRef.current) {
+      if (processorNodeRef.current.port) {
+        processorNodeRef.current.port.onmessage = null;
+      }
+      processorNodeRef.current.onaudioprocess = null;
+      processorNodeRef.current.disconnect();
+      processorNodeRef.current = null;
+    }
+
+    sourceNodeRef.current?.disconnect();
+    sourceNodeRef.current = null;
+
+    monitorNodeRef.current?.disconnect();
+    monitorNodeRef.current = null;
+
+    analyserRef.current = null;
+
     streamRef.current?.getTracks().forEach((track) => track.stop());
-    ctxRef.current?.close();
+    streamRef.current = null;
+
+    const audioContext = ctxRef.current;
+    ctxRef.current = null;
+    captureModeRef.current = "idle";
+    if (audioContext) {
+      void audioContext.close().catch(() => {});
+    }
+  }
+
+  function releaseResources() {
+    stopAudioCapture();
     wsRef.current?.close();
 
-    streamRef.current = null;
-    ctxRef.current = null;
-    recRef.current = null;
-    rafRef.current = null;
     wsRef.current = null;
-    pendingChunkSendsRef.current = new Set();
+    pcmBufferRef.current = new Int16Array(0);
     speechDetectedRef.current = false;
     speechConfirmedRef.current = false;
     lastVoicedTickAtRef.current = null;
@@ -203,14 +231,211 @@ export default function VoiceInput({
     clearPhaseTimeouts();
     if (clearTranscript) {
       liveTranscriptRef.current = "";
-      onPartialTranscript?.("");
+      onEvent?.({ type: "partial", text: "" });
     } else {
       liveTranscriptRef.current = "";
     }
-    onListeningChange?.(false);
-    onProcessingChange?.(false);
     setPhase(SESSION_PHASE.IDLE);
     releaseResources();
+  }
+
+  function sendPcmChunk(samples) {
+    if (!samples.length) return;
+
+    const socket = wsRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      logVoiceUi("dropping_chunk_socket_not_open", {
+        samples: samples.length,
+        phase: phaseRef.current,
+        readyState: socket?.readyState ?? "none",
+      });
+      return;
+    }
+
+    const chunkBytes = samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength);
+    logVoiceUi("sending_chunk", {
+      samples: samples.length,
+      size: chunkBytes.byteLength,
+      phase: phaseRef.current,
+      readyState: socket.readyState,
+    });
+    socket.send(chunkBytes);
+    touchStreamingActivity("chunk_sent");
+  }
+
+  function flushPcmBuffer({ force = false } = {}) {
+    let buffer = pcmBufferRef.current;
+
+    while (buffer.length >= PCM_CHUNK_SAMPLES || (force && buffer.length > 0)) {
+      const chunkSampleCount = force && buffer.length < PCM_CHUNK_SAMPLES
+        ? buffer.length
+        : PCM_CHUNK_SAMPLES;
+      const chunk = buffer.slice(0, chunkSampleCount);
+      buffer = buffer.slice(chunkSampleCount);
+      sendPcmChunk(chunk);
+    }
+
+    pcmBufferRef.current = buffer;
+  }
+
+  function pushPcmSamples(floatSamples, inputSampleRate) {
+    if (!floatSamples?.length) return;
+
+    const downsampled = downsampleFloat32Buffer(floatSamples, inputSampleRate, SAMPLE_RATE);
+    if (!downsampled.length) return;
+
+    const pcmSamples = float32ToInt16(downsampled);
+    pcmBufferRef.current = appendInt16Buffer(pcmBufferRef.current, pcmSamples);
+    flushPcmBuffer();
+  }
+
+  async function finalizeStreamingStop() {
+    logVoiceUi("processor_stop_fired", { phase: phaseRef.current });
+    if (phaseRef.current !== SESSION_PHASE.STOPPING) {
+      return;
+    }
+
+    await flushCaptureProcessor();
+    stopAudioCapture();
+    flushPcmBuffer({ force: true });
+
+    const socket = wsRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      resolveTerminal("error", "Voice transcription connection is not open");
+      return;
+    }
+
+    clearInitialSpeechTimeout();
+    clearStreamingInactivityTimeout();
+    setPhase(SESSION_PHASE.WAITING_FINAL);
+    const stopPayload = {
+      type: "stop",
+      reason: stopReasonRef.current,
+      speech_stats: getSpeechStats(),
+    };
+    socket.send(JSON.stringify(stopPayload));
+    logVoiceUi("sending_websocket_stop", { readyState: socket.readyState, ...stopPayload });
+
+    postStopFinalizationTimeoutRef.current = window.setTimeout(() => {
+      if (!terminalResolvedRef.current) {
+        logVoiceUi("post_stop_finalization_timeout");
+        resolveTerminal("timeout", "Transcription timed out while finalizing.");
+      }
+    }, POST_STOP_FINALIZATION_TIMEOUT_MS);
+  }
+
+  function handleWorkletMessage(event, inputSampleRate) {
+    const payload = event.data;
+    if (!payload || typeof payload !== "object") return;
+
+    if (payload.type === "chunk") {
+      pushPcmSamples(payload.samples, inputSampleRate);
+      return;
+    }
+
+    if (payload.type === "flush_complete" && pendingWorkletFlushRef.current) {
+      const pendingFlush = pendingWorkletFlushRef.current;
+      if (pendingFlush.requestId === payload.requestId) {
+        window.clearTimeout(pendingFlush.timeoutId);
+        pendingWorkletFlushRef.current = null;
+        pendingFlush.resolve(true);
+      }
+    }
+  }
+
+  async function flushCaptureProcessor() {
+    if (captureModeRef.current !== "worklet") {
+      return false;
+    }
+
+    const node = processorNodeRef.current;
+    if (!node?.port) {
+      return false;
+    }
+
+    if (pendingWorkletFlushRef.current) {
+      return pendingWorkletFlushRef.current.promise;
+    }
+
+    const requestId = workletFlushRequestIdRef.current + 1;
+    workletFlushRequestIdRef.current = requestId;
+
+    const promise = new Promise((resolve) => {
+      const timeoutId = window.setTimeout(() => {
+        if (pendingWorkletFlushRef.current?.requestId === requestId) {
+          pendingWorkletFlushRef.current = null;
+          resolve(false);
+        }
+      }, PCM_WORKLET_FLUSH_TIMEOUT_MS);
+
+      pendingWorkletFlushRef.current = {
+        requestId,
+        resolve,
+        timeoutId,
+        promise: null,
+      };
+    });
+
+    pendingWorkletFlushRef.current.promise = promise;
+    node.port.postMessage({ type: "flush", requestId });
+    return promise;
+  }
+
+  function setupScriptProcessorCapture(ctx, source, monitor) {
+    const processor = ctx.createScriptProcessor(PCM_PROCESSOR_BUFFER_SIZE, 1, 1);
+    processorNodeRef.current = processor;
+    captureModeRef.current = "script";
+    source.connect(processor);
+    processor.connect(monitor);
+    processor.onaudioprocess = (event) => {
+      if (phaseRef.current !== SESSION_PHASE.RECORDING) return;
+
+      const channelData = event.inputBuffer.getChannelData(0);
+      if (!channelData || channelData.length === 0) return;
+
+      pushPcmSamples(channelData, event.inputBuffer.sampleRate);
+    };
+
+    logVoiceUi("capture_processor_ready", {
+      mode: "script",
+      inputSampleRate: ctx.sampleRate,
+      targetSampleRate: SAMPLE_RATE,
+      processorBufferSize: PCM_PROCESSOR_BUFFER_SIZE,
+      chunkSamples: PCM_CHUNK_SAMPLES,
+    });
+  }
+
+  async function setupAudioProcessor(ctx, source, monitor) {
+    if (ctx.audioWorklet && typeof AudioWorkletNode !== "undefined") {
+      try {
+        await ctx.audioWorklet.addModule(PCM_WORKLET_MODULE_URL);
+        const workletNode = new AudioWorkletNode(ctx, PCM_WORKLET_NAME, {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [1],
+          processorOptions: {
+            chunkFrames: Math.max(1, Math.round((ctx.sampleRate * CHUNK_MS) / 1000)),
+          },
+        });
+        workletNode.port.onmessage = (event) => handleWorkletMessage(event, ctx.sampleRate);
+        processorNodeRef.current = workletNode;
+        captureModeRef.current = "worklet";
+        source.connect(workletNode);
+        workletNode.connect(monitor);
+
+        logVoiceUi("capture_processor_ready", {
+          mode: "worklet",
+          inputSampleRate: ctx.sampleRate,
+          targetSampleRate: SAMPLE_RATE,
+          chunkSamples: Math.max(1, Math.round((ctx.sampleRate * CHUNK_MS) / 1000)),
+        });
+        return;
+      } catch (error) {
+        logVoiceUi("audio_worklet_unavailable", error?.message || "unknown");
+      }
+    }
+
+    setupScriptProcessorCapture(ctx, source, monitor);
   }
 
   function requestStop(reason) {
@@ -221,15 +446,7 @@ export default function VoiceInput({
     if (phase === SESSION_PHASE.RECORDING) {
       setPhase(SESSION_PHASE.STOPPING);
       emitVoiceState("finalizing");
-      onListeningChange?.(false);
-      onProcessingChange?.(true);
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      if (recRef.current?.state === "recording") {
-        recRef.current.stop();
-      }
+      void finalizeStreamingStop();
       return;
     }
 
@@ -250,14 +467,22 @@ export default function VoiceInput({
 
     if (kind === "error" || kind === "timeout" || kind === "close_before_terminal") {
       emitVoiceState(kind === "timeout" ? "timed-out" : "error");
-      onError?.(message);
+      onEvent?.({
+        type: "error",
+        kind: kind === "timeout" ? "timeout" : "error",
+        message,
+      });
       finalizeSession(kind);
       return;
     }
 
     if (kind === "no_speech") {
       emitVoiceState("no-speech");
-      onError?.(message || "Could not transcribe. Please try again.");
+      onEvent?.({
+        type: "error",
+        kind: "no_speech",
+        message: message || "Could not transcribe. Please try again.",
+      });
       finalizeSession(kind);
       return;
     }
@@ -273,7 +498,7 @@ export default function VoiceInput({
 
     setPhase(SESSION_PHASE.CONNECTING);
     emitVoiceState("connecting");
-    pendingChunkSendsRef.current = new Set();
+    pcmBufferRef.current = new Int16Array(0);
     terminalResolvedRef.current = false;
 
     try {
@@ -296,7 +521,6 @@ export default function VoiceInput({
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          sampleRate: SAMPLE_RATE,
         },
       });
 
@@ -309,17 +533,21 @@ export default function VoiceInput({
 
       streamRef.current = stream;
 
-      const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
+      const ctx = new AudioContext({ sampleRate: SAMPLE_RATE, latencyHint: "interactive" });
       ctxRef.current = ctx;
       const source = ctx.createMediaStreamSource(stream);
+      sourceNodeRef.current = source;
+
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
+      analyserRef.current = analyser;
       source.connect(analyser);
 
-      const mimeType = pickMimeType();
-      const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-      recRef.current = rec;
-      logVoiceUi("recorder_created", rec.mimeType || mimeType || "audio/webm");
+      const monitor = ctx.createGain();
+      monitor.gain.value = 0;
+      monitorNodeRef.current = monitor;
+      monitor.connect(ctx.destination);
+      await setupAudioProcessor(ctx, source, monitor);
 
       let finalReceived = false;
       liveTranscriptRef.current = "";
@@ -328,7 +556,7 @@ export default function VoiceInput({
         try {
           const payload = JSON.parse(event.data);
 
-          if (payload?.type === "partial_transcript") {
+          if (payload?.type === "partial") {
             const snapshot = (payload.snapshot || "").trim();
             const delta = (payload.delta || "").trim();
 
@@ -338,20 +566,20 @@ export default function VoiceInput({
               liveTranscriptRef.current = appendDelta(liveTranscriptRef.current, delta);
             }
 
-            onPartialTranscript?.(liveTranscriptRef.current);
+            onEvent?.({ type: "partial", text: liveTranscriptRef.current });
             return;
           }
 
-          if (payload?.type === "final_transcript") {
+          if (payload?.type === "final") {
             finalReceived = true;
             const text = (payload.transcript || "").trim();
             if (text) {
-              onTranscript?.(text);
+              onEvent?.({ type: "final", text });
             } else {
               resolveTerminal("error", "Could not transcribe. Please try again.");
               return;
             }
-            resolveTerminal("final_transcript");
+            resolveTerminal("final");
             return;
           }
 
@@ -361,24 +589,9 @@ export default function VoiceInput({
             return;
           }
 
-          if (payload?.type === "timeout") {
-            finalReceived = true;
-            resolveTerminal("timeout", payload.message || "Transcription timed out. Please try again.");
-            return;
-          }
-
           if (payload?.type === "error") {
             finalReceived = true;
-            resolveTerminal("error", payload.message || "Transcription failed");
-            return;
-          }
-
-          if (
-            payload?.type === "ready" ||
-            payload?.type === "recording_started" ||
-            payload?.type === "progress" ||
-            payload?.type === "pong"
-          ) {
+            resolveTerminal(payload.kind === "timeout" ? "timeout" : "error", payload.message || "Transcription failed");
             return;
           }
 
@@ -412,104 +625,26 @@ export default function VoiceInput({
         type: "start",
         session_id: getChatSessionId(),
         utterance_id: crypto.randomUUID(),
-        mime_type: rec.mimeType || mimeType || "audio/webm",
+        audio_format: "linear16",
+        sample_rate_hertz: SAMPLE_RATE,
       };
 
       logVoiceUi("sending_start", {
         readyState: ws.readyState,
-        mimeType: startPayload.mime_type,
+        audioFormat: startPayload.audio_format,
+        sampleRateHertz: startPayload.sample_rate_hertz,
         utteranceId: startPayload.utterance_id,
       });
       ws.send(JSON.stringify(startPayload));
 
-      rec.ondataavailable = async (event) => {
-        if (!event.data || event.data.size === 0) return;
-        if (phaseRef.current === SESSION_PHASE.IDLE) {
-          logVoiceUi("dropping_chunk_after_idle", { size: event.data.size });
-          return;
-        }
-
-        const sendPromise = (async () => {
-          const socket = wsRef.current;
-          if (!socket || socket.readyState !== WebSocket.OPEN) {
-            logVoiceUi("dropping_chunk_socket_not_open", {
-              size: event.data.size,
-              phase: phaseRef.current,
-              readyState: socket?.readyState ?? "none",
-            });
-            return;
-          }
-
-          const bytes = await event.data.arrayBuffer();
-          const activeSocket = wsRef.current;
-          if (!activeSocket || activeSocket.readyState !== WebSocket.OPEN) {
-            logVoiceUi("dropping_chunk_after_buffer", {
-              size: bytes.byteLength,
-              phase: phaseRef.current,
-              readyState: activeSocket?.readyState ?? "none",
-            });
-            return;
-          }
-
-          logVoiceUi("sending_chunk", {
-            size: bytes.byteLength,
-            phase: phaseRef.current,
-            readyState: activeSocket.readyState,
-          });
-          activeSocket.send(bytes);
-          touchStreamingActivity("chunk_sent");
-        })();
-
-        pendingChunkSendsRef.current.add(sendPromise);
-        try {
-          await sendPromise;
-        } finally {
-          pendingChunkSendsRef.current.delete(sendPromise);
-        }
-      };
-
-      rec.onstop = async () => {
-        logVoiceUi("recorder_onstop_fired", { phase: phaseRef.current });
-        if (phaseRef.current !== SESSION_PHASE.STOPPING) {
-          return;
-        }
-
-        await waitForPendingChunkSends();
-
-        const socket = wsRef.current;
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
-          resolveTerminal("error", "Voice transcription connection is not open");
-          return;
-        }
-
-        clearInitialSpeechTimeout();
-        clearStreamingInactivityTimeout();
-        setPhase(SESSION_PHASE.WAITING_FINAL);
-        const stopPayload = {
-          type: "stop",
-          reason: stopReasonRef.current,
-          speech_stats: getSpeechStats(),
-        };
-        socket.send(JSON.stringify(stopPayload));
-        logVoiceUi("sending_websocket_stop", { readyState: socket.readyState, ...stopPayload });
-
-        postStopFinalizationTimeoutRef.current = window.setTimeout(() => {
-          if (!terminalResolvedRef.current) {
-            logVoiceUi("post_stop_finalization_timeout");
-            resolveTerminal("timeout", "Transcription timed out while finalizing.");
-          }
-        }, POST_STOP_FINALIZATION_TIMEOUT_MS);
-      };
-
-      rec.start(CHUNK_MS);
       recordingStartedAtRef.current = Date.now();
       setPhase(SESSION_PHASE.RECORDING);
-      logVoiceUi("recorder_started", {
+      logVoiceUi("pcm_capture_started", {
+        mode: captureModeRef.current,
         chunkMs: CHUNK_MS,
-        mimeType: rec.mimeType || mimeType || "audio/webm",
+        inputSampleRate: ctx.sampleRate,
+        targetSampleRate: SAMPLE_RATE,
       });
-      onListeningChange?.(true);
-      onProcessingChange?.(false);
       emitVoiceState("listening");
       armInitialSpeechTimeout();
       touchStreamingActivity("recording_started");
@@ -518,7 +653,7 @@ export default function VoiceInput({
       let silenceStart = null;
 
       function tick() {
-        if (phaseRef.current !== SESSION_PHASE.RECORDING || rec.state !== "recording") return;
+        if (phaseRef.current !== SESSION_PHASE.RECORDING || !processorNodeRef.current) return;
 
         analyser.getByteTimeDomainData(buffer);
         const rms = Math.sqrt(buffer.reduce((sum, value) => sum + (value - 128) ** 2, 0) / buffer.length);
@@ -582,7 +717,11 @@ export default function VoiceInput({
       }
     } catch (error) {
       emitVoiceState("error");
-      onError?.(error.message || "Microphone access denied");
+      onEvent?.({
+        type: "error",
+        kind: "error",
+        message: error.message || "Microphone access denied",
+      });
       finalizeSession("capture_error");
     }
   }
@@ -604,7 +743,7 @@ export default function VoiceInput({
 
   useEffect(() => {
     mountedRef.current = true;
-    onSessionBusyChange?.(false);
+    onEvent?.({ type: "busy", busy: false });
     logVoiceUi("mounted");
 
     return () => {
@@ -642,4 +781,58 @@ function appendDelta(base, delta) {
     return `${base}${delta}`;
   }
   return `${base} ${delta}`;
+}
+
+function appendInt16Buffer(base, addition) {
+  if (!base.length) return addition;
+  if (!addition.length) return base;
+
+  const merged = new Int16Array(base.length + addition.length);
+  merged.set(base, 0);
+  merged.set(addition, base.length);
+  return merged;
+}
+
+function downsampleFloat32Buffer(buffer, inputSampleRate, outputSampleRate) {
+  if (!buffer.length) return new Float32Array(0);
+  if (inputSampleRate === outputSampleRate || inputSampleRate < outputSampleRate) {
+    return buffer.slice();
+  }
+
+  const sampleRateRatio = inputSampleRate / outputSampleRate;
+  const newLength = Math.max(1, Math.round(buffer.length / sampleRateRatio));
+  const result = new Float32Array(newLength);
+  let offsetBuffer = 0;
+
+  for (let index = 0; index < newLength; index += 1) {
+    const nextOffsetBuffer = Math.min(
+      buffer.length,
+      Math.round((index + 1) * sampleRateRatio),
+    );
+
+    let sum = 0;
+    let count = 0;
+    for (let sampleIndex = offsetBuffer; sampleIndex < nextOffsetBuffer; sampleIndex += 1) {
+      sum += buffer[sampleIndex];
+      count += 1;
+    }
+
+    result[index] = count > 0
+      ? sum / count
+      : buffer[Math.min(offsetBuffer, buffer.length - 1)] ?? 0;
+    offsetBuffer = nextOffsetBuffer;
+  }
+
+  return result;
+}
+
+function float32ToInt16(buffer) {
+  const result = new Int16Array(buffer.length);
+
+  for (let index = 0; index < buffer.length; index += 1) {
+    const sample = Math.max(-1, Math.min(1, buffer[index]));
+    result[index] = sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7fff);
+  }
+
+  return result;
 }

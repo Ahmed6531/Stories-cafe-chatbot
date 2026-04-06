@@ -1,5 +1,35 @@
 const FILLER_WORDS = new Set(['uh', 'um', 'uhh', 'umm', 'er', 'erm', 'ah'])
 
+// Menu words that STT commonly mishears. Keyed by the wrong word → correct word.
+// Only single-word substitutions; phrases are handled by phrase hints on the server.
+const STT_CORRECTIONS = new Map([
+  ['letter', 'latte'],
+  ['lat', 'latte'],
+  ['lattay', 'latte'],
+  ['expresso', 'espresso'],
+  ['capuccino', 'cappuccino'],
+  ['capachino', 'cappuccino'],
+  ['macchiatto', 'macchiato'],
+  ['americano', 'americano'], // sometimes transcribed as "americana"
+  ['americana', 'americano'],
+  ['moca', 'mocha'],
+  ['matcha', 'matcha'], // often fine, but just in case
+  ['crossant', 'croissant'],
+  ['croisant', 'croissant'],
+])
+
+function applyMenuCorrections(text) {
+  return text
+    .split(' ')
+    .map((word) => {
+      const lower = word.toLowerCase().replace(/[.,!?;]+$/, '')
+      const punctuation = word.slice(lower.length)
+      const corrected = STT_CORRECTIONS.get(lower)
+      return corrected ? corrected + punctuation : word
+    })
+    .join(' ')
+}
+
 function normalizeWhitespace(text) {
   return String(text || '').replace(/\s+/g, ' ').trim()
 }
@@ -78,7 +108,8 @@ export function normalizeTranscriptForUi(text) {
 
 export function normalizeTranscriptForRouting(text) {
   const trimmed = trimLeadingFillers(text)
-  const withoutDuplicateWords = collapseAdjacentDuplicateWords(trimmed)
+  const corrected = applyMenuCorrections(trimmed)
+  const withoutDuplicateWords = collapseAdjacentDuplicateWords(corrected)
   const withoutDuplicatePhrases = collapseAdjacentDuplicatePhrases(withoutDuplicateWords)
   return normalizePunctuation(withoutDuplicatePhrases)
 }
