@@ -1,6 +1,7 @@
 .env
 node_modules/
 node_modulesnpm
+chatbot/gcp-credentials.json
 chatbot/venv/
 chatbot/.venv/
 chatbot/.env
