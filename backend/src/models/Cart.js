@@ -4,6 +4,7 @@ const SelectedOptionSchema = new mongoose.Schema(
   {
     optionName: { type: String, required: true, trim: true },
     suboptionName: { type: String, trim: true, default: undefined },
+    groupId: { type: String, trim: true, default: undefined },
   },
   { _id: false },
 );

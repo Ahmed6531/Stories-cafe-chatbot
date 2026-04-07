@@ -1,10 +1,23 @@
 import { Router } from "express";
-import { createOrder, listOrders } from "../controllers/orders.controller.js";
+import {
+  createOrder,
+  listOrders,
+  getMyOrders,
+  getOrderStatus,
+  updateOrderStatus
+} from "../controllers/orders.controller.js";
 import { authenticateOptional } from "../middleware/auth.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = Router();
 
+router.get("/my", requireAuth, getMyOrders);
+router.get("/:orderNumber/status", authenticateOptional, getOrderStatus);
+
 router.post("/", authenticateOptional, createOrder);
-router.get("/", listOrders);
+
+// Admin only
+router.get("/", requireRole("admin"), listOrders);
+router.patch("/:id/status", requireRole("admin"), updateOrderStatus);
 
 export default router;

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { useEffect, useRef, useState } from "react"
 import {
   fetchMenu,
@@ -12,6 +13,14 @@ import VariantGroupsField from "../../components/admin/variantGroupsField"
 import { styled } from "@mui/material/styles"
 import Box from "@mui/material/Box"
 import Typography from "@mui/material/Typography"
+=======
+import { useEffect, useState } from "react"
+import { fetchMenu, createMenuItem, updateMenuItem, deleteMenuItem } from "../../API/menuApi"
+import { styled } from '@mui/material/styles'
+import Box from '@mui/material/Box'
+import Typography from '@mui/material/Typography'
+import { invalidateCategoriesCache } from '../../API/menuApi';
+>>>>>>> 5370ee2606c5c2c37398816f6db901e97529591d
 
 // ── Styled components ──────────────────────────────────────────────────────────
 
@@ -327,6 +336,7 @@ export default function AdminItems() {
     if (msg) { setFormError(msg); return }
     setFormError("")
 
+<<<<<<< HEAD
     await submitMenuItem({
       editingId,
       form,
@@ -343,12 +353,38 @@ export default function AdminItems() {
       setFormError,
       setSaving,
     })
+=======
+    const payload = { ...form, basePrice: Number(form.basePrice) }
+    setSaving(true)
+    try {
+      if (editingId) {
+        await updateMenuItem(editingId, payload)
+      } else {
+        await createMenuItem(payload)
+      }
+
+      invalidateCategoriesCache()
+
+      const data = await fetchMenu()
+      setItems(data.items)
+      setForm(EMPTY_FORM)
+      setEditingId(null)
+      setFormError('')
+    } catch (err) {
+      setFormError(err.message)
+    } finally {
+      setSaving(false)
+    }
+>>>>>>> 5370ee2606c5c2c37398816f6db901e97529591d
   }
 
   async function handleDelete(id) {
     if (!confirm("Delete this item?")) return
     try {
       await deleteMenuItem(id)
+
+      invalidateCategoriesCache()
+
       const data = await fetchMenu()
       setItems(data.items)
     } catch (err) {

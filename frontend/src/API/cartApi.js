@@ -14,6 +14,10 @@ export async function updateCartItemApi(lineId, qty) {
   const response = await http.patch(`/cart/items/${lineId}`, { qty })
   return response.data
 }
+export async function updateCartItemFull(lineId, { qty, selectedOptions, instructions }) {
+  const response = await http.patch(`/cart/items/${lineId}`, { qty, selectedOptions, instructions })
+  return response.data
+}
 
 export async function removeFromCartApi(lineId) {
   const response = await http.delete(`/cart/items/${lineId}`)

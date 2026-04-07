@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Box,
@@ -11,32 +11,26 @@ import {
 import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import { adminLogin } from "../../API/adminApi";
+import { useSession } from "../../hooks/useSession";
 
 export default function AdminLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const token = localStorage.getItem("adminToken");
-
-    if (token) {
-      navigate("/admin");
-    }
-  }, [navigate]);
+  const { refreshSession } = useSession();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
     try {
-      const data = await adminLogin({ email, password });
-
-      localStorage.setItem("adminToken", data.token);
+      await adminLogin({ email, password });
+      await refreshSession();
       navigate("/admin");
-    } catch {
-      setError("Invalid email or password");
+    } catch (err) {
+      const message = err.response?.data?.error?.message || "Invalid email or password";
+      setError(message);
     }
   };
 
@@ -124,9 +118,18 @@ export default function AdminLogin() {
           />
 
           {error && (
-            <Typography color="error" textAlign="center">
+            <p
+              role="status"
+              style={{
+                margin: '-6px 0 0 0',
+                color: '#d93025',
+                fontStyle: 'italic',
+                fontWeight: 600,
+                fontSize: '12px',
+              }}
+            >
               {error}
-            </Typography>
+            </p>
           )}
 
           <Button
