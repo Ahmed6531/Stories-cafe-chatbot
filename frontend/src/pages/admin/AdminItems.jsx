@@ -3,6 +3,7 @@ import { fetchMenu, createMenuItem, updateMenuItem, deleteMenuItem } from "../..
 import { styled } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
+import { invalidateCategoriesCache } from '../../API/menuApi';
 
 // ── Styled components ──────────────────────────────────────────────────────────
 
@@ -232,6 +233,9 @@ export default function AdminItems() {
       } else {
         await createMenuItem(payload)
       }
+
+      invalidateCategoriesCache()
+
       const data = await fetchMenu()
       setItems(data.items)
       setForm(EMPTY_FORM)
@@ -248,6 +252,9 @@ export default function AdminItems() {
     if (!confirm('Delete this item?')) return
     try {
       await deleteMenuItem(id)
+
+      invalidateCategoriesCache()
+
       const data = await fetchMenu()
       setItems(data.items)
     } catch (err) {

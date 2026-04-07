@@ -3,6 +3,7 @@ import { styled } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
+import { useSession } from '../../hooks/useSession'
 
 const PageWrap = styled(Box)(() => ({
   display: 'flex',
@@ -50,9 +51,10 @@ const CardSubtext = styled(Typography)(({ theme }) => ({
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
+  const { logout } = useSession()
 
-  const handleLogout = () => {
-    localStorage.removeItem("adminToken")
+  const handleLogout = async () => {
+    await logout()
     navigate("/admin/login")
   }
 

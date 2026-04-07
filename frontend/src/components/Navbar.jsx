@@ -1,11 +1,23 @@
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
 import { useCart } from '../state/useCart'
+import { useSession } from '../hooks/useSession'
 import { styled, keyframes, useTheme } from '@mui/material/styles'
+import chatbotHttp from '../API/chatbotHttp'
+import { isDeadCart } from '../API/http'
 import Box from '@mui/material/Box'
 import Tooltip from '@mui/material/Tooltip'
 import ChatWidget from './ChatWidget/ChatWidget'
 import '../styles/index.css'
+
+function getChatSessionId() {
+  let id = localStorage.getItem('chatSessionId')
+  if (!id) {
+    id = crypto.randomUUID()
+    localStorage.setItem('chatSessionId', id)
+  }
+  return id
+}
 
 const Topbar = styled('header')(({ theme }) => ({
   padding: '0 20px',
@@ -211,7 +223,32 @@ const TopbarActionsWrap = styled(Box)(() => ({
 export default function Navbar() {
   const theme = useTheme()
   const { brand } = theme
+  const initialMessages = useMemo(() => {
+    try {
+      const saved = localStorage.getItem(CHAT_STORAGE_KEY)
+      if (!saved) return []
+      const savedAtRaw = localStorage.getItem(CHAT_STORAGE_TS_KEY)
+      const savedAt = Number(savedAtRaw)
+      if (!Number.isFinite(savedAt) || Date.now() - savedAt > CHAT_TTL_MS) {
+        localStorage.removeItem(CHAT_STORAGE_KEY)
+        localStorage.removeItem(CHAT_STORAGE_TS_KEY)
+        localStorage.removeItem('chatSessionId')
+        return []
+      }
+      const parsed = JSON.parse(saved)
+      return Array.isArray(parsed) ? parsed : []
+    } catch (e) {
+      console.error('Failed to restore chat history:', e)
+      localStorage.removeItem(CHAT_STORAGE_KEY)
+      localStorage.removeItem(CHAT_STORAGE_TS_KEY)
+      localStorage.removeItem('chatSessionId')
+      return []
+    }
+  }, [])
 
+  const { user, loading: sessionLoading, logout } = useSession()
+  const isAuthed = !sessionLoading && !!user
+  const showGuestActions = !sessionLoading && !user
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuClosing, setMenuClosing] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
@@ -224,7 +261,8 @@ export default function Navbar() {
   const pageRef = useRef(null)
   const pendingCheckoutRef = useRef(false)
 
-  const { cartCount, refreshCart } = useCart()
+  const { cartCount, refreshCart, resetCart, state: cartState } = useCart()
+  const items = useMemo(() => cartState?.items ?? [], [cartState?.items])
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -241,9 +279,36 @@ export default function Navbar() {
     pageRef.current?.scrollTo({ top: 0, behavior: 'auto' })
   }, [location.pathname, location.search])
 
-  const handleLogout = () => {
-    localStorage.removeItem('token')
-    navigate('/login')
+  useEffect(() => {
+    setMessages((prev) => {
+      if (!prev.some((m) => m.bill && !m.billStale)) return prev
+      return prev.map((m) => {
+        if (!m.bill || m.billStale) return m
+        const optSig = (opts) => (opts || []).map((o) => `${o.optionName}:${o.suboptionName || ''}`).sort().join('|')
+        const billSig = m.bill.items
+          .map((i) => `${i.item_name}:${i.quantity}:${optSig(i.selectedOptions)}:${i.instructions || ''}`)
+          .sort()
+          .join(',')
+        const cartSig = items
+          .map((i) => `${i.name}:${i.qty}:${optSig(i.selectedOptions)}:${i.instructions || ''}`)
+          .sort()
+          .join(',')
+        return billSig === cartSig ? m : { ...m, billStale: true }
+      })
+    })
+  }, [items])
+
+  const handleLogout = async () => {
+    await logout()
+    localStorage.removeItem('cartId')
+    localStorage.removeItem('chatSessionId')
+    localStorage.removeItem(CHAT_STORAGE_KEY)
+    localStorage.removeItem(CHAT_STORAGE_TS_KEY)
+    resetCart()
+    setMessages([])
+    if (location.pathname.startsWith('/dashboard')) {
+      navigate('/')
+    }
   }
 
   const closeMenu = () => {
@@ -312,6 +377,159 @@ export default function Navbar() {
     }
   }, [])
 
+  useEffect(() => {
+    if (messages.length === 0) {
+      localStorage.removeItem(CHAT_STORAGE_KEY)
+      localStorage.removeItem(CHAT_STORAGE_TS_KEY)
+      return
+    }
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages))
+    localStorage.setItem(CHAT_STORAGE_TS_KEY, String(Date.now()))
+  }, [messages])
+
+  const stopPendingReply = () => {
+    if (pendingReplyTimeoutRef.current) {
+      window.clearTimeout(pendingReplyTimeoutRef.current)
+      pendingReplyTimeoutRef.current = null
+    }
+    setTyping(false)
+    setVoiceActive(false)
+    setMicMode('idle')
+  }
+
+  useEffect(() => {
+    if (!isSuccessRoute) return
+    if (pendingReplyTimeoutRef.current) {
+      window.clearTimeout(pendingReplyTimeoutRef.current)
+      pendingReplyTimeoutRef.current = null
+    }
+    setTyping(false)
+    setVoiceActive(false)
+    setMicMode('idle')
+    setChatInput('')
+    setMessages([])
+    setChipsVisible(true)
+    localStorage.removeItem(CHAT_STORAGE_KEY)
+    localStorage.removeItem(CHAT_STORAGE_TS_KEY)
+    localStorage.removeItem('chatSessionId')
+  }, [isSuccessRoute])
+
+  const toggleVoiceCapture = () => {
+    if (!isOnline) {
+      setVoiceError("You're offline. Reconnect to use voice input.")
+      return
+    }
+    if (typing || micMode === 'thinking') {
+      stopPendingReply()
+      return
+    }
+    if (voiceActive) {
+      setVoiceActive(false)
+      setMicMode('idle')
+      return
+    }
+    setVoiceActive(true)
+    setMicMode('listening')
+  }
+
+  const cycleMicMode = () => toggleVoiceCapture()
+
+  const appendMessage = (message) => {
+    setChipsVisible(false)
+    setMessages((m) => [...m, message])
+  }
+
+  const sendMessage = async (text) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    const session_id = getChatSessionId()
+    const cart_id = localStorage.getItem('cartId') || null
+
+    setVoiceActive(false)
+    appendMessage({ id: Date.now(), role: 'user', text: trimmed, time: now })
+    setChatInput('')
+    setMicMode('thinking')
+    setTyping(true)
+
+    try {
+      console.log("[CHAT REQUEST]", {
+        session_id,
+        cart_id,
+        message: trimmed,
+        timestamp: Date.now(),
+      })
+
+      const response = await chatbotHttp.post('/chat/message', {
+        session_id,
+        message: trimmed,
+        cart_id,
+      })
+      const data = response.data
+
+      console.log("[CHAT RESPONSE]", {
+        status: response.status,
+        session_id: data.session_id,
+        cart_updated: data.cart_updated,
+        returned_cart_id: data.cart_id,
+        intent: data.intent,
+        suggestions: data.suggestions?.length,
+      })
+
+      if (cart_id !== data.cart_id) {
+        console.warn("[CHAT CART SYNC]", { previous: cart_id, new: data.cart_id })
+      }
+
+      if (data.cart_id && !isDeadCart(data.cart_id)) {
+        localStorage.setItem('cartId', data.cart_id)
+      } else if (data.cart_updated && !data.cart_id) {
+        localStorage.removeItem('cartId')
+      }
+      if (data.cart_updated) refreshCart()
+      appendMessage({
+        id: Date.now() + 1,
+        role: 'bot',
+        text: data.reply,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        suggestions: data.suggestions || [],
+        bill: data.metadata?.bill || null,
+        intent: data.intent || null,
+      })
+      if (data.intent === 'confirm_checkout' && data.metadata?.pipeline_stage === 'checkout_redirect') {
+        setTimeout(() => {
+          pendingCheckoutRef.current = true
+          closeChat()
+        }, 1500)
+      }
+    } catch {
+      appendMessage({
+        id: Date.now() + 1,
+        role: 'bot',
+        text: "Sorry, I couldn't reach the assistant. Please try again.",
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      })
+    } finally {
+      setTyping(false)
+      setMicMode('idle')
+    }
+  }
+
+  const handleChipClick = (text) => sendMessage(text)
+  const handleConfirmCheckout = () => {
+    if (cartCount === 0) {
+      appendMessage({
+        id: Date.now(),
+        role: 'bot',
+        text: "Oops! Your cart is empty now! Add some items and we'll get you checked out.",
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      })
+      return
+    }
+    pendingCheckoutRef.current = true
+    closeChat()
+  }
+  const handleSend = () => sendMessage(chatInput)
   const openChat = () => {
     if (!isOnline) return
     if (menuClosing) {
@@ -329,51 +547,54 @@ export default function Navbar() {
     <div className="app-shell">
       <div className="content-shell">
         <main className="main">
-          <Topbar>
-            <TopbarLeft>
-              <Box
-                component="img"
-                src="/stories-logo.png"
-                alt="Stories"
-                sx={{ maxWidth: '112px', maxHeight: '26px', objectFit: 'contain', flexShrink: 0 }}
-                onError={(e) => { e.currentTarget.style.display = 'none' }}
-              />
-              {!isSuccessRoute && (
+          {!isSuccessRoute && (
+            <Topbar>
+              <TopbarLeft>
+                <Box
+                  component="img"
+                  src="/stories-logo.png"
+                  alt="Stories"
+                  sx={{ maxWidth: '112px', maxHeight: '26px', objectFit: 'contain', flexShrink: 0 }}
+                  onError={(e) => { e.currentTarget.style.display = 'none' }}
+                />
                 <TopbarNavWrap>
                   <Box sx={{ width: '1px', height: '18px', bgcolor: '#e9e9e9', mx: '6px', flexShrink: 0 }} />
                   <TopNavLink to="/" isActive={location.pathname === '/'}>Home</TopNavLink>
                   <TopNavLink to="/menu" isActive={location.pathname.startsWith('/menu')}>Menu</TopNavLink>
+                  {isAuthed && (
+                    <TopNavLink to="/dashboard" isActive={location.pathname === '/dashboard'}>
+                      My Orders
+                    </TopNavLink>
+                  )}
                 </TopbarNavWrap>
-              )}
-            </TopbarLeft>
+              </TopbarLeft>
 
-            <TopbarActionsWrap sx={{ display: isSuccessRoute ? 'none' : undefined }}>
-              {isAuthed ? (
-                <TopPillBtn isAuth type="button" onClick={handleLogout}>Logout</TopPillBtn>
-              ) : (
-                <TopPillBtn type="button" onClick={() => navigate('/login')}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="8" r="4" />
-                    <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-                  </svg>
-                  <span>Login</span>
+              <TopbarActionsWrap>
+                {isAuthed ? (
+                  <TopPillBtn isAuth type="button" onClick={handleLogout}>Logout</TopPillBtn>
+                ) : showGuestActions ? (
+                  <TopPillBtn type="button" onClick={() => navigate('/login')}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="8" r="4" />
+                      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+                    </svg>
+                    <span>Login</span>
+                  </TopPillBtn>
+                ) : null}
+
+                <TopPillBtn type="button" onClick={() => navigate('/cart')}>
+                  <Box component="span" aria-hidden="true" sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="9" cy="21" r="1" />
+                      <circle cx="20" cy="21" r="1" />
+                      <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.95-1.57L23 6H6" />
+                    </svg>
+                  </Box>
+                  <span>Cart</span>
+                  {cartCount > 0 && <CartBadge>{cartCount}</CartBadge>}
                 </TopPillBtn>
-              )}
+              </TopbarActionsWrap>
 
-              <TopPillBtn type="button" onClick={() => navigate('/cart')}>
-                <Box component="span" aria-hidden="true" sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="9" cy="21" r="1" />
-                    <circle cx="20" cy="21" r="1" />
-                    <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.95-1.57L23 6H6" />
-                  </svg>
-                </Box>
-                <span>Cart</span>
-                {cartCount > 0 && <CartBadge>{cartCount}</CartBadge>}
-              </TopPillBtn>
-            </TopbarActionsWrap>
-
-            {!isSuccessRoute && (
               <HamburgerBtn
                 type="button"
                 aria-label={menuOpen ? 'Close menu' : 'Open menu'}
@@ -396,11 +617,11 @@ export default function Navbar() {
                   </svg>
                 )}
               </HamburgerBtn>
-            )}
-          </Topbar>
+            </Topbar>
+          )}
 
           <div ref={pageRef} className="page">
-            <div className="page-content">
+            <div className={isSuccessRoute ? undefined : 'page-content'}>
               <Outlet />
             </div>
           </div>
@@ -454,12 +675,37 @@ export default function Navbar() {
               Cart
             </MenuPanelItem>
 
-            <MenuPanelItem type="button" isActive={location.pathname.startsWith('/login')} onClick={() => { closeMenu(); navigate('/login') }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-              </svg>
-              Login
-            </MenuPanelItem>
+            {isAuthed && (
+              <MenuPanelItem
+                type="button"
+                isActive={location.pathname === '/dashboard'}
+                onClick={() => { closeMenu(); navigate('/dashboard') }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
+                  <rect x="9" y="3" width="6" height="4" rx="1" />
+                  <path d="M9 12h6M9 16h4" />
+                </svg>
+                My Orders
+              </MenuPanelItem>
+            )}
+
+            {isAuthed ? (
+              <MenuPanelItem type="button" onClick={() => { closeMenu(); handleLogout() }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                Logout
+              </MenuPanelItem>
+            ) : showGuestActions ? (
+              <MenuPanelItem type="button" isActive={location.pathname.startsWith('/login')} onClick={() => { closeMenu(); navigate('/login') }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+                </svg>
+                Login
+              </MenuPanelItem>
+            ) : null}
           </MenuPanel>
         </>
       )}
