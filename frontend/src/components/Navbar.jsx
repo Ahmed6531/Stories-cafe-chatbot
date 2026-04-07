@@ -429,6 +429,7 @@ export default function Navbar() {
             onCloseComplete={handleCloseComplete}
             onClose={closeChat}
             onVoiceSessionBusyChange={setVoiceSessionBusy}
+            onConfirm={() => { pendingCheckoutRef.current = true; closeChat() }}
             isOnline={isOnline}
             refreshCart={refreshCart}
             isSuccessRoute={isSuccessRoute}
