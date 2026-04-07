@@ -3,21 +3,13 @@ import { useState, useEffect, useRef } from 'react'
 import { useCart } from '../state/useCart'
 import { useSession } from '../hooks/useSession'
 import { styled, keyframes, useTheme } from '@mui/material/styles'
-import chatbotHttp from '../API/chatbotHttp'
-import { isDeadCart } from '../API/http'
 import Box from '@mui/material/Box'
 import Tooltip from '@mui/material/Tooltip'
 import ChatWidget from './ChatWidget/ChatWidget'
 import '../styles/index.css'
 
-function getChatSessionId() {
-  let id = localStorage.getItem('chatSessionId')
-  if (!id) {
-    id = crypto.randomUUID()
-    localStorage.setItem('chatSessionId', id)
-  }
-  return id
-}
+const CHAT_STORAGE_KEY = 'chatMessages'
+const CHAT_STORAGE_TS_KEY = 'chatMessagesSavedAt'
 
 const Topbar = styled('header')(({ theme }) => ({
   padding: '0 20px',
@@ -223,32 +215,8 @@ const TopbarActionsWrap = styled(Box)(() => ({
 export default function Navbar() {
   const theme = useTheme()
   const { brand } = theme
-  const initialMessages = useMemo(() => {
-    try {
-      const saved = localStorage.getItem(CHAT_STORAGE_KEY)
-      if (!saved) return []
-      const savedAtRaw = localStorage.getItem(CHAT_STORAGE_TS_KEY)
-      const savedAt = Number(savedAtRaw)
-      if (!Number.isFinite(savedAt) || Date.now() - savedAt > CHAT_TTL_MS) {
-        localStorage.removeItem(CHAT_STORAGE_KEY)
-        localStorage.removeItem(CHAT_STORAGE_TS_KEY)
-        localStorage.removeItem('chatSessionId')
-        return []
-      }
-      const parsed = JSON.parse(saved)
-      return Array.isArray(parsed) ? parsed : []
-    } catch (e) {
-      console.error('Failed to restore chat history:', e)
-      localStorage.removeItem(CHAT_STORAGE_KEY)
-      localStorage.removeItem(CHAT_STORAGE_TS_KEY)
-      localStorage.removeItem('chatSessionId')
-      return []
-    }
-  }, [])
-
   const { user, loading: sessionLoading, logout } = useSession()
-  const isAuthed = !sessionLoading && !!user
-  const showGuestActions = !sessionLoading && !user
+
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuClosing, setMenuClosing] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
@@ -261,42 +229,22 @@ export default function Navbar() {
   const pageRef = useRef(null)
   const pendingCheckoutRef = useRef(false)
 
-  const { cartCount, refreshCart, resetCart, state: cartState } = useCart()
-  const items = useMemo(() => cartState?.items ?? [], [cartState?.items])
+  const { cartCount, refreshCart, resetCart } = useCart()
   const location = useLocation()
   const navigate = useNavigate()
 
+  const isAuthed = !sessionLoading && !!user
+  const showGuestActions = !sessionLoading && !user
   const isChatAllowedRoute =
     location.pathname === '/' ||
     location.pathname.startsWith('/menu') ||
     location.pathname === '/cart' ||
     location.pathname.startsWith('/item/')
-
   const isSuccessRoute = location.pathname === '/success'
-  const isAuthed = Boolean(localStorage.getItem('token'))
 
   useEffect(() => {
     pageRef.current?.scrollTo({ top: 0, behavior: 'auto' })
   }, [location.pathname, location.search])
-
-  useEffect(() => {
-    setMessages((prev) => {
-      if (!prev.some((m) => m.bill && !m.billStale)) return prev
-      return prev.map((m) => {
-        if (!m.bill || m.billStale) return m
-        const optSig = (opts) => (opts || []).map((o) => `${o.optionName}:${o.suboptionName || ''}`).sort().join('|')
-        const billSig = m.bill.items
-          .map((i) => `${i.item_name}:${i.quantity}:${optSig(i.selectedOptions)}:${i.instructions || ''}`)
-          .sort()
-          .join(',')
-        const cartSig = items
-          .map((i) => `${i.name}:${i.qty}:${optSig(i.selectedOptions)}:${i.instructions || ''}`)
-          .sort()
-          .join(',')
-        return billSig === cartSig ? m : { ...m, billStale: true }
-      })
-    })
-  }, [items])
 
   const handleLogout = async () => {
     await logout()
@@ -305,7 +253,6 @@ export default function Navbar() {
     localStorage.removeItem(CHAT_STORAGE_KEY)
     localStorage.removeItem(CHAT_STORAGE_TS_KEY)
     resetCart()
-    setMessages([])
     if (location.pathname.startsWith('/dashboard')) {
       navigate('/')
     }
@@ -377,159 +324,6 @@ export default function Navbar() {
     }
   }, [])
 
-  useEffect(() => {
-    if (messages.length === 0) {
-      localStorage.removeItem(CHAT_STORAGE_KEY)
-      localStorage.removeItem(CHAT_STORAGE_TS_KEY)
-      return
-    }
-    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages))
-    localStorage.setItem(CHAT_STORAGE_TS_KEY, String(Date.now()))
-  }, [messages])
-
-  const stopPendingReply = () => {
-    if (pendingReplyTimeoutRef.current) {
-      window.clearTimeout(pendingReplyTimeoutRef.current)
-      pendingReplyTimeoutRef.current = null
-    }
-    setTyping(false)
-    setVoiceActive(false)
-    setMicMode('idle')
-  }
-
-  useEffect(() => {
-    if (!isSuccessRoute) return
-    if (pendingReplyTimeoutRef.current) {
-      window.clearTimeout(pendingReplyTimeoutRef.current)
-      pendingReplyTimeoutRef.current = null
-    }
-    setTyping(false)
-    setVoiceActive(false)
-    setMicMode('idle')
-    setChatInput('')
-    setMessages([])
-    setChipsVisible(true)
-    localStorage.removeItem(CHAT_STORAGE_KEY)
-    localStorage.removeItem(CHAT_STORAGE_TS_KEY)
-    localStorage.removeItem('chatSessionId')
-  }, [isSuccessRoute])
-
-  const toggleVoiceCapture = () => {
-    if (!isOnline) {
-      setVoiceError("You're offline. Reconnect to use voice input.")
-      return
-    }
-    if (typing || micMode === 'thinking') {
-      stopPendingReply()
-      return
-    }
-    if (voiceActive) {
-      setVoiceActive(false)
-      setMicMode('idle')
-      return
-    }
-    setVoiceActive(true)
-    setMicMode('listening')
-  }
-
-  const cycleMicMode = () => toggleVoiceCapture()
-
-  const appendMessage = (message) => {
-    setChipsVisible(false)
-    setMessages((m) => [...m, message])
-  }
-
-  const sendMessage = async (text) => {
-    const trimmed = text.trim()
-    if (!trimmed) return
-
-    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    const session_id = getChatSessionId()
-    const cart_id = localStorage.getItem('cartId') || null
-
-    setVoiceActive(false)
-    appendMessage({ id: Date.now(), role: 'user', text: trimmed, time: now })
-    setChatInput('')
-    setMicMode('thinking')
-    setTyping(true)
-
-    try {
-      console.log("[CHAT REQUEST]", {
-        session_id,
-        cart_id,
-        message: trimmed,
-        timestamp: Date.now(),
-      })
-
-      const response = await chatbotHttp.post('/chat/message', {
-        session_id,
-        message: trimmed,
-        cart_id,
-      })
-      const data = response.data
-
-      console.log("[CHAT RESPONSE]", {
-        status: response.status,
-        session_id: data.session_id,
-        cart_updated: data.cart_updated,
-        returned_cart_id: data.cart_id,
-        intent: data.intent,
-        suggestions: data.suggestions?.length,
-      })
-
-      if (cart_id !== data.cart_id) {
-        console.warn("[CHAT CART SYNC]", { previous: cart_id, new: data.cart_id })
-      }
-
-      if (data.cart_id && !isDeadCart(data.cart_id)) {
-        localStorage.setItem('cartId', data.cart_id)
-      } else if (data.cart_updated && !data.cart_id) {
-        localStorage.removeItem('cartId')
-      }
-      if (data.cart_updated) refreshCart()
-      appendMessage({
-        id: Date.now() + 1,
-        role: 'bot',
-        text: data.reply,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        suggestions: data.suggestions || [],
-        bill: data.metadata?.bill || null,
-        intent: data.intent || null,
-      })
-      if (data.intent === 'confirm_checkout' && data.metadata?.pipeline_stage === 'checkout_redirect') {
-        setTimeout(() => {
-          pendingCheckoutRef.current = true
-          closeChat()
-        }, 1500)
-      }
-    } catch {
-      appendMessage({
-        id: Date.now() + 1,
-        role: 'bot',
-        text: "Sorry, I couldn't reach the assistant. Please try again.",
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      })
-    } finally {
-      setTyping(false)
-      setMicMode('idle')
-    }
-  }
-
-  const handleChipClick = (text) => sendMessage(text)
-  const handleConfirmCheckout = () => {
-    if (cartCount === 0) {
-      appendMessage({
-        id: Date.now(),
-        role: 'bot',
-        text: "Oops! Your cart is empty now! Add some items and we'll get you checked out.",
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      })
-      return
-    }
-    pendingCheckoutRef.current = true
-    closeChat()
-  }
-  const handleSend = () => sendMessage(chatInput)
   const openChat = () => {
     if (!isOnline) return
     if (menuClosing) {
@@ -681,8 +475,7 @@ export default function Navbar() {
                 isActive={location.pathname === '/dashboard'}
                 onClick={() => { closeMenu(); navigate('/dashboard') }}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
                   <rect x="9" y="3" width="6" height="4" rx="1" />
                   <path d="M9 12h6M9 16h4" />
@@ -692,7 +485,7 @@ export default function Navbar() {
             )}
 
             {isAuthed ? (
-              <MenuPanelItem type="button" onClick={() => { closeMenu(); handleLogout() }}>
+              <MenuPanelItem type="button" onClick={() => { closeMenu(); void handleLogout() }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
                 </svg>
