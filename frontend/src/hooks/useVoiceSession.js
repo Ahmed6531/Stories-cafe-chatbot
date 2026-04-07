@@ -150,7 +150,7 @@ function shouldClearVoiceError(micMode) {
 }
 
 function mapVoiceErrorKindToMode(kind) {
-  if (kind === MIC_MODE.NO_SPEECH) return MIC_MODE.NO_SPEECH
+  if (kind === 'no_speech' || kind === MIC_MODE.NO_SPEECH) return MIC_MODE.NO_SPEECH
   if (kind === 'timeout' || kind === MIC_MODE.TIMED_OUT) return MIC_MODE.TIMED_OUT
   return MIC_MODE.ERROR
 }

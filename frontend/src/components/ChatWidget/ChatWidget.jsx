@@ -152,6 +152,7 @@ export default function ChatWidget({
   const pendingPartialRef = useRef({ confirmed: '', interim: '' })
   const firstPartialRenderedRef = useRef(false)
   const errorResetTimeoutRef = useRef(null)
+  const audioCtxRef = useRef(null)
 
   const hasConversation = messages.length > 0
 
@@ -298,6 +299,12 @@ export default function ChatWidget({
       voice.requestStop()
       return
     }
+    // iOS requires AudioContext to be created/resumed synchronously inside the click handler,
+    // before any await. VoiceInput reads this ref and reuses the context instead of creating its own.
+    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+      audioCtxRef.current = new AudioContext()
+    }
+    audioCtxRef.current.resume().catch(() => {})
     voice.requestStart()
   }
 
@@ -444,6 +451,7 @@ export default function ChatWidget({
             <VoiceInput
               active={voice.active}
               onEvent={handleVoiceEvent}
+              audioContextRef={audioCtxRef}
             />
             <div className="cp-header">
               <div className="chat-assistant-meta">

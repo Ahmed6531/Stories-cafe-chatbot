@@ -1,5 +1,8 @@
 import asyncio
 import json
+import shutil
+import subprocess
+import threading
 import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -81,12 +84,27 @@ async def voice_stream(websocket: WebSocket):
     session_id = utterance_id = ""
     first_chunk = True
     terminal_sent = False
+    is_aac = False
     st = rt = None
 
-    cfg = speech.StreamingRecognitionConfig(
+    cfg_webm = speech.StreamingRecognitionConfig(
         config=speech.RecognitionConfig(
             encoding=speech.RecognitionConfig.AudioEncoding.WEBM_OPUS,
             sample_rate_hertz=48000,
+            language_code="en-US",
+            alternative_language_codes=["ar-LB"],
+            enable_automatic_punctuation=True,
+            model="latest_short",
+            audio_channel_count=1,
+            speech_contexts=[speech.SpeechContext(phrases=_PHRASES, boost=20.0)],
+        ),
+        interim_results=True,
+    )
+
+    cfg_linear16 = speech.StreamingRecognitionConfig(
+        config=speech.RecognitionConfig(
+            encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+            sample_rate_hertz=16000,
             language_code="en-US",
             alternative_language_codes=["ar-LB"],
             enable_automatic_punctuation=True,
@@ -112,9 +130,53 @@ async def voice_stream(websocket: WebSocket):
                 return
             yield speech.StreamingRecognizeRequest(audio_content=chunk)
 
+    def _gen_aac():
+        """Transcode MP4/AAC to LINEAR16 PCM via FFmpeg, yielding STT requests."""
+        proc = subprocess.Popen(
+            [
+                "ffmpeg",
+                "-fflags", "+nobuffer",
+                "-i", "pipe:0",
+                "-f", "s16le",
+                "-ar", "16000",
+                "-ac", "1",
+                "pipe:1",
+                "-loglevel", "quiet",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+
+        def _write_stdin():
+            try:
+                while True:
+                    chunk = asyncio.run_coroutine_threadsafe(aq.get(), loop).result()
+                    if chunk is None:
+                        break
+                    proc.stdin.write(chunk)
+                    proc.stdin.flush()
+            finally:
+                proc.stdin.close()
+
+        writer = threading.Thread(target=_write_stdin, daemon=True)
+        writer.start()
+
+        try:
+            while True:
+                pcm = proc.stdout.read(4096)
+                if not pcm:
+                    break
+                yield speech.StreamingRecognizeRequest(audio_content=pcm)
+        finally:
+            writer.join(timeout=5)
+            proc.wait()
+
     def _stt():
         try:
-            for resp in _make_client().streaming_recognize(cfg, _gen()):
+            gen = _gen_aac() if is_aac else _gen()
+            cfg = cfg_linear16 if is_aac else cfg_webm
+            for resp in _make_client().streaming_recognize(cfg, gen):
                 for result in resp.results:
                     asyncio.run_coroutine_threadsafe(rq.put(result), loop).result(timeout=5)
         except Exception as exc:
@@ -152,7 +214,8 @@ async def voice_stream(websocket: WebSocket):
 
             if (raw := msg.get("bytes")) is not None:
                 if first_chunk:
-                    raw = _patch_opus_head(raw)
+                    if not is_aac:
+                        raw = _patch_opus_head(raw)
                     first_chunk = False
                 await aq.put(raw)
                 continue
@@ -165,7 +228,18 @@ async def voice_stream(websocket: WebSocket):
             if ev == "start":
                 session_id = str(payload.get("session_id") or "")
                 utterance_id = str(payload.get("utterance_id") or uuid.uuid4())
-                print(f"[VOICE][{conn_id}] start session={session_id} utterance={utterance_id}")
+                mime_type = str(payload.get("mime_type") or "")
+                is_aac = mime_type.startswith("audio/mp4")
+                print(f"[VOICE][{conn_id}] start session={session_id} utterance={utterance_id} mime={mime_type} aac={is_aac}")
+
+                if is_aac and not shutil.which("ffmpeg"):
+                    terminal_sent = True
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Server does not support MP4/AAC audio. Please use Chrome or Firefox.",
+                    })
+                    break
+
                 st = asyncio.create_task(run_in_threadpool(_stt))
                 rt = asyncio.create_task(_results())
                 continue

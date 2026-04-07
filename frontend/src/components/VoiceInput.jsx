@@ -10,7 +10,6 @@ const INITIAL_SPEECH_TIMEOUT_MS = 5000;
 const INACTIVITY_TIMEOUT_MS = 6000;
 const FINALIZATION_TIMEOUT_MS = 15000;
 const TIMESLICE_MS = 60;
-const MIME = "audio/webm;codecs=opus";
 const BITS = 128000;
 const PHASE = {
   IDLE: "idle",
@@ -19,6 +18,12 @@ const PHASE = {
   STOPPING: "stopping",
   WAITING_FINAL: "waiting_final",
 };
+
+function pickMime() {
+  if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) return "audio/webm;codecs=opus";
+  if (MediaRecorder.isTypeSupported("audio/mp4;codecs=mp4a.40.2")) return "audio/mp4;codecs=mp4a.40.2";
+  return null;
+}
 
 function getSessionId() {
   let id = sessionStorage.getItem("chatSessionId");
@@ -31,12 +36,13 @@ function toWsUrl(url) {
   return s.startsWith("https://") ? s.replace("https://", "wss://") : s.replace("http://", "ws://");
 }
 
-export default function VoiceInput({ active, onEvent }) {
+export default function VoiceInput({ active, onEvent, audioContextRef }) {
   const mountedRef    = useRef(false);
   const desiredRef    = useRef(active);
   const phaseRef      = useRef(PHASE.IDLE);
   const streamRef     = useRef(null);
   const ctxRef        = useRef(null);
+  const ctxOwnedRef   = useRef(false);
   const recRef        = useRef(null);
   const wsRef         = useRef(null);
   const analyserRef   = useRef(null);
@@ -66,7 +72,9 @@ export default function VoiceInput({ active, onEvent }) {
   function releaseResources() {
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     streamRef.current?.getTracks().forEach((t) => t.stop());
-    ctxRef.current?.close().catch(() => {});
+    // Only close the AudioContext if we created it; if it came from audioContextRef we leave it open
+    if (ctxOwnedRef.current) ctxRef.current?.close().catch(() => {});
+    ctxOwnedRef.current = false;
     wsRef.current?.close();
     streamRef.current = ctxRef.current = analyserRef.current = recRef.current = wsRef.current = null;
     chunksRef.current = new Set();
@@ -126,9 +134,10 @@ export default function VoiceInput({ active, onEvent }) {
   async function capture() {
     if (phaseRef.current !== PHASE.IDLE) return;
 
-    if (!MediaRecorder.isTypeSupported(MIME)) {
+    const mime = pickMime();
+    if (!mime) {
       emitState("error");
-      onEvent?.({ type: "error", kind: "error", message: `Browser does not support ${MIME}` });
+      onEvent?.({ type: "error", kind: "error", message: "Your browser doesn't support audio recording. Please use Chrome, Firefox, or Safari 14.1+." });
       return;
     }
 
@@ -153,14 +162,21 @@ export default function VoiceInput({ active, onEvent }) {
       }
 
       streamRef.current = stream;
-      const ctx = new AudioContext();
+
+      // Use the AudioContext pre-created by the click handler (required for iOS gesture unlock).
+      // Fall back to creating our own if none was provided (e.g. desktop Chrome).
+      const externalCtx = audioContextRef?.current;
+      const ctx = (externalCtx && externalCtx.state !== "closed") ? externalCtx : new AudioContext();
+      ctxOwnedRef.current = ctx !== externalCtx;
       ctxRef.current = ctx;
+      if (ctx.state === "suspended") ctx.resume().catch(() => {});
+
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
       analyserRef.current = analyser;
       ctx.createMediaStreamSource(stream).connect(analyser);
 
-      const rec = new MediaRecorder(stream, { mimeType: MIME, audioBitsPerSecond: BITS });
+      const rec = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: BITS });
       recRef.current = rec;
 
       ws.onmessage = (evt) => {
@@ -184,7 +200,10 @@ export default function VoiceInput({ active, onEvent }) {
         } catch {} // eslint-disable-line no-empty
       };
 
-      ws.onerror = () => {};
+      ws.onerror = (evt) => {
+        console.error("[VoiceInput] WebSocket error", evt);
+        resolveTerminal("error", "Voice connection failed");
+      };
       ws.onclose = () => {
         wsRef.current = null;
         if (mountedRef.current && !terminalRef.current && phaseRef.current === PHASE.WAITING_FINAL) {
