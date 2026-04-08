@@ -436,6 +436,7 @@ export default function Navbar() {
             onClose={() => setMiniCartOpen(false)}
             anchorRef={cartBtnRef}
             lastAddedItem={lastAddedItem}
+            chatOpen={chatOpen}
           />
 
           <div ref={pageRef} className="page">

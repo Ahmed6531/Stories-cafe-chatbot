@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import ReactDOM from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 
 const placeholderImg = 'https://via.placeholder.com/32/ffffff/00704a?text=+'
 
-export default function MiniCartPopup({ open, onClose, anchorRef, lastAddedItem }) {
+export default function MiniCartPopup({ open, onClose, anchorRef, lastAddedItem, chatOpen }) {
   const navigate = useNavigate()
   const popupRef = useRef(null)
   const timerRef = useRef(null)
@@ -54,7 +55,7 @@ export default function MiniCartPopup({ open, onClose, anchorRef, lastAddedItem 
 
   const { image } = lastAddedItem
 
-  return (
+  return ReactDOM.createPortal(
     <>
       <style>{`
         @keyframes toastIn {
@@ -81,7 +82,7 @@ export default function MiniCartPopup({ open, onClose, anchorRef, lastAddedItem 
         style={{
           position: 'fixed',
           top: 64,
-          right: 16,
+          right: chatOpen ? 436 : 16,
           zIndex: 1300,
           display: 'flex',
           alignItems: 'center',
@@ -146,6 +147,7 @@ export default function MiniCartPopup({ open, onClose, anchorRef, lastAddedItem 
           </svg>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   )
 }

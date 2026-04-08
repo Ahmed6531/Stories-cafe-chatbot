@@ -343,6 +343,7 @@ export async function clearCart(req, res) {
     if (!cart) return res.json(emptyCartResponse());
     await Cart.findOneAndDelete({ cartId });
     res.set("x-cart-id", cartId);
+    res.set("Cache-Control", "no-store");
     res.json(emptyCartResponse());
   } catch (err) {
     res.status(500).json({ error: "Failed to clear cart" });
