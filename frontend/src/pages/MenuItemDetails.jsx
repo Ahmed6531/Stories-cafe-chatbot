@@ -929,11 +929,11 @@ const isEditMode = Boolean(cartItemToEdit)
   try {
     if (isEditMode) {
       await editCartItem(editLineId, { qty, selectedOptions, instructions: inst })
+      navigate('/cart')
     } else {
       await addToCart({ menuItemId: item.id, image: item.image, qty, selectedOptions, instructions: inst })
+      navigate('/menu')
     }
-    setSnackOpen(true)
-    setTimeout(() => navigate('/cart'), 500)
   } catch (err) {
     console.error('Failed to update cart:', err)
     alert('Failed to add to cart. Please try again.')
@@ -1066,13 +1066,6 @@ const isEditMode = Boolean(cartItemToEdit)
           </Stack>
         </CardContent>
       </Card>
-
-      <Snackbar
-        open={snackOpen}
-        autoHideDuration={2000}
-        onClose={() => setSnackOpen(false)}
-        message={isEditMode ? 'Item updated' : 'Item added to cart'}
-      />
     </Container>
   )
 }
