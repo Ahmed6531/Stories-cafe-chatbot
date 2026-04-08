@@ -340,11 +340,9 @@ export async function removeFromCart(req, res) {
 export async function clearCart(req, res) {
   try {
     const { cart, cartId } = await getExistingCart(req);
-    if (!cart) {
-      return res.json(emptyCartResponse());
-    }
-
+    if (!cart) return res.json(emptyCartResponse());
     await Cart.findOneAndDelete({ cartId });
+    res.set("x-cart-id", cartId);
     res.set("Cache-Control", "no-store");
     res.json(emptyCartResponse());
   } catch (err) {
