@@ -1,5 +1,5 @@
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import MiniCartPopup from '../components/MiniCartPopup'
 import { useCart } from '../state/useCart'
 import { useSession } from '../hooks/useSession'
@@ -231,21 +231,13 @@ export default function Navbar() {
   const pageRef = useRef(null)
   const pendingCheckoutRef = useRef(false)
 
-  const { cartCount, lastAddedItem, refreshCart, resetCart } = useCart()
-  const [miniCartOpen, setMiniCartOpen] = useState(false)
+  const { cartCount, lastAddedItem, refreshCart, resetCart, clearLastAddedItem } = useCart()
   const cartBtnRef = useRef(null)
   const location = useLocation()
   const navigate = useNavigate()
 
-  useEffect(() => {
-    if (lastAddedItem) setMiniCartOpen(true)
-  }, [lastAddedItem])
-
-  useEffect(() => {
-    if (location.pathname === '/cart' || location.pathname === '/checkout') {
-      setMiniCartOpen(false)
-    }
-  }, [location.pathname])
+  const onCart = location.pathname === '/cart' || location.pathname === '/checkout'
+  const miniCartOpen = !!lastAddedItem && !onCart
 
   const isAuthed = !sessionLoading && !!user
   const showGuestActions = !sessionLoading && !user
@@ -433,7 +425,7 @@ export default function Navbar() {
 
           <MiniCartPopup
             open={miniCartOpen}
-            onClose={() => setMiniCartOpen(false)}
+            onClose={clearLastAddedItem}
             anchorRef={cartBtnRef}
             lastAddedItem={lastAddedItem}
             chatOpen={chatOpen}

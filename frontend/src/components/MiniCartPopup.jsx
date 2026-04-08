@@ -128,7 +128,7 @@ export default function MiniCartPopup({ open, onClose, anchorRef, lastAddedItem,
         </span>
 
         <div
-          onClick={() => { triggerClose(); navigate('/cart') }}
+          onClick={() => { triggerClose(); setTimeout(() => navigate('/cart'), 220) }}
           style={{
             width: '28px',
             height: '28px',

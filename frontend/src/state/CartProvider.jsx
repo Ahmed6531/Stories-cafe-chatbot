@@ -122,6 +122,10 @@ export function CartProvider({ children }) {
     dispatch({ type: 'CART_RESET' })
   }, [])
 
+  const clearLastAddedItem = useCallback(() => {
+    dispatch({ type: 'CLEAR_LAST_ADDED' })
+  }, [])
+
   const value = useMemo(
     () => ({
       state,
@@ -133,9 +137,10 @@ export function CartProvider({ children }) {
       removeFromCart,
       clearCart,
       resetCart,
+      clearLastAddedItem,
       refreshCart: loadCart,
     }),
-    [state, addToCart, updateQty, editCartItem, removeFromCart, clearCart, resetCart, loadCart]
+    [state, addToCart, updateQty, editCartItem, removeFromCart, clearCart, resetCart, clearLastAddedItem, loadCart]
   )
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>

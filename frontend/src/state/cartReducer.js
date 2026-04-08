@@ -33,6 +33,8 @@ export function cartReducer(state, action) {
       };
     case "CART_RESET":
       return { ...initialCartState };
+    case "CLEAR_LAST_ADDED":
+      return { ...state, lastAddedItem: null };
     case "CART_ERROR":
       return { ...state, loading: false, error: action.payload || "Cart error" };
     case "REMOVE_ITEM":
