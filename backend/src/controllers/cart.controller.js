@@ -194,9 +194,8 @@ export async function clearCart(req, res) {
     cart.items = [];
     await cart.save();
 
-    const payload = await buildCartResponse(cart);
     res.set("x-cart-id", cartId);
-    res.json(payload);
+    res.json({ cartId: cart.cartId, count: 0, items: [] });
   } catch (err) {
     res.status(500).json({ error: "Failed to clear cart" });
   }

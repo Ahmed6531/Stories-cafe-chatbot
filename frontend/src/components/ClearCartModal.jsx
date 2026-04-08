@@ -1,14 +1,35 @@
+import { useEffect, useState } from 'react'
 import { Button, Dialog, DialogActions, DialogContent, Typography } from '@mui/material'
 import { useTheme } from '@mui/material/styles'
 
 export default function ClearCartModal({ open, onClose, onConfirm }) {
   const theme = useTheme()
   const { brand } = theme
+  const [isClearing, setIsClearing] = useState(false)
+
+  useEffect(() => {
+    if (!open) setIsClearing(false)
+  }, [open])
+
+  const handleClose = () => {
+    if (isClearing) return
+    onClose()
+  }
+
+  const handleConfirm = async () => {
+    setIsClearing(true)
+    try {
+      await onConfirm()
+      onClose()
+    } finally {
+      setIsClearing(false)
+    }
+  }
 
   return (
     <Dialog
       open={open}
-      onClose={onClose}
+      onClose={handleClose}
       aria-labelledby="clear-cart-title"
       BackdropProps={{
         sx: {
@@ -59,7 +80,8 @@ export default function ClearCartModal({ open, onClose, onConfirm }) {
       <DialogActions sx={{ p: 0, pt: 2, gap: 1.25 }}>
         <Button
           fullWidth
-          onClick={onClose}
+          onClick={handleClose}
+          disabled={isClearing}
           variant="outlined"
           sx={{
             minWidth: 0,
@@ -83,7 +105,8 @@ export default function ClearCartModal({ open, onClose, onConfirm }) {
         </Button>
         <Button
           fullWidth
-          onClick={() => { onConfirm(); onClose() }}
+          onClick={handleConfirm}
+          disabled={isClearing}
           variant="contained"
           sx={{
             minWidth: 0,
@@ -104,7 +127,7 @@ export default function ClearCartModal({ open, onClose, onConfirm }) {
             },
           }}
         >
-          Clear
+          {isClearing ? 'Clearing…' : 'Clear'}
         </Button>
       </DialogActions>
     </Dialog>
