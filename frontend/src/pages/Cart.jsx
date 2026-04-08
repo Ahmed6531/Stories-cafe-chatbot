@@ -3,25 +3,17 @@ import { Box, Button, Container, Stack, Typography } from '@mui/material'
 import { useTheme } from '@mui/material/styles'
 import LocalGroceryStoreOutlinedIcon from '@mui/icons-material/LocalGroceryStoreOutlined'
 import { useCart } from '../state/useCart'
-import { useState } from 'react'
-import ClearCartModal from '../components/ClearCartModal'
 import CartSummary from '../components/CartSummary'
+import CartItemsSkeleton from '../components/CartItemsSkeleton'
 
 export default function Cart() {
   const theme = useTheme()
   const { brand } = theme
   const navigate = useNavigate()
-  const { state, clearCart } = useCart()
+  const { state } = useCart()
   const { items: cartItems, loading } = state
-  const [clearModalOpen, setClearModalOpen] = useState(false)
-
-  if (loading) {
-    return (
-      <Container sx={{ py: 3, textAlign: 'center' }}>
-        <Typography sx={{ fontFamily: brand.fontBase }}>Loading your cart...</Typography>
-      </Container>
-    )
-  }
+  const hasItems = cartItems.length > 0
+  const showEmptyState = !loading && !hasItems
 
   return (
     <Container
@@ -34,30 +26,23 @@ export default function Cart() {
         '& .MuiButton-root': { fontFamily: brand.fontBase },
       }}
     >
-      <ClearCartModal
-        open={clearModalOpen}
-        onClose={() => setClearModalOpen(false)}
-        onConfirm={clearCart}
-        itemCount={cartItems.length}
-      />
-      <Stack direction="row" alignItems="center" justifyContent="center" sx={{ mb: { xs: 2.5, md: 3 } }}>
-        <Typography
-          variant="h5"
-          sx={{
-            fontFamily: brand.fontDisplay,
-            fontSize: { xs: '1.25rem', sm: '1.5rem' },
-            fontWeight: 900,
-            color: brand.primary,
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-            textAlign: 'center',
-          }}
-        >
-          Your Cart
-        </Typography>
-      </Stack>
+      <Typography
+        variant="h5"
+        sx={{
+          fontFamily: brand.fontDisplay,
+          fontSize: { xs: '1.25rem', sm: '1.5rem' },
+          fontWeight: 900,
+          color: brand.primary,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
+          textAlign: 'center',
+          mb: { xs: 2.5, md: 3 },
+        }}
+      >
+        Your Cart
+      </Typography>
 
-      {cartItems.length === 0 ? (
+      {showEmptyState ? (
         <Stack spacing={2} alignItems="center" textAlign="center" sx={{ py: 8 }}>
           <LocalGroceryStoreOutlinedIcon sx={{ fontSize: 50, color: brand.primary, opacity: 0.3 }} />
           <Typography variant="h6" fontWeight={800} sx={{ color: brand.textPrimary }}>
@@ -90,33 +75,7 @@ export default function Cart() {
             items={cartItems}
             mode="cartSummary"
             title="Review Order"
-            headerAction={
-              cartItems.length > 0 ? (
-                <Box
-                  component="button"
-                  type="button"
-                  onClick={() => setClearModalOpen(true)}
-                  sx={{
-                    border: 'none',
-                    background: 'transparent',
-                    p: 0,
-                    m: 0,
-                    color: '#b0b0a8',
-                    fontFamily: brand.fontBase,
-                    fontSize: '12px',
-                    fontWeight: 500,
-                    lineHeight: 1,
-                    cursor: 'pointer',
-                    '&:hover': {
-                      color: '#888',
-                      background: 'transparent',
-                    },
-                  }}
-                >
-                  Clear all
-                </Box>
-              ) : null
-            }
+            itemsContent={loading ? <CartItemsSkeleton /> : null}
             action={
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
                 <Button

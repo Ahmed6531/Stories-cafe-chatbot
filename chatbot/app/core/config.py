@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     stt_model: str = "whisper-large-v3-turbo"
     stt_language: str = "en"
+    google_credentials_json: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

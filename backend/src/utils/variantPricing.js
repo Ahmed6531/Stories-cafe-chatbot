@@ -1,11 +1,52 @@
+function normalizeSelectedOption(selection) {
+  if (typeof selection === "string") {
+    const optionName = selection.trim();
+    return optionName ? { optionName } : null;
+  }
+
+  if (!selection || typeof selection !== "object") {
+    return null;
+  }
+
+  const optionSource = selection.optionName ?? selection.name;
+  const optionName = String(optionSource || "").trim();
+  if (!optionName) {
+    return null;
+  }
+
+  const suboptionSource = selection.suboptionName ?? selection.sub;
+  const suboptionName = suboptionSource == null ? "" : String(suboptionSource).trim();
+  const groupSource = selection.groupId;
+  const groupId = groupSource == null ? "" : String(groupSource).trim();
+
+  return {
+    optionName,
+    ...(suboptionName ? { suboptionName } : {}),
+    ...(groupId ? { groupId } : {}),
+  };
+}
+
+function selectedOptionKey(selection) {
+  const normalized = normalizeSelectedOption(selection);
+  if (!normalized) {
+    return "";
+  }
+
+  return [normalized.groupId || "", normalized.optionName, normalized.suboptionName || ""].join("|");
+}
+
 export function sanitizeSelectedOptions(selectedOptions) {
   if (!Array.isArray(selectedOptions)) return [];
-  return selectedOptions.map(String);
+  return selectedOptions.map(normalizeSelectedOption).filter(Boolean);
 }
 
 export function sameSelectedOptions(a, b) {
-  const left = [...sanitizeSelectedOptions(a)].sort();
-  const right = [...sanitizeSelectedOptions(b)].sort();
+  const left = sanitizeSelectedOptions(a)
+    .map(selectedOptionKey)
+    .sort();
+  const right = sanitizeSelectedOptions(b)
+    .map(selectedOptionKey)
+    .sort();
 
   if (left.length !== right.length) return false;
   for (let i = 0; i < left.length; i += 1) {
@@ -27,10 +68,8 @@ export function resolveVariantGroupsForMenuItem(menuItem, variantGroupsById) {
 }
 
 export function calculateSelectedOptionsDelta(selectedOptions, variantGroups = []) {
-  const remaining = new Map();
-  sanitizeSelectedOptions(selectedOptions).forEach((optionName) => {
-    remaining.set(optionName, (remaining.get(optionName) || 0) + 1);
-  });
+  const remainingSelections = sanitizeSelectedOptions(selectedOptions);
+  const variantGroupsById = createVariantGroupMap(variantGroups);
 
   let delta = 0;
 
@@ -40,11 +79,38 @@ export function calculateSelectedOptionsDelta(selectedOptions, variantGroups = [
       : [];
 
     options.forEach((option) => {
-      const count = remaining.get(option.name) || 0;
-      if (count > 0) {
-        delta += Number(option.additionalPrice || 0);
-        remaining.set(option.name, count - 1);
+      const matchIndex = remainingSelections.findIndex(
+        (selection) => {
+          const selectionGroup = selection.groupId
+            ? variantGroupsById.get(String(selection.groupId))
+            : null;
+
+          if (selectionGroup) {
+            return (
+              String(selectionGroup.groupId) === String(group.groupId) &&
+              selection.optionName === option.name
+            );
+          }
+
+          return selection.optionName === option.name;
+        },
+      );
+
+      if (matchIndex < 0) {
+        return;
       }
+
+      const selection = remainingSelections[matchIndex];
+      delta += Number(option.additionalPrice || 0);
+
+      if (selection.suboptionName && Array.isArray(option.suboptions)) {
+        const suboption = option.suboptions.find(
+          (entry) => entry.name === selection.suboptionName,
+        );
+        delta += Number(suboption?.additionalPrice || 0);
+      }
+
+      remainingSelections.splice(matchIndex, 1);
     });
   });
 
@@ -53,10 +119,7 @@ export function calculateSelectedOptionsDelta(selectedOptions, variantGroups = [
 
 export function sortSelectedOptionsForDisplay(selectedOptions, variantGroups = []) {
   const original = sanitizeSelectedOptions(selectedOptions);
-  const remaining = new Map();
-  original.forEach((optionName) => {
-    remaining.set(optionName, (remaining.get(optionName) || 0) + 1);
-  });
+  const remainingSelections = [...original];
 
   const ordered = [];
 
@@ -66,22 +129,20 @@ export function sortSelectedOptionsForDisplay(selectedOptions, variantGroups = [
       : [];
 
     options.forEach((option) => {
-      const count = remaining.get(option.name) || 0;
-      for (let i = 0; i < count; i += 1) {
-        ordered.push(option.name);
-      }
-      if (count > 0) {
-        remaining.delete(option.name);
+      for (let i = 0; i < remainingSelections.length; i += 1) {
+        if (remainingSelections[i].optionName !== option.name) {
+          continue;
+        }
+
+        ordered.push(remainingSelections[i]);
+        remainingSelections.splice(i, 1);
+        i -= 1;
       }
     });
   });
 
-  original.forEach((optionName) => {
-    const count = remaining.get(optionName) || 0;
-    if (count > 0) {
-      ordered.push(optionName);
-      remaining.set(optionName, count - 1);
-    }
+  remainingSelections.forEach((selection) => {
+    ordered.push(selection);
   });
 
   return ordered;

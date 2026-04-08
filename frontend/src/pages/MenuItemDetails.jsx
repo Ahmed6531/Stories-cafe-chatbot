@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { fetchMenuItemById } from '../API/menuApi'
 import { formatLL } from '../utils/currency'
 import { useCart } from '../state/useCart'
+import MenuItemDetailsSkeleton from '../components/MenuItemDetailsSkeleton'
 
 import {
   Alert,
@@ -50,7 +51,32 @@ const MenuProps = {
     horizontal: 'left',
   },
 }
-
+function seedSelectionsFromCartItem(groups, selectedOptions) {
+  const selections = {}
+  for (const g of groups) {
+    const groupOptionNames = new Set((g.options || []).map((o) => o.name))
+    const matching = (selectedOptions || []).filter((s) => {
+      const selectionGroupId = s?.groupId
+      if (selectionGroupId != null && String(selectionGroupId).trim() !== '') {
+        return String(selectionGroupId) === String(g.id)
+      }
+      return groupOptionNames.has(s.optionName)
+    })
+    if (g.maxSelections === 1) {
+      const match = matching[0]
+      selections[g.id] = {
+        type: 'single',
+        value: match ? createSelectionEntry(match.optionName, match.suboptionName, g.id) : '',
+      }
+    } else {
+      selections[g.id] = {
+        type: 'multi',
+        values: matching.map((m) => createSelectionEntry(m.optionName, m.suboptionName, g.id)),
+      }
+    }
+  }
+  return selections
+}
 function initSelections(groups) {
   const next = {}
   for (const g of groups) {
@@ -75,17 +101,78 @@ function getRenderableOptions(group) {
   return active.length > 0 ? active : all
 }
 
-function optionPriceOf(group, selected) {
-  const name = typeof selected === 'string' ? selected : selected?.name
-  if (!name) return 0
+function createSelectionEntry(optionName, suboptionName = '', groupId = undefined) {
+  const trimmedOptionName = String(optionName || '').trim()
+  if (!trimmedOptionName) return null
 
-  const opt = (group.options || []).find((o) => o.name === name)
+  const trimmedSuboptionName = String(suboptionName || '').trim()
+  const trimmedGroupId = groupId == null ? '' : String(groupId).trim()
+
+  return {
+    optionName: trimmedOptionName,
+    ...(trimmedSuboptionName ? { suboptionName: trimmedSuboptionName } : {}),
+    ...(trimmedGroupId ? { groupId: trimmedGroupId } : {}),
+  }
+}
+
+function normalizeSelectionEntry(selected) {
+  if (!selected) return null
+  if (typeof selected === 'string') return createSelectionEntry(selected)
+  if (typeof selected !== 'object') return null
+
+  return createSelectionEntry(
+    selected.optionName || selected.name,
+    selected.suboptionName || selected.sub,
+    selected.groupId,
+  )
+}
+
+function getSelectionOptionName(selected) {
+  return normalizeSelectionEntry(selected)?.optionName || ''
+}
+
+function findOptionByName(group, optionName) {
+  return (group.options || []).find((option) => option.name === optionName) || null
+}
+
+function getDefaultSuboptionName(option) {
+  const suboptions = Array.isArray(option?.suboptions) ? option.suboptions : []
+  if (suboptions.length === 0) return ''
+
+  const regular = suboptions.find((suboption) => String(suboption?.name).toLowerCase() === 'regular')
+  return regular?.name || suboptions[0]?.name || ''
+}
+
+function createSelectionForOption(group, optionName, existingSelection = null) {
+  const option = findOptionByName(group, optionName)
+  if (!option) return createSelectionEntry(optionName, '', group.id)
+
+  const existing = normalizeSelectionEntry(existingSelection)
+  const suboptions = Array.isArray(option.suboptions) ? option.suboptions : []
+
+  if (suboptions.length === 0) {
+    return createSelectionEntry(optionName, '', group.id)
+  }
+
+  const preservedSuboption = suboptions.some((suboption) => suboption.name === existing?.suboptionName)
+    ? existing?.suboptionName
+    : getDefaultSuboptionName(option)
+
+  return createSelectionEntry(optionName, preservedSuboption, group.id)
+}
+
+function optionPriceOf(group, selected) {
+  const selection = normalizeSelectionEntry(selected)
+  const optionName = selection?.optionName
+  if (!optionName) return 0
+
+  const opt = findOptionByName(group, optionName)
   if (!opt) return 0
 
   const base = Number(opt.additionalPrice || 0)
 
-  if (typeof selected === 'object' && opt.suboptions?.length) {
-    const sub = opt.suboptions.find((s) => s.name === selected.sub)
+  if (selection?.suboptionName && opt.suboptions?.length) {
+    const sub = opt.suboptions.find((s) => s.name === selection.suboptionName)
     return base + Number(sub?.additionalPrice || 0)
   }
 
@@ -138,20 +225,34 @@ function formatSecondaryOptionPrice(additionalPrice) {
   return Number(additionalPrice || 0) > 0 ? `+ ${formatLL(additionalPrice)}` : ''
 }
 
-function flattenSelectedOptions(selections) {
+function serializeSelectedOptions(selections, groups) {
   const selectedOptionsArray = []
 
-  for (const gid in selections) {
-    const selection = selections[gid]
+  for (const group of groups || []) {
+    const groupId = group?.id == null ? '' : String(group.id).trim()
+    const selection = selections[group?.id]
+    if (!selection) continue
+
     if (selection.type === 'single') {
-      if (selection.value) selectedOptionsArray.push(selection.value)
+      const normalized = normalizeSelectionEntry(selection.value)
+      if (normalized) {
+        selectedOptionsArray.push({
+          ...normalized,
+          ...(groupId ? { groupId } : {}),
+        })
+      }
       continue
     }
 
     if (selection.type === 'multi' && Array.isArray(selection.values)) {
       selection.values.forEach((value) => {
-        if (typeof value === 'string') selectedOptionsArray.push(value)
-        else if (value && typeof value === 'object' && value.name) selectedOptionsArray.push(value.name)
+        const normalized = normalizeSelectionEntry(value)
+        if (normalized) {
+          selectedOptionsArray.push({
+            ...normalized,
+            ...(groupId ? { groupId } : {}),
+          })
+        }
       })
     }
   }
@@ -465,8 +566,10 @@ function MenuItemHero({
 
 export default function MenuItemDetails() {
   const { id } = useParams()
+  const [searchParams] = useSearchParams()
+const editLineId = searchParams.get('edit') || null
   const navigate = useNavigate()
-  const { addToCart } = useCart()
+  const { addToCart, editCartItem, state } = useCart()
   const theme = useTheme()
 
   const [item, setItem] = useState(null)
@@ -506,13 +609,39 @@ export default function MenuItemDetails() {
     }))
   }, [item])
 
+  const cartItemToEdit = useMemo(() => {
+  if (!editLineId || !state?.items) return null
+  return state.items.find((i) => String(i.lineId) === String(editLineId)) || null
+}, [editLineId, state?.items])
+
+const isEditMode = Boolean(cartItemToEdit)
+  
   const [selections, setSelections] = useState(() => initSelections([]))
+  const groupsReady = groups.length > 0
+
+  // Effect 1 — seeds all three fields once on edit entry.
+  // Depends on editLineId and groupsReady (not cartItemToEdit) so that
+  // subsequent CART_LOADED dispatches replacing state.items never re-run
+  // this and reset qty while the user is adjusting it.
   useEffect(() => {
-    setSelections(initSelections(groups))
-    setQty(1)
-    setInstructions('')
-    setShowErrors(false)
-  }, [id, groups])
+    if (cartItemToEdit && groupsReady) {
+      setSelections(seedSelectionsFromCartItem(groups, cartItemToEdit.selectedOptions))
+      setQty(cartItemToEdit.qty)
+      setInstructions(cartItemToEdit.instructions || '')
+      setShowErrors(false)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editLineId, groupsReady])
+
+  // Effect 2 — resets to defaults in add mode whenever the item or groups change.
+  useEffect(() => {
+    if (!editLineId) {
+      setSelections(initSelections(groups))
+      setQty(1)
+      setInstructions('')
+      setShowErrors(false)
+    }
+  }, [id, groups, editLineId])
 
   const errors = useMemo(() => validate(groups, selections), [groups, selections])
 
@@ -528,6 +657,35 @@ export default function MenuItemDetails() {
 
   const setGroupSelection = (groupId, nextSelection) => {
     setSelections((prev) => ({ ...prev, [groupId]: nextSelection }))
+  }
+
+  const renderSuboptionSelect = (group, selection, onChange, sx = { mt: 1.25 }) => {
+    const normalizedSelection = normalizeSelectionEntry(selection)
+    const optionName = normalizedSelection?.optionName
+    if (!optionName) return null
+
+    const option = findOptionByName(group, optionName)
+    const suboptions = Array.isArray(option?.suboptions) ? option.suboptions : []
+    if (suboptions.length === 0) return null
+
+    return (
+      <FormControl fullWidth size="small" sx={sx}>
+        <InputLabel id={`${group.id}-${optionName}-suboption-label`}>Amount</InputLabel>
+        <Select
+          labelId={`${group.id}-${optionName}-suboption-label`}
+          label="Amount"
+          value={normalizedSelection?.suboptionName || getDefaultSuboptionName(option)}
+          onChange={(event) => onChange(event.target.value)}
+        >
+          {suboptions.map((suboption) => (
+            <MuiMenuItem key={suboption.name} value={suboption.name}>
+              {suboption.name}
+              {formatInlineOptionPrice(suboption.additionalPrice)}
+            </MuiMenuItem>
+          ))}
+        </Select>
+      </FormControl>
+    )
   }
 
   const renderGroup = (group) => {
@@ -551,64 +709,88 @@ export default function MenuItemDetails() {
 
   const renderSizePills = (group, options = getSortedRenderableOptions(group)) => {
     if (!group) return null
-    const value = selections[group.id]?.value || ''
+    const currentSelection = selections[group.id]?.value
+    const value = getSelectionOptionName(currentSelection)
 
     return (
       <OptionGroupSection group={group} showErrors={showErrors} errors={errors}>
-        <ToggleButtonGroup
-          value={value}
-          exclusive
-          onChange={(_, v) => {
-            if (!v) return
-            setGroupSelection(group.id, { type: 'single', value: v })
-          }}
-        >
-          {options.map((opt) => (
-            <ToggleButton key={opt.name} value={opt.name} sx={{ px: 2 }}>
-              <Box>
-                <Typography variant="body2" fontWeight={700}>
-                  {opt.name}
-                </Typography>
-                {Number(opt.additionalPrice || 0) > 0 && (
-                  <Typography variant="caption" display="block">
-                    +{formatLL(opt.additionalPrice)}
+        <Stack spacing={1.25}>
+          <ToggleButtonGroup
+            value={value}
+            exclusive
+            onChange={(_, v) => {
+              if (!v) return
+              setGroupSelection(group.id, {
+                type: 'single',
+                value: createSelectionForOption(group, v, currentSelection),
+              })
+            }}
+          >
+            {options.map((opt) => (
+              <ToggleButton key={opt.name} value={opt.name} sx={{ px: 2 }}>
+                <Box>
+                  <Typography variant="body2" fontWeight={700}>
+                    {opt.name}
                   </Typography>
-                )}
-              </Box>
-            </ToggleButton>
-          ))}
-        </ToggleButtonGroup>
+                  {Number(opt.additionalPrice || 0) > 0 && (
+                    <Typography variant="caption" display="block">
+                      +{formatLL(opt.additionalPrice)}
+                    </Typography>
+                  )}
+                </Box>
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+          {renderSuboptionSelect(group, currentSelection, (suboptionName) =>
+            setGroupSelection(group.id, {
+              type: 'single',
+              value: createSelectionEntry(value, suboptionName, group.id),
+            }),
+          )}
+        </Stack>
       </OptionGroupSection>
     )
   }
 
   const renderSingleSelect = (group, options = getSortedRenderableOptions(group)) => {
     if (!group) return null
-    const value = selections[group.id]?.value || ''
+    const currentSelection = selections[group.id]?.value
+    const value = getSelectionOptionName(currentSelection)
 
     return (
       <OptionGroupSection group={group} showErrors={showErrors} errors={errors}>
-        <FormControl fullWidth size="small">
-          <InputLabel id={`${group.id}-label`}>{group.name}</InputLabel>
-          <Select
-            labelId={`${group.id}-label`}
-            label={group.name}
-            value={value}
-            onChange={(e) =>
-              setGroupSelection(group.id, { type: 'single', value: e.target.value })
-            }
-          >
-            <MuiMenuItem value="" disabled={group.isRequired}>
-              <em>None</em>
-            </MuiMenuItem>
-            {options.map((opt) => (
-              <MuiMenuItem key={opt.name} value={opt.name}>
-                {opt.name}
-                {formatInlineOptionPrice(opt.additionalPrice)}
+        <Stack spacing={1.25}>
+          <FormControl fullWidth size="small">
+            <InputLabel id={`${group.id}-label`}>{group.name}</InputLabel>
+            <Select
+              labelId={`${group.id}-label`}
+              label={group.name}
+              value={value}
+              onChange={(e) =>
+                setGroupSelection(group.id, {
+                  type: 'single',
+                  value: createSelectionForOption(group, e.target.value, currentSelection),
+                })
+              }
+            >
+              <MuiMenuItem value="" disabled={group.isRequired}>
+                <em>None</em>
               </MuiMenuItem>
-            ))}
-          </Select>
-        </FormControl>
+              {options.map((opt) => (
+                <MuiMenuItem key={opt.name} value={opt.name}>
+                  {opt.name}
+                  {formatInlineOptionPrice(opt.additionalPrice)}
+                </MuiMenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          {renderSuboptionSelect(group, currentSelection, (suboptionName) =>
+            setGroupSelection(group.id, {
+              type: 'single',
+              value: createSelectionEntry(value, suboptionName, group.id),
+            }),
+          )}
+        </Stack>
       </OptionGroupSection>
     )
   }
@@ -617,12 +799,21 @@ export default function MenuItemDetails() {
     if (!group) return null
     const current = selections[group.id]
     const selected = current?.type === 'multi' ? current.values : []
-    const selectedStrings = selected.filter((v) => typeof v === 'string')
+    const selectedStrings = selected.map((value) => getSelectionOptionName(value)).filter(Boolean)
 
     const handleChange = (e) => {
       const value = e.target.value
       const max = group.maxSelections
-      const next = max != null && max > 0 ? value.slice(0, max) : value
+      const existingByOption = new Map(
+        selected
+          .map((entry) => normalizeSelectionEntry(entry))
+          .filter(Boolean)
+          .map((entry) => [entry.optionName, entry]),
+      )
+      const nextNames = max != null && max > 0 ? value.slice(0, max) : value
+      const next = nextNames.map((optionName) =>
+        createSelectionForOption(group, optionName, existingByOption.get(optionName)),
+      )
       setGroupSelection(group.id, { type: 'multi', values: next })
     }
 
@@ -673,10 +864,19 @@ export default function MenuItemDetails() {
     const values = current?.type === 'multi' ? current.values : []
 
     const handleToggle = (optName) => {
-      const idx = values.indexOf(optName)
+      const idx = values.findIndex((value) => getSelectionOptionName(value) === optName)
       const next = [...values]
       if (idx >= 0) next.splice(idx, 1)
-      else next.push(optName)
+      else next.push(createSelectionForOption(group, optName))
+      setGroupSelection(group.id, { type: 'multi', values: next })
+    }
+
+    const handleSuboptionChange = (optName, suboptionName) => {
+      const next = values.map((value) =>
+        getSelectionOptionName(value) === optName
+          ? createSelectionEntry(optName, suboptionName, group.id)
+          : normalizeSelectionEntry(value),
+      )
       setGroupSelection(group.id, { type: 'multi', values: next })
     }
 
@@ -685,18 +885,30 @@ export default function MenuItemDetails() {
         <Card variant="outlined" sx={{ borderRadius: 2 }}>
           <List disablePadding>
             {options.map((opt) => (
-              <MuiMenuItem key={opt.name} onClick={() => handleToggle(opt.name)} dense>
-                <Checkbox
-                  checked={values.includes(opt.name)}
-                  size="small"
-                  sx={{ p: 0.5, mr: 1 }}
-                />
-                <ListItemText
-                  primary={opt.name}
-                  secondary={formatSecondaryOptionPrice(opt.additionalPrice)}
-                  primaryTypographyProps={{ variant: 'body2' }}
-                />
-              </MuiMenuItem>
+              <Box key={opt.name} sx={{ px: 1.5, py: 0.75 }}>
+                <MuiMenuItem onClick={() => handleToggle(opt.name)} dense sx={{ borderRadius: 1 }}>
+                  <Checkbox
+                    checked={values.some((value) => getSelectionOptionName(value) === opt.name)}
+                    size="small"
+                    sx={{ p: 0.5, mr: 1 }}
+                  />
+                  <ListItemText
+                    primary={opt.name}
+                    secondary={formatSecondaryOptionPrice(opt.additionalPrice)}
+                    primaryTypographyProps={{ variant: 'body2' }}
+                  />
+                </MuiMenuItem>
+                {values.some((value) => getSelectionOptionName(value) === opt.name) && (
+                  <Box sx={{ mt: 1, pl: 4.5 }}>
+                    {renderSuboptionSelect(
+                      group,
+                      values.find((value) => getSelectionOptionName(value) === opt.name),
+                      (suboptionName) => handleSuboptionChange(opt.name, suboptionName),
+                      {},
+                    )}
+                  </Box>
+                )}
+              </Box>
             ))}
           </List>
         </Card>
@@ -705,37 +917,30 @@ export default function MenuItemDetails() {
   }
 
   const handleSubmit = async () => {
-    const hasErrors = Object.keys(errors).length > 0
-    if (hasErrors) {
-      setShowErrors(true)
-      return
-    }
-
-    const payload = {
-      menuItemId: item.mongoId || item.id,
-      name: item.name,
-      image: item.image,
-      price: unitPrice,
-      qty,
-      selectedOptions: flattenSelectedOptions(selections),
-      instructions: instructions.trim(),
-    }
-
-    try {
-      await addToCart(payload)
-      navigate('/menu')
-    } catch (err) {
-      console.error('Failed to add to cart:', err)
-      alert('Failed to add to cart. Please try again.')
-    }
+  const hasErrors = Object.keys(errors).length > 0
+  if (hasErrors) {
+    setShowErrors(true)
+    return
   }
 
-  if (loading)
-    return (
-      <Container sx={{ py: 3, '& .MuiTypography-root': { fontFamily: theme.brand.fontBase } }}>
-        <Typography>Loading...</Typography>
-      </Container>
-    )
+  const selectedOptions = serializeSelectedOptions(selections, groups)
+  const inst = instructions.trim()
+
+  try {
+    if (isEditMode) {
+      await editCartItem(editLineId, { qty, selectedOptions, instructions: inst })
+    } else {
+      await addToCart({ menuItemId: item.id, image: item.image, qty, selectedOptions, instructions: inst })
+    }
+    setSnackOpen(true)
+    setTimeout(() => navigate('/cart'), 500)
+  } catch (err) {
+    console.error('Failed to update cart:', err)
+    alert('Failed to add to cart. Please try again.')
+  }
+}
+
+  if (loading) return <MenuItemDetailsSkeleton />
 
   if (!item)
     return (
@@ -855,13 +1060,19 @@ export default function MenuItemDetails() {
                   fontSize: { xs: '0.88rem', md: '1rem' },
                 }}
               >
-                ADD TO CART
+                {isEditMode ? 'UPDATE CART' : 'ADD TO CART'}
               </Button>
             </Stack>
           </Stack>
         </CardContent>
       </Card>
 
+      <Snackbar
+        open={snackOpen}
+        autoHideDuration={2000}
+        onClose={() => setSnackOpen(false)}
+        message={isEditMode ? 'Item updated' : 'Item added to cart'}
+      />
     </Container>
   )
 }

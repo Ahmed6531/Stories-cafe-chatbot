@@ -1,12 +1,20 @@
 import mongoose from "mongoose";
 
+const SelectedOptionSchema = new mongoose.Schema(
+  {
+    optionName: { type: String, required: true, trim: true },
+    suboptionName: { type: String, trim: true, default: undefined },
+  },
+  { _id: false },
+);
+
 const OrderItemSchema = new mongoose.Schema(
   {
-    menuItemId: { type: mongoose.Schema.Types.ObjectId, ref: "MenuItem", required: true },
+    menuItemId: { type: Number, required: true },
     name: { type: String, required: true },
     qty: { type: Number, required: true, min: 1 },
     unitPrice: { type: Number, required: true },
-    selectedOptions: { type: [String], default: [] },
+    selectedOptions: { type: [SelectedOptionSchema], default: [] },
     instructions: { type: String, default: "" },
     lineTotal: { type: Number, required: true }
   },
@@ -15,13 +23,15 @@ const OrderItemSchema = new mongoose.Schema(
 
 const OrderSchema = new mongoose.Schema(
   {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     orderNumber: { type: String, required: true, unique: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false },
     status: {
       type: String,
       enum: ["received", "in_progress", "completed", "cancelled"],
       default: "received"
     },
-    orderType: { type: String, enum: ["pickup", "dine_in", "delivery"], required: true },
+    orderType: { type: String, enum: ["pickup", "dine_in"], required: true },
 
     customer: {
       name: { type: String, required: true },

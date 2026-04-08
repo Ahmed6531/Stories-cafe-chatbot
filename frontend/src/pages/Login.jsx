@@ -2,16 +2,36 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AuthShell from '../components/auth/AuthShell'
 import { authInputStyle, authLabelStyle } from '../components/auth/authStyles'
+import http from '../API/http'
+import { useSession } from '../hooks/useSession'
 
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [status, setStatus] = useState({ type: '', message: '' })
   const navigate = useNavigate()
+  const { refreshSession } = useSession()
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    // TODO: Implement actual login logic
-    navigate('/')
+    setStatus({ type: '', message: '' })
+
+    try {
+      await http.post('/auth/login', { email, password })
+      await refreshSession()
+      navigate('/dashboard')
+    } catch (err) {
+      const raw = err.response?.data?.message
+        || err.response?.data?.error?.message
+        || ''
+      const message =
+        raw.toLowerCase().includes('verify')
+          ? 'Check your inbox — we sent you a verification email.'
+          : raw.toLowerCase().includes('invalid')
+            ? 'Email or password is incorrect.'
+            : 'Something went wrong, please try again.'
+      setStatus({ type: 'error', message })
+    }
   }
 
   return (
@@ -44,6 +64,21 @@ export default function Login() {
           style={authInputStyle}
         />
       </div>
+
+      {status.message && (
+        <p
+          role="status"
+          style={{
+            margin: '-6px 0 0 0',
+            color: status.type === 'error' ? '#d93025' : '#00704a',
+            fontStyle: 'italic',
+            fontWeight: 600,
+            fontSize: '12px',
+          }}
+        >
+          {status.message}
+        </p>
+      )}
     </AuthShell>
   )
 }

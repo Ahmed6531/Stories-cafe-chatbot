@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Box,
@@ -12,7 +12,8 @@ import {
   useTheme,
 } from '@mui/material'
 import { useCart } from '../state/useCart'
-import http from '../API/http'
+import { submitOrder } from '../API/ordersApi'
+import { lockDeadCart } from '../API/http'
 import CartSummary from '../components/CartSummary'
 
 const formGroupSx = {
@@ -33,9 +34,10 @@ const centeredWidth = (maxWidth) => ({
 export default function Checkout() {
   const theme = useTheme()
   const navigate = useNavigate()
-  const { state, clearCart } = useCart()
-  const { items } = state
+  const { state, resetCart } = useCart()
+  const { items, loading } = state
   const [orderTypeError, setOrderTypeError] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
 
   const inputStyle = {
     width: '100%',
@@ -80,6 +82,10 @@ export default function Checkout() {
     notes: '',
   })
 
+  useEffect(() => {
+    if (!submitted && !loading && !items.length) navigate('/cart')
+  }, [items, loading, submitted, navigate])
+
   const handleChange = (e) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
@@ -105,19 +111,28 @@ export default function Checkout() {
       },
       notesToBarista: formData.notes,
       items: items.map((item) => ({
-        menuItemId: item.menuItemId || item.id,
+        menuItemId: Number(item.menuItemId ?? item.id),
         qty: item.qty,
-        selectedOptions: item.selectedOptions || [],
+        selectedOptions: Array.isArray(item.selectedOptions) ? item.selectedOptions : [],
         instructions: item.instructions || '',
       })),
       cartId: localStorage.getItem('cartId'),
     }
 
     try {
-      const response = await http.post('/orders', payload)
+      const response = await submitOrder(payload)
       if (response.data.orderNumber) {
+        setSubmitted(true)
+        localStorage.setItem('activeOrder', JSON.stringify({
+          orderNumber: response.data.orderNumber,
+          placedAt: Date.now(),
+        }))
+        lockDeadCart(localStorage.getItem('cartId'))
         localStorage.removeItem('cartId')
-        await clearCart()
+        localStorage.removeItem('chatSessionId')
+        localStorage.removeItem('chatMessages')
+        localStorage.removeItem('chatMessagesSavedAt')
+        resetCart()
         navigate('/success', { state: { orderNumber: response.data.orderNumber } })
       }
     } catch (err) {

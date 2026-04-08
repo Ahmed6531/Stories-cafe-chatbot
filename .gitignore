@@ -1,7 +1,9 @@
 .env
 node_modules/
 node_modulesnpm
+chatbot/gcp-credentials.json
 chatbot/venv/
+chatbot/.venv/
 chatbot/.env
 __pycache__/
-*.pyc
+*.pyc"chatbot/gcp-credentials.json" 

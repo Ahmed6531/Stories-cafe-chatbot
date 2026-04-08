@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { Box, Typography, styled } from '@mui/material'
 import { menuCardLayout } from '../theme/layoutTokens'
+import { formatLL } from '../utils/currency'
 
 const ItemCard = styled(Box, {
   shouldForwardProp: (prop) => prop !== 'isAvailable',
@@ -185,12 +186,6 @@ export default function MenuItem({ item }) {
   const [imageError, setImageError] = useState(false)
   const showPlaceholder = !item.hasImage || imageError
 
-  const formatPrice = (p) => (
-    <>
-      <Box component="span" sx={{ fontSize: '0.72em', fontWeight: 600, opacity: 0.7 }}>LL</Box> {Number(p).toLocaleString()}
-    </>
-  )
-
   const handleAction = (e) => {
     if (e) e.stopPropagation()
     if (item.isAvailable) navigate(`/item/${item.id}`)
@@ -240,7 +235,7 @@ export default function MenuItem({ item }) {
           <StatusPill isAvailable={item.isAvailable}>
             {item.isAvailable ? 'Available' : 'Out of stock'}
           </StatusPill>
-          <ItemPrice>{formatPrice(item.basePrice)}</ItemPrice>
+          <ItemPrice>{formatLL(item.basePrice)}</ItemPrice>
         </ItemBottom>
       </ItemContent>
     </ItemCard>
