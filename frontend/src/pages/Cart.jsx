@@ -4,7 +4,6 @@ import { useTheme } from '@mui/material/styles'
 import LocalGroceryStoreOutlinedIcon from '@mui/icons-material/LocalGroceryStoreOutlined'
 import { useCart } from '../state/useCart'
 import { useState } from 'react'
-import DeleteSweepOutlinedIcon from '@mui/icons-material/DeleteSweepOutlined'
 import ClearCartModal from '../components/ClearCartModal'
 import CartSummary from '../components/CartSummary'
 
@@ -41,7 +40,7 @@ export default function Cart() {
         onConfirm={clearCart}
         itemCount={cartItems.length}
       />
-      <Stack direction="row" alignItems="center" justifyContent="center" sx={{ mb: { xs: 2.5, md: 3 }, position: 'relative' }}>
+      <Stack direction="row" alignItems="center" justifyContent="center" sx={{ mb: { xs: 2.5, md: 3 } }}>
         <Typography
           variant="h5"
           sx={{
@@ -56,28 +55,6 @@ export default function Cart() {
         >
           Your Cart
         </Typography>
-        {cartItems.length > 0 && (
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<DeleteSweepOutlinedIcon />}
-            onClick={() => setClearModalOpen(true)}
-            sx={{
-              position: 'absolute',
-              right: 0,
-              borderRadius: '8px',
-              fontFamily: brand.fontBase,
-              fontWeight: 700,
-              textTransform: 'none',
-              fontSize: '0.8rem',
-              borderColor: '#e0b3b3',
-              color: '#c62828',
-              '&:hover': { borderColor: '#c62828', backgroundColor: 'rgba(198,40,40,0.06)' },
-            }}
-          >
-            Clear Cart
-          </Button>
-        )}
       </Stack>
 
       {cartItems.length === 0 ? (
@@ -113,6 +90,33 @@ export default function Cart() {
             items={cartItems}
             mode="cartSummary"
             title="Review Order"
+            headerAction={
+              cartItems.length > 0 ? (
+                <Box
+                  component="button"
+                  type="button"
+                  onClick={() => setClearModalOpen(true)}
+                  sx={{
+                    border: 'none',
+                    background: 'transparent',
+                    p: 0,
+                    m: 0,
+                    color: '#b0b0a8',
+                    fontFamily: brand.fontBase,
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    lineHeight: 1,
+                    cursor: 'pointer',
+                    '&:hover': {
+                      color: '#888',
+                      background: 'transparent',
+                    },
+                  }}
+                >
+                  Clear all
+                </Box>
+              ) : null
+            }
             action={
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
                 <Button

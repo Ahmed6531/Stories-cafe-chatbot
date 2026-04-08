@@ -23,7 +23,15 @@ export function CartProvider({ children }) {
   const addToCart = useCallback(async (item) => {
     try {
       const data = await addToCartApi(item)
-      dispatch({ type: 'CART_LOADED', payload: data })
+      dispatch({
+        type: 'CART_ITEM_ADDED',
+        payload: {
+          cart: data,
+          lastAddedItem: {
+            image: item.image,
+          },
+        },
+      })
     } catch (err) {
       dispatch({ type: 'CART_ERROR', payload: err.message })
     }
@@ -66,6 +74,7 @@ export function CartProvider({ children }) {
     () => ({
       state,
       cartCount: state.count,
+      lastAddedItem: state.lastAddedItem,
       addToCart,
       updateQty,
       removeFromCart,

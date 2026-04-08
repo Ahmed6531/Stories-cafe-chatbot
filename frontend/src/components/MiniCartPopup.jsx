@@ -1,37 +1,31 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useCart } from '../state/useCart'
-import {
-  Box,
-  Button,
-  Divider,
-  IconButton,
-  Paper,
-  Stack,
-  Typography,
-} from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
-import ShoppingCartOutlinedIcon from '@mui/icons-material/ShoppingCartOutlined'
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 
-const brand = {
-  primary: '#00704a',
-  primaryDark: '#1e5631',
-  textPrimary: '#2b2b2b',
-  textSecondary: '#79747e',
-  fontBase: "'Montserrat', sans-serif",
-}
+const placeholderImg = 'https://via.placeholder.com/32/ffffff/00704a?text=+'
 
-const placeholderImg = 'https://via.placeholder.com/56/8B7355/FFFFFF?text=Coffee'
-
-const formatLL = (value) => `L.L ${Number(value || 0).toLocaleString()}`
-
-export default function MiniCartPopup({ open, onClose, anchorRef }) {
+export default function MiniCartPopup({ open, onClose, anchorRef, lastAddedItem }) {
   const navigate = useNavigate()
-  const { state } = useCart()
-  const { items } = state
   const popupRef = useRef(null)
+  const timerRef = useRef(null)
+  const [isLeaving, setIsLeaving] = useState(false)
 
+  const triggerClose = () => {
+    clearTimeout(timerRef.current)
+    setIsLeaving(true)
+    setTimeout(() => {
+      setIsLeaving(false)
+      onClose()
+    }, 220)
+  }
+
+  // Auto-dismiss after 3 s
+  useEffect(() => {
+    if (!open) return
+    timerRef.current = setTimeout(triggerClose, 3000)
+    return () => clearTimeout(timerRef.current)
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Outside-click dismiss
   useEffect(() => {
     if (!open) return
     const handleClick = (e) => {
@@ -41,173 +35,117 @@ export default function MiniCartPopup({ open, onClose, anchorRef }) {
         anchorRef?.current &&
         !anchorRef.current.contains(e.target)
       ) {
-        onClose()
+        triggerClose()
       }
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
-  }, [open, onClose, anchorRef])
+  }, [open, anchorRef]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Escape key dismiss
   useEffect(() => {
     if (!open) return
-    const handleKey = (e) => { if (e.key === 'Escape') onClose() }
+    const handleKey = (e) => { if (e.key === 'Escape') triggerClose() }
     document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
-  }, [open, onClose])
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!open) return null
+  if (!open || !lastAddedItem) return null
 
-  const subtotal = items.reduce((sum, item) => sum + (item.price || 0) * item.qty, 0)
-  const recentItems = items.slice(-3).reverse()
+  const { image } = lastAddedItem
 
   return (
-    <Paper
-      ref={popupRef}
-      elevation={8}
-      role="dialog"
-      aria-label="Mini cart"
-      sx={{
-        position: 'fixed',
-        top: 60,
-        right: 16,
-        width: 340,
-        maxWidth: 'calc(100vw - 32px)',
-        zIndex: 1300,
-        borderRadius: '16px',
-        overflow: 'hidden',
-        border: '1px solid #e0ede6',
-        fontFamily: brand.fontBase,
-        animation: 'miniCartIn 0.2s cubic-bezier(0.34,1.56,0.64,1)',
-        '@keyframes miniCartIn': {
-          from: { opacity: 0, transform: 'translateY(-10px) scale(0.97)' },
-          to:   { opacity: 1, transform: 'translateY(0) scale(1)' },
-        },
-      }}
-    >
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        sx={{ px: 2, py: 1.5, borderBottom: '1px solid #f0f0f0', bgcolor: '#fff' }}
+    <>
+      <style>{`
+        @keyframes toastIn {
+          from { opacity: 0; transform: translateX(120%); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes toastOut {
+          from { opacity: 1; transform: translateX(0); }
+          to   { opacity: 0; transform: translateX(120%); }
+        }
+        .mini-cart-toast {
+          animation: toastIn 0.32s cubic-bezier(0.34, 1.4, 0.64, 1) forwards;
+        }
+        .mini-cart-toast.leaving {
+          animation: toastOut 0.22s ease-in forwards;
+        }
+      `}</style>
+
+      <div
+        ref={popupRef}
+        role="status"
+        aria-live="polite"
+        className={`mini-cart-toast${isLeaving ? ' leaving' : ''}`}
+        style={{
+          position: 'fixed',
+          top: 64,
+          right: 16,
+          zIndex: 1300,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '10px 16px',
+          borderRadius: 12,
+          background: '#00704a',
+          boxShadow: '0 4px 14px rgba(0,112,74,0.22)',
+          maxWidth: 'calc(100vw - 32px)',
+          width: 300,
+        }}
       >
-        <Stack direction="row" alignItems="center" gap={1}>
-          <ShoppingCartOutlinedIcon sx={{ fontSize: 18, color: brand.primary }} />
-          <Typography fontWeight={800} fontSize={14} fontFamily={brand.fontBase} color={brand.textPrimary}>
-            Item added to cart
-          </Typography>
-        </Stack>
-        <IconButton size="small" onClick={onClose} aria-label="Close mini cart">
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </Stack>
+        {/* Thumbnail */}
+        <div style={{
+          width: 32,
+          height: 32,
+          borderRadius: 6,
+          overflow: 'hidden',
+          flexShrink: 0,
+          background: 'rgba(255,255,255,0.15)',
+        }}>
+          <img
+            src={image || placeholderImg}
+            alt=""
+            onError={(e) => { e.currentTarget.src = placeholderImg }}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          />
+        </div>
 
-      <Box sx={{ px: 2, py: 1.5, bgcolor: '#fafcfb', maxHeight: 220, overflowY: 'auto' }}>
-        {recentItems.length === 0 ? (
-          <Typography variant="body2" color={brand.textSecondary} fontFamily={brand.fontBase}>
-            Your cart is empty.
-          </Typography>
-        ) : (
-          <Stack spacing={1.2}>
-            {recentItems.map((item) => (
-              <Stack key={item.lineId} direction="row" spacing={1.5} alignItems="center">
-                <Box sx={{ width: 48, height: 48, borderRadius: '10px', overflow: 'hidden', flexShrink: 0, bgcolor: '#f0ede8' }}>
-                  <Box
-                    component="img"
-                    src={item.image || placeholderImg}
-                    alt={item.name}
-                    onError={(e) => { e.currentTarget.src = placeholderImg }}
-                    sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                </Box>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography variant="body2" fontWeight={700} fontFamily={brand.fontBase} noWrap color={brand.textPrimary}>
-                    {item.name}
-                  </Typography>
-                  <Typography variant="caption" color={brand.textSecondary} fontFamily={brand.fontBase}>
-                    x{item.qty} · {formatLL((item.price || 0) * item.qty)}
-                  </Typography>
-                </Box>
-              </Stack>
-            ))}
-            {items.length > 3 && (
-              <Typography variant="caption" color={brand.textSecondary} fontFamily={brand.fontBase}>
-                +{items.length - 3} more item{items.length - 3 > 1 ? 's' : ''} in cart
-              </Typography>
-            )}
-          </Stack>
-        )}
-      </Box>
+        {/* Name */}
+        <span style={{
+          flex: 1,
+          minWidth: 0,
+          fontSize: 14,
+          fontWeight: 500,
+          color: '#ffffff',
+          fontFamily: "'Montserrat', sans-serif",
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}>
+          Added to cart
+        </span>
 
-      {items.length > 0 && (
-        <>
-          <Divider />
-          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 2, py: 1, bgcolor: '#fff' }}>
-            <Typography variant="body2" color={brand.textSecondary} fontFamily={brand.fontBase}>
-              Subtotal ({state.count} item{state.count !== 1 ? 's' : ''})
-            </Typography>
-            <Typography variant="body2" fontWeight={800} fontFamily={brand.fontBase} color={brand.primaryDark}>
-              {formatLL(subtotal)}
-            </Typography>
-          </Stack>
-        </>
-      )}
-
-      <Divider />
-
-      <Stack spacing={1} sx={{ p: 2, bgcolor: '#fff' }}>
-        <Button
-          fullWidth
-          variant="contained"
-          endIcon={<ArrowForwardIcon />}
-          onClick={() => { onClose(); navigate('/cart') }}
-          sx={{
-            borderRadius: '10px',
-            py: 1.1,
-            fontWeight: 700,
-            fontSize: '0.875rem',
-            fontFamily: brand.fontBase,
-            textTransform: 'none',
-            backgroundColor: brand.primaryDark,
-            '&:hover': { backgroundColor: brand.primary, transform: 'translateY(-1px)' },
-            transition: 'all 0.2s ease',
+        <div
+          onClick={() => { triggerClose(); navigate('/cart') }}
+          style={{
+            width: '28px',
+            height: '28px',
+            borderRadius: '50%',
+            background: 'rgba(255,255,255,0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            cursor: 'pointer',
           }}
         >
-          Go to Cart
-        </Button>
-        <Button
-          fullWidth
-          variant="outlined"
-          onClick={() => { onClose(); navigate('/checkout') }}
-          sx={{
-            borderRadius: '10px',
-            py: 1.1,
-            fontWeight: 700,
-            fontSize: '0.875rem',
-            fontFamily: brand.fontBase,
-            textTransform: 'none',
-            borderColor: '#c7ddd1',
-            color: brand.primaryDark,
-            '&:hover': { borderColor: brand.primary, backgroundColor: 'rgba(0,112,74,0.05)' },
-          }}
-        >
-          Checkout Now
-        </Button>
-        <Button
-          fullWidth
-          variant="text"
-          onClick={onClose}
-          sx={{
-            fontWeight: 600,
-            fontSize: '0.8rem',
-            fontFamily: brand.fontBase,
-            textTransform: 'none',
-            color: brand.textSecondary,
-            '&:hover': { color: brand.primary, backgroundColor: 'transparent' },
-          }}
-        >
-          Continue Shopping
-        </Button>
-      </Stack>
-    </Paper>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12" />
+            <polyline points="12 5 19 12 12 19" />
+          </svg>
+        </div>
+      </div>
+    </>
   )
 }

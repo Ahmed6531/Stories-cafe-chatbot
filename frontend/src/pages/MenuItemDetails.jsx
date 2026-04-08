@@ -20,7 +20,6 @@ import {
   ListItemText,
   MenuItem as MuiMenuItem,
   Select,
-  Snackbar,
   Stack,
   TextField,
   ToggleButton,
@@ -476,7 +475,6 @@ export default function MenuItemDetails() {
 
   const [qty, setQty] = useState(1)
   const [instructions, setInstructions] = useState('')
-  const [snackOpen, setSnackOpen] = useState(false)
   const [showErrors, setShowErrors] = useState(false)
 
   useEffect(() => {
@@ -715,16 +713,17 @@ export default function MenuItemDetails() {
 
     const payload = {
       menuItemId: item.mongoId || item.id,
+      name: item.name,
+      image: item.image,
+      price: unitPrice,
       qty,
       selectedOptions: flattenSelectedOptions(selections),
       instructions: instructions.trim(),
     }
 
     try {
-      console.log('Adding to cart:', payload)
       await addToCart(payload)
-      setSnackOpen(true)
-      setTimeout(() => navigate('/cart'), 500)
+      navigate('/menu')
     } catch (err) {
       console.error('Failed to add to cart:', err)
       alert('Failed to add to cart. Please try again.')
@@ -863,12 +862,6 @@ export default function MenuItemDetails() {
         </CardContent>
       </Card>
 
-      <Snackbar
-        open={snackOpen}
-        autoHideDuration={2000}
-        onClose={() => setSnackOpen(false)}
-        message="Item added to cart"
-      />
     </Container>
   )
 }

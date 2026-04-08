@@ -1,89 +1,110 @@
-import {
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
-  Stack,
-} from '@mui/material'
-import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
-import DeleteSweepOutlinedIcon from '@mui/icons-material/DeleteSweepOutlined'
+import { Button, Dialog, DialogActions, DialogContent, Typography } from '@mui/material'
+import { useTheme } from '@mui/material/styles'
 
-const brand = {
-  primaryDark: '#1e5631',
-  textPrimary: '#2b2b2b',
-  textSecondary: '#79747e',
-  fontBase: "'Montserrat', sans-serif",
-}
+export default function ClearCartModal({ open, onClose, onConfirm }) {
+  const theme = useTheme()
+  const { brand } = theme
 
-export default function ClearCartModal({ open, onClose, onConfirm, itemCount = 0 }) {
   return (
     <Dialog
       open={open}
       onClose={onClose}
       aria-labelledby="clear-cart-title"
+      BackdropProps={{
+        sx: {
+          backgroundColor: 'rgba(0,0,0,0.18)',
+        },
+      }}
       PaperProps={{
         sx: {
-          borderRadius: '16px',
-          fontFamily: brand.fontBase,
-          maxWidth: 420,
           width: '100%',
+          maxWidth: '260px',
           mx: 2,
+          p: '24px',
+          borderRadius: '14px',
+          border: `0.5px solid ${brand.border}`,
+          boxShadow: 'none',
+          textAlign: 'center',
+          backgroundColor: '#ffffff',
         },
       }}
     >
-      <DialogTitle
-        id="clear-cart-title"
-        sx={{ fontFamily: brand.fontBase, fontWeight: 900, fontSize: '1.1rem', pb: 0.5 }}
-      >
-        <Stack direction="row" alignItems="center" gap={1.5}>
-          <WarningAmberRoundedIcon sx={{ color: '#e65100', fontSize: 24 }} />
-          Clear your cart?
-        </Stack>
-      </DialogTitle>
-
-      <DialogContent>
-        <DialogContentText
-          sx={{ fontFamily: brand.fontBase, color: brand.textSecondary, fontSize: '0.9rem' }}
+      <DialogContent sx={{ p: 0 }}>
+        <Typography
+          id="clear-cart-title"
+          sx={{
+            fontFamily: brand.fontBase,
+            fontSize: '15px',
+            fontWeight: 600,
+            color: brand.textPrimary,
+            lineHeight: 1.25,
+          }}
         >
-          This will remove all {itemCount > 0 ? `${itemCount} item${itemCount !== 1 ? 's' : ''}` : 'items'} from your cart. This action cannot be undone.
-        </DialogContentText>
+          Clear your cart?
+        </Typography>
+        <Typography
+          sx={{
+            mt: 0.75,
+            fontFamily: brand.fontBase,
+            fontSize: '12px',
+            fontWeight: 500,
+            color: brand.textSecondary,
+            lineHeight: 1.4,
+          }}
+        >
+          This can&apos;t be undone.
+        </Typography>
       </DialogContent>
 
-      <DialogActions sx={{ px: 3, pb: 2.5, pt: 0.5, gap: 1 }}>
+      <DialogActions sx={{ p: 0, pt: 2, gap: 1.25 }}>
         <Button
+          fullWidth
           onClick={onClose}
           variant="outlined"
           sx={{
-            borderRadius: '10px',
-            fontFamily: brand.fontBase,
-            fontWeight: 700,
-            textTransform: 'none',
-            borderColor: '#e0e0e0',
+            minWidth: 0,
+            flex: 1,
+            borderRadius: '9px',
+            border: `0.5px solid ${brand.border}`,
+            backgroundColor: 'transparent',
             color: brand.textSecondary,
-            px: 2.5,
-            '&:hover': { borderColor: '#bdbdbd', backgroundColor: '#fafafa' },
+            fontFamily: brand.fontBase,
+            fontSize: '13px',
+            fontWeight: 500,
+            textTransform: 'none',
+            py: 0.95,
+            '&:hover': {
+              border: `0.5px solid ${brand.border}`,
+              backgroundColor: 'transparent',
+            },
           }}
         >
           Cancel
         </Button>
         <Button
+          fullWidth
           onClick={() => { onConfirm(); onClose() }}
           variant="contained"
-          startIcon={<DeleteSweepOutlinedIcon />}
           sx={{
-            borderRadius: '10px',
+            minWidth: 0,
+            flex: 1,
+            borderRadius: '9px',
+            border: 'none',
+            boxShadow: 'none',
+            backgroundColor: '#f5ebe9',
+            color: '#a93226',
             fontFamily: brand.fontBase,
-            fontWeight: 700,
+            fontSize: '13px',
+            fontWeight: 600,
             textTransform: 'none',
-            backgroundColor: '#c62828',
-            px: 2.5,
-            '&:hover': { backgroundColor: '#b71c1c', transform: 'translateY(-1px)' },
-            transition: 'all 0.2s ease',
+            py: 0.95,
+            '&:hover': {
+              backgroundColor: '#f5ebe9',
+              boxShadow: 'none',
+            },
           }}
         >
-          Clear Cart
+          Clear
         </Button>
       </DialogActions>
     </Dialog>

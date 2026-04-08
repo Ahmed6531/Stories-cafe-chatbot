@@ -332,20 +332,15 @@ export default function Navbar() {
   const msgsRef = useRef(null)
   const pendingReplyTimeoutRef = useRef(null)
 
-  const { cartCount, refreshCart } = useCart()
+  const { cartCount, lastAddedItem, refreshCart } = useCart()
   const [miniCartOpen, setMiniCartOpen] = useState(false)
   const cartBtnRef = useRef(null)
-  const prevCartCountRef = useRef(cartCount)
   const location = useLocation()
   const navigate = useNavigate()
   const hasConversation = messages.length > 0
   useEffect(() => {
-  const prev = prevCartCountRef.current
-  prevCartCountRef.current = cartCount
-  if (cartCount > prev && prev !== undefined) {
-    setMiniCartOpen(true)
-  }
-}, [cartCount])
+    if (lastAddedItem) setMiniCartOpen(true)
+  }, [lastAddedItem])
 
 useEffect(() => {
   if (location.pathname === '/cart' || location.pathname === '/checkout') {
@@ -628,6 +623,7 @@ useEffect(() => {
   open={miniCartOpen}
   onClose={() => setMiniCartOpen(false)}
   anchorRef={cartBtnRef}
+  lastAddedItem={lastAddedItem}
 />
           <div ref={pageRef} className="page">
             <div className="page-content">
