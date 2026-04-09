@@ -1,4 +1,4 @@
-/**
+﻿/**
  * submitMenuItem
  *
  * Orchestrates the create/edit flow including image upload:
@@ -16,6 +16,7 @@
 export async function submitMenuItem({
   editingId,
   form,
+  variantGroups,        // string[] — ordered groupId array from AdminItems
   imageFile,            // File | null — set by the file picker in AdminItems
   createMenuItem,
   updateMenuItem,
@@ -32,6 +33,7 @@ export async function submitMenuItem({
   const payload = {
     ...form,
     basePrice: Number(form.basePrice),
+    variantGroups,
   };
 
   setSaving(true);

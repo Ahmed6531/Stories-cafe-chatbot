@@ -6,7 +6,9 @@ import {
   deleteMenuItem,
   uploadMenuItemImage,
 } from "../../API/menuApi"
+import { fetchVariantGroups } from "../../API/variantGroupApi"
 import { submitMenuItem } from "../../components/admin/submitMenuItem"
+import VariantGroupsField from "../../components/admin/variantGroupsField"
 import { styled } from "@mui/material/styles"
 import Box from "@mui/material/Box"
 import Typography from "@mui/material/Typography"
@@ -214,6 +216,19 @@ const ImagePreview = styled("img")(() => ({
   border: "1px solid #e5e7eb",
 }))
 
+const FieldGroup = styled(Box)(() => ({
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+}))
+
+const FieldLabel = styled("label")(({ theme }) => ({
+  fontFamily: theme.brand.fontBase,
+  fontSize: 13,
+  fontWeight: 600,
+  color: theme.brand.textPrimary,
+}))
+
 const Badge = styled("span")(({ $yes }) => ({
   display: "inline-block",
   padding: "2px 8px",
@@ -230,6 +245,7 @@ const Badge = styled("span")(({ $yes }) => ({
 const EMPTY_FORM = {
   name: "",
   category: "",
+  subcategory: "",
   basePrice: "",
   description: "",
   isAvailable: true,
@@ -251,6 +267,10 @@ export default function AdminItems() {
   const [imagePreview, setImagePreview] = useState("")
   const fileInputRef = useRef(null)
 
+  const [allGroups, setAllGroups] = useState([])
+  const [attachedGroups, setAttachedGroups] = useState([])
+  const [dragSrcId, setDragSrcId] = useState(null)
+
   useEffect(() => { load() }, [])
 
   useEffect(() => {
@@ -262,8 +282,9 @@ export default function AdminItems() {
   async function load() {
     try {
       setLoading(true)
-      const data = await fetchMenu()
+      const [data, groups] = await Promise.all([fetchMenu(), fetchVariantGroups()])
       setItems(data.items)
+      setAllGroups(groups)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -309,13 +330,14 @@ export default function AdminItems() {
     await submitMenuItem({
       editingId,
       form,
+      variantGroups: attachedGroups,
       imageFile,
       createMenuItem,
       updateMenuItem,
       uploadMenuItemImage,
       fetchMenu,
       setItems,
-      resetForm: () => setForm(EMPTY_FORM),
+      resetForm: () => { setForm(EMPTY_FORM); setAttachedGroups([]) },
       resetImage,
       setEditingId,
       setFormError,
@@ -339,11 +361,13 @@ export default function AdminItems() {
     setForm({
       name: item.name || "",
       category: item.category || "",
+      subcategory: item.subcategory || "",
       basePrice: item.basePrice ?? "",
       description: item.description || "",
       isAvailable: item.isAvailable ?? true,
       isFeatured: item.isFeatured ?? false,
     })
+    setAttachedGroups(item.variantGroups || [])
     resetImage()
     setImagePreview(item.image || "")
     setFormError("")
@@ -352,12 +376,17 @@ export default function AdminItems() {
   function cancelEdit() {
     setEditingId(null)
     setForm(EMPTY_FORM)
+    setAttachedGroups([])
     resetImage()
     setFormError("")
   }
 
   if (loading) return <Typography sx={{ p: 2 }}>Loading menu items…</Typography>
   if (error) return <ErrorMsg>{error}</ErrorMsg>
+
+  const subcategoryOptions = [...new Set(
+    items.map((i) => i.subcategory).filter(Boolean)
+  )].sort()
 
   const imagePickerLabel = imageFile
     ? imageFile.name
@@ -379,47 +408,92 @@ export default function AdminItems() {
 
         {formError && <ErrorMsg component="p">{formError}</ErrorMsg>}
 
-        <FieldInput
-          name="name"
-          placeholder="Name"
-          value={form.name}
-          onChange={onFormChange}
-        />
-        <FieldInput
-          name="category"
-          placeholder="Category"
-          value={form.category}
-          onChange={onFormChange}
-        />
+        <FieldGroup>
+          <FieldLabel htmlFor="item-name">Item name</FieldLabel>
+          <FieldInput
+            id="item-name"
+            name="name"
+            placeholder="e.g. Iced Latte"
+            value={form.name}
+            onChange={onFormChange}
+          />
+        </FieldGroup>
+
+        <FieldGroup>
+          <FieldLabel htmlFor="item-category">Category</FieldLabel>
+          <FieldInput
+            id="item-category"
+            name="category"
+            placeholder="e.g. Coffee, Pastries"
+            value={form.category}
+            onChange={onFormChange}
+          />
+        </FieldGroup>
+
+        <FieldGroup>
+          <FieldLabel htmlFor="item-subcategory">Subcategory</FieldLabel>
+          <datalist id="subcategory-options">
+            {subcategoryOptions.map((s) => <option key={s} value={s} />)}
+          </datalist>
+          <FieldInput
+            id="item-subcategory"
+            name="subcategory"
+            placeholder="e.g. Hot, Iced, Frap"
+            value={form.subcategory}
+            onChange={onFormChange}
+            list="subcategory-options"
+          />
+        </FieldGroup>
 
         {/* ── Image upload ─────────────────────────────────────────────────── */}
-        <UploadZone $hasFile={!!imageFile || !!imagePreview}>
-          {imagePreview && <ImagePreview src={imagePreview} alt="preview" />}
-          <UploadLabel>{imagePickerLabel}</UploadLabel>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-            style={{ display: "none" }}
-            onChange={onFileChange}
-          />
-        </UploadZone>
+        <FieldGroup>
+          <span style={{ fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>Image</span>
+          <UploadZone $hasFile={!!imageFile || !!imagePreview}>
+            {imagePreview && <ImagePreview src={imagePreview} alt="preview" />}
+            <UploadLabel>{imagePickerLabel}</UploadLabel>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+              style={{ display: "none" }}
+              onChange={onFileChange}
+            />
+          </UploadZone>
+        </FieldGroup>
 
-        <FieldInput
-          name="basePrice"
-          placeholder="Base Price"
-          value={form.basePrice}
-          onChange={onFormChange}
-          type="number"
-          step="0.01"
-          min="0"
-        />
-        <FieldTextarea
-          name="description"
-          placeholder="Description"
-          value={form.description}
-          onChange={onFormChange}
-          rows={3}
+        <FieldGroup>
+          <FieldLabel htmlFor="item-price">Base price (L.L)</FieldLabel>
+          <FieldInput
+            id="item-price"
+            name="basePrice"
+            placeholder="e.g. 350000"
+            value={form.basePrice}
+            onChange={onFormChange}
+            type="number"
+            step="0.01"
+            min="0"
+          />
+        </FieldGroup>
+
+        <FieldGroup>
+          <FieldLabel htmlFor="item-description">Description</FieldLabel>
+          <FieldTextarea
+            id="item-description"
+            name="description"
+            placeholder="A short description shown to customers"
+            value={form.description}
+            onChange={onFormChange}
+            rows={3}
+          />
+        </FieldGroup>
+
+        {/* ── Variant groups ───────────────────────────────────────────────── */}
+        <VariantGroupsField
+          allGroups={allGroups}
+          attachedGroups={attachedGroups}
+          setAttachedGroups={setAttachedGroups}
+          dragSrcId={dragSrcId}
+          setDragSrcId={setDragSrcId}
         />
 
         <CheckRow>
