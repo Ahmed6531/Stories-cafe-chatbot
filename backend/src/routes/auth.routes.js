@@ -1,31 +1,49 @@
 import express from "express";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
+import { signToken } from "../utils/jwt.js";
 import User from "../models/User.js";
 import { sendEmail } from "../utils/mailer.js";
 import { accountVerifyTemplate } from "../utils/EmailTemplates.js";
+import { generateVerificationToken, verifyVerificationToken } from "../utils/tokens.js";
+import { requireAuth } from "../middleware/auth.js";
+import rateLimit from "express-rate-limit";
+import { body } from "express-validator";
+import { validate } from "../utils/validate.js";
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { code: "RATE_LIMITED", message: "Too many attempts, please try again later" } },
+});
 
 const router = express.Router();
 console.log("✅ auth routes loaded");
 
 // REGISTER
-router.post("/register", async (req, res) => {
-  const { email, password } = req.body;
+router.post("/register", validate([
+  body("email").isEmail().normalizeEmail(),
+  body("password").isLength({ min: 8 }).withMessage("Password must be at least 8 characters"),
+  body("name").notEmpty().isLength({ min: 2, max: 50 }).withMessage("Name must be 2–50 characters"),
+]), async (req, res) => {
+  const { name, email, password } = req.body;
 
   if (!email || !password) {
-    return res.status(400).json({ message: "Missing fields" });
+    return res.status(400).json({ error: { code: "VALIDATION_ERROR", message: "Missing fields" } });
   }
 
   try {
     const exists = await User.findOne({ email });
     if (exists) {
-      return res.status(409).json({ message: "User already exists" });
+      return res.status(409).json({ error: { code: "CONFLICT", message: "User already exists" } });
     }
 
     const hashed = await bcrypt.hash(password, 10);
-    await User.create({ email, password: hashed });
+    await User.create({ name, email, password: hashed });
 
-    const actionLink = `${process.env.BACKEND_URL}/auth/verify-email?email=${email}`;
+    const verificationToken = generateVerificationToken(email);
+    const actionLink = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
 
     sendEmail(
       email,
@@ -33,74 +51,145 @@ router.post("/register", async (req, res) => {
       accountVerifyTemplate,
       { name: email.split("@")[0], actionLink }
     )
-      .then(() => console.log("Welcome email sent"))
+      .then(() => {})
       .catch((err) => console.error("Error sending welcome email:", err));
 
     res.status(201).json({ message: "User created" });
   } catch (err) {
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Server error" } });
   }
 });
 
 // LOGIN
-router.post("/login", async (req, res) => {
+router.post("/login", authLimiter, validate([
+  body("email").notEmpty().withMessage("Email is required"),
+  body("password").notEmpty().withMessage("Password is required"),
+]), async (req, res) => {
   const { email, password } = req.body;
 
   try {
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(401).json({ message: "Invalid credentials" });
+      return res.status(401).json({ error: { code: "INVALID_CREDENTIALS", message: "Invalid credentials" } });
     }
 
     const match = await bcrypt.compare(password, user.password);
     if (!match) {
-      return res.status(401).json({ message: "Invalid credentials" });
+      return res.status(401).json({ error: { code: "INVALID_CREDENTIALS", message: "Invalid credentials" } });
+    }
+
+    if (user.role === "admin") {
+      return res.status(403).json({ error: { code: "FORBIDDEN", message: "Admin accounts must use the admin login" } });
     }
 
     if (!user.isVerified) {
-      const actionLink = `${process.env.BACKEND_URL}/auth/verify-email?email=${email}`;
-      await sendEmail(
-        email,
-        "Verify Your Account",
-        accountVerifyTemplate,
-        { name: email.split("@")[0], actionLink }
-      );
-      return res.status(403).json({ message: "Please verify your email. A new verification email has been sent." });
+      const verificationToken = generateVerificationToken(email);
+      const actionLink = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
+      try {
+        await sendEmail(
+          email,
+          "Verify Your Account",
+          accountVerifyTemplate,
+          { name: email.split("@")[0], actionLink }
+        );
+      } catch (e) {
+        console.error("Re-send verification email failed:", e);
+      }
+      return res.status(403).json({ error: { code: "EMAIL_NOT_VERIFIED", message: "Please verify your email. A new verification email has been sent." } });
     }
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "1d",
-    });
+    const token = signToken({ id: user._id, email: user.email, role: user.role });
 
-    res.json({ token });
+    const cookieOpts = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    };
+
+    res.clearCookie("admin_token", cookieOpts);
+    res.cookie("user_token", token, cookieOpts);
+
+    res.set("Cache-Control", "no-store");
+    res.json({ user: { id: user._id, email: user.email, role: user.role } });
   } catch (err) {
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Server error" } });
   }
 });
 
-// VERIFY
-router.get("/verify-email", async (req, res) => {
-  const { email } = req.query;
+// LOGOUT
+router.post("/logout", (_req, res) => {
+  const cookieOpts = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+  };
+  res.clearCookie("user_token", cookieOpts);
+  res.clearCookie("admin_token", cookieOpts);
+  res.set("Cache-Control", "no-store");
+  res.json({ success: true });
+});
 
-  if (!email) return res.status(400).send("Missing email");
+// SESSION — returns current user from cookie
+router.get("/me", requireAuth, async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  try {
+    const user = await User.findById(req.user.id).select("-password");
+    if (!user) {
+      return res.status(401).json({ error: { code: "INVALID_CREDENTIALS", message: "User not found" } });
+    }
+    res.json({ user: { id: user._id, name: user.name, email: user.email, role: user.role, isVerified: user.isVerified } });
+  } catch (err) {
+    res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Server error" } });
+  }
+});
+
+// SEND VERIFICATION EMAIL
+router.post("/send-verification", authLimiter, validate([
+  body("email").isEmail().normalizeEmail(),
+]), async (req, res) => {
+  const { email } = req.body;
 
   try {
     const user = await User.findOne({ email });
-    if (!user) return res.status(404).send("User not found");
+    if (!user) return res.status(404).json({ error: { code: "NOT_FOUND", message: "User not found" } });
+
+    const verificationToken = generateVerificationToken(email);
+    const actionLink = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
+
+    await sendEmail(
+      email,
+      "Verify Your Account",
+      accountVerifyTemplate,
+      { name: email.split("@")[0], actionLink }
+    );
+
+    res.set("Cache-Control", "no-store");
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Server error" } });
+  }
+});
+
+// VERIFY EMAIL
+router.get("/verify-email", async (req, res) => {
+  const { token } = req.query;
+
+  if (!token) return res.status(400).json({ error: { code: "VALIDATION_ERROR", message: "Missing token" } });
+
+  try {
+    const { email } = verifyVerificationToken(token);
+
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ error: { code: "NOT_FOUND", message: "User not found" } });
 
     user.isVerified = true;
     await user.save();
 
-    const loginUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/login`;
-    res.status(200).send(`
-      <div style="text-align:center; padding:50px; font-family: sans-serif;">
-        <h1 style="color:#00704a;">Email Verified!</h1>
-        <p>Your account is now confirmed. You can sign in.</p>
-        <a href="${loginUrl}" style="padding:10px 20px; background:#00704a; color:white; text-decoration:none; border-radius:5px;">Go to Login</a>
-      </div>
-    `);
+    res.set("Cache-Control", "no-store");
+    res.json({ success: true });
   } catch (err) {
-    res.status(500).send("Server error");
+    res.status(400).json({ error: { code: "VALIDATION_ERROR", message: err.message } });
   }
 });
 

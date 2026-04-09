@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+load_dotenv(override=True)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .api.chat import router as chat_router
@@ -27,13 +29,3 @@ async def health_check() -> dict:
 
 app.include_router(chat_router)
 app.include_router(voice_router)
-sessions = {}  # existing dict keyed by session_id
-
-def get_session(session_id):
-    if session_id not in sessions:
-        sessions[session_id] = {
-            "history": [],
-            "last_intent": None,
-            "upsell_suggestions": []   # NEW field
-        }
-    return sessions[session_id]

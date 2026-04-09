@@ -22,7 +22,7 @@ def suggest_popular_items(featured_items: list[dict[str, Any]], limit: int = 2) 
         {
             "type": "popular",
             "item_name": item["name"],
-            "menu_item_id": item.get("id") or item.get("_id"),
+            "menu_item_id": item.get("id"),
         }
         for item in sample
     ]
@@ -87,7 +87,7 @@ def suggest_complementary_items(
         {
             "type": "complementary",
             "item_name": item["name"],
-            "menu_item_id": item.get("id") or item.get("_id"),
+            "menu_item_id": item.get("id"),
         }
         for item in sample
     ]

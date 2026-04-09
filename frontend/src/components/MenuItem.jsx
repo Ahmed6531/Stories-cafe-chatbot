@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { Box, Typography, styled } from '@mui/material'
 import { menuCardLayout } from '../theme/layoutTokens'
+import { formatLL } from '../utils/currency'
 
 const ItemCard = styled(Box, {
   shouldForwardProp: (prop) => prop !== 'isAvailable',
@@ -110,24 +111,30 @@ const ItemContent = styled(Box)(({ theme }) => ({
   flexDirection: 'column',
   padding: `${menuCardLayout.contentPadding.desktop}px`,
   flex: 1,
+
   gap: '4px',
   background: theme.brand.bgLight,
   [theme.breakpoints.down('md')]: { padding: `${menuCardLayout.contentPadding.mobile}px` },
 }))
 
+
 const ItemName = styled(Typography)(({ theme }) => ({
   fontFamily: theme.brand.fontDisplay,
   fontSize: '15px',
   fontWeight: 600,
+
   color: theme.brand.textPrimary,
+
   lineHeight: 1.2,
   [theme.breakpoints.down('md')]: { fontSize: '12px' },
 }))
 
 const ItemDescription = styled(Typography)(({ theme }) => ({
+
   fontFamily: theme.brand.fontBase,
   fontSize: '12px',
   color: theme.brand.textSecondary,
+
   lineHeight: 1.4,
   display: '-webkit-box',
   WebkitLineClamp: 2,
@@ -168,20 +175,16 @@ const ItemPrice = styled(Typography)(({ theme }) => ({
   fontFamily: theme.brand.fontBase,
   fontSize: '17px',
   fontWeight: 700,
+
   color: theme.brand.textPrimary,
   [theme.breakpoints.down('md')]: { fontSize: '14px' },
 }))
+
 
 export default function MenuItem({ item }) {
   const navigate = useNavigate()
   const [imageError, setImageError] = useState(false)
   const showPlaceholder = !item.hasImage || imageError
-
-  const formatPrice = (p) => (
-    <>
-      <Box component="span" sx={{ fontSize: '0.72em', fontWeight: 600, opacity: 0.7 }}>LL</Box> {Number(p).toLocaleString()}
-    </>
-  )
 
   const handleAction = (e) => {
     if (e) e.stopPropagation()
@@ -232,7 +235,7 @@ export default function MenuItem({ item }) {
           <StatusPill isAvailable={item.isAvailable}>
             {item.isAvailable ? 'Available' : 'Out of stock'}
           </StatusPill>
-          <ItemPrice>{formatPrice(item.basePrice)}</ItemPrice>
+          <ItemPrice>{formatLL(item.basePrice)}</ItemPrice>
         </ItemBottom>
       </ItemContent>
     </ItemCard>

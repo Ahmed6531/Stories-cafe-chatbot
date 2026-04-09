@@ -1,593 +1,276 @@
 import asyncio
-import base64
 import json
+import shutil
+import subprocess
+import threading
 import uuid
-from contextlib import suppress
-from enum import Enum
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from starlette.concurrency import run_in_threadpool
-from app.core.config import settings
 from google.cloud import speech
 from google.oauth2 import service_account
+from starlette.concurrency import run_in_threadpool
 
-# ── Google Cloud STT Setup ─────────────────────────────────────────
-# 1. Create a GCP project at console.cloud.google.com
-# 2. Enable the Cloud Speech-to-Text API
-# 3. Create a service account:
-#    IAM & Admin → Service Accounts → Create
-#    Grant role: "Cloud Speech Client"
-# 4. Download the JSON key file
-# 5. Set GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json in .env
-# 6. pip install google-cloud-speech==2.27.0
-# ──────────────────────────────────────────────────────────────────
+from app.core.config import settings
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
-MAX_BYTES = 25 * 1024 * 1024
-ALLOWED_MIME_PREFIX = "audio/"
-CHUNK_ACK_EVERY = 8
-POST_STOP_FINALIZATION_TIMEOUT_SEC = 12.0
+_OPUS_MAGIC = b"OpusHead"
+_PHRASES = [
+    # Yogurts
+    "Frozen Yogurt Combo", "Frozen Yogurt", "Pistachio Frozen Yogurt",
+    # Coffee
+    "Espresso", "Flat White", "Hot Double Shot", "Caramel Macchiato",
+    "Latte", "Hot Chocolate", "Cappuccino", "Mocha", "White Mocha",
+    "Matcha Latte", "Double Espresso Macchiato", "Double Espresso",
+    "Espresso Macchiato", "Filtered Coffee", "Americano",
+    # Tea
+    "Earl Grey", "English Breakfast", "Green Tea", "Mint Tea", "Iced Peach Tea",
+    # Pastries
+    "Thyme Croissant", "Chocolate Croissant", "Cheese Croissant",
+    "Double Chocolate Chip Walnut", "Cinnamon Rolls", "Lazy Cake",
+    "Nutella Roll", "Strawberry Dried Drops",
+    # Mixed Beverages
+    "Steamed Milk", "Iced Mocha", "Hazelnut Coffee Frap", "Coffee Frap",
+    "Vanilla Coffee Frap", "Strawberry Cream Frap", "Matcha Cream Frap",
+    "Vanilla Cream Frap", "Caramel Cream Frap", "Chocolate Cream Frap",
+    "White Mocha Frap", "White Mocha Cream Frap", "Iced Chocolate",
+    "Double Shot Shaken", "Iced Matcha", "Iced Americano", "Bluenade",
+    "Caramel Frap", "Mocha Frap", "Espresso Frap", "Iced Latte",
+    "Iced White Mocha", "Iced Caramel Macchiato",
+    # Salad
+    "Tuna Pasta Salad", "Rocca Salad", "Greek Salad", "Quinoa Salad",
+    # Soft Drinks
+    "Rim Sparkling Water", "Rim 330ML", "San Benedetto Lemon 330ML",
+    "San Benedetto Clementine 330", "San Benedetto Glass 250", "Balkis Juice",
+    # Sandwiches
+    "Tuna Sub", "Chicken Teriyaki", "Turkey & Cheese", "Labneh", "Halloumi Pesto",
+    # Order modifiers
+    "small", "medium", "large", "iced", "hot",
+    "oat milk", "almond milk", "soy milk",
+    "extra shot", "no sugar", "decaf",
+    "add", "remove", "order", "repeat my last order",
+    "what's good today", "surprise me",
+]
 
-# Magic bytes that begin every Opus ID header (RFC 7845 §5.1)
-_OPUS_HEAD_MAGIC = b"OpusHead"
 
-
-class UtteranceState(str, Enum):
-    SESSION_OPEN = "session_open"
-    RECEIVING_AUDIO = "receiving_audio"
-    STOP_RECEIVED = "stop_received"
-    FINALIZING = "finalizing"
-    TERMINAL_SENT = "terminal_sent"
-    CLOSED = "closed"
-
-
-def _mime_to_encoding(mime_type: str):
-    if "ogg" in mime_type:
-        return speech.RecognitionConfig.AudioEncoding.OGG_OPUS
-    return speech.RecognitionConfig.AudioEncoding.WEBM_OPUS
-
-
-def _patch_webm_opus_sample_rate(data: bytes, sample_rate: int = 48000) -> tuple[bool, bytes]:
-    """
-    Chrome's MediaRecorder writes 0 in the Opus ID header's "Input Sample Rate"
-    field (bytes 12–15, little-endian).  Zero is technically valid per RFC 7845
-    (it means "use the native Opus output rate"), but Google Cloud STT rejects it.
-    When sample_rate_hertz is omitted from the STT config (required for WEBM_OPUS),
-    we must patch the header in the bitstream instead.
-
-    Returns (patched, data):
-      patched=True  — OpusHead was found; sample-rate field was 0 and has been set
-                      to sample_rate (or was already non-zero, treated as "done").
-      patched=False — OpusHead magic not found in this chunk; try the next one.
-    """
-    idx = data.find(_OPUS_HEAD_MAGIC)
+def _patch_opus_head(data: bytes) -> bytes:
+    """Patch Chrome's zero-filled Input Sample Rate field in the OpusHead header."""
+    idx = data.find(_OPUS_MAGIC)
     if idx == -1:
-        return False, data                          # not in this chunk — keep searching
-
-    # OpusHead layout (RFC 7845 §5.1):
-    #   0–7  : "OpusHead"  (8 bytes)
-    #   8    : version     (1 byte)
-    #   9    : channels    (1 byte)
-    #   10–11: pre-skip    (2 bytes LE)
-    #   12–15: Input Sample Rate (4 bytes LE)  ← Chrome writes 0 here
-    rate_offset = idx + 12
-    if rate_offset + 4 > len(data):
-        # Chunk is truncated mid-header — extremely unlikely but treat as not found
-        return False, data
-
-    current_rate = int.from_bytes(data[rate_offset: rate_offset + 4], "little")
-    if current_rate != 0:
-        return True, data                           # already valid — nothing to rewrite
-
-    patched = data[:rate_offset] + sample_rate.to_bytes(4, "little") + data[rate_offset + 4:]
-    return True, patched
+        return data
+    off = idx + 12
+    if off + 4 > len(data) or int.from_bytes(data[off : off + 4], "little") != 0:
+        return data
+    return data[:off] + (48000).to_bytes(4, "little") + data[off + 4:]
 
 
-def create_speech_client() -> speech.SpeechClient:
+def _make_client() -> speech.SpeechClient:
     if settings.google_credentials_json:
         info = json.loads(settings.google_credentials_json)
-        credentials = service_account.Credentials.from_service_account_info(info)
-        return speech.SpeechClient(credentials=credentials)
+        creds = service_account.Credentials.from_service_account_info(info)
+        return speech.SpeechClient(credentials=creds)
     return speech.SpeechClient()
 
 
-@router.get("/health")
-async def voice_health() -> dict:
-    return {"status": "ok", "message": "Voice routes ready."}
-
-
 @router.websocket("/stream")
-async def transcribe_stream(websocket: WebSocket):
-    """
-    WebSocket protocol:
-    - Client sends JSON {"type":"start","session_id":"...","utterance_id":"...","mime_type":"audio/webm"}
-    - Client streams binary audio chunks (or JSON {"type":"audio_chunk","audio_base64":"..."})
-    - Client sends JSON {"type":"stop"} to finalize
-    - Server replies with JSON events: ready, recording_started, progress, partial_transcript,
-      final_transcript, no_speech, timeout, error, pong
-    """
+async def voice_stream(websocket: WebSocket):
     await websocket.accept()
     conn_id = uuid.uuid4().hex[:8]
-    print(f"[VOICE][{conn_id}] websocket accepted")
 
-    utterance_state = UtteranceState.SESSION_OPEN
-    chunk_count = 0
-    total_bytes = 0
-    session_id = ""
-    utterance_id = ""
-    mime_type = "audio/webm"
+    aq: asyncio.Queue = asyncio.Queue()
+    rq: asyncio.Queue = asyncio.Queue()
     final_segments: list[str] = []
     latest_interim = ""
-    terminal_event_type: str | None = None
-    terminal_send_in_progress = False
+    session_id = utterance_id = ""
+    first_chunk = True
+    terminal_sent = False
+    is_aac = False
+    st = rt = None
 
-    audio_queue: asyncio.Queue | None = None
-    result_queue: asyncio.Queue | None = None
-    stt_task: asyncio.Task | None = None
-    result_task: asyncio.Task | None = None
+    cfg_webm = speech.StreamingRecognitionConfig(
+        config=speech.RecognitionConfig(
+            encoding=speech.RecognitionConfig.AudioEncoding.WEBM_OPUS,
+            sample_rate_hertz=48000,
+            language_code="en-US",
+            alternative_language_codes=["ar-LB"],
+            enable_automatic_punctuation=True,
+            model="latest_short",
+            audio_channel_count=1,
+            speech_contexts=[speech.SpeechContext(phrases=_PHRASES, boost=20.0)],
+        ),
+        interim_results=True,
+    )
 
-    def build_transcript(interim_text: str = "") -> str:
-        parts = [segment.strip() for segment in final_segments if segment and segment.strip()]
-        interim = (interim_text or "").strip()
-        if interim:
-            parts.append(interim)
+    cfg_linear16 = speech.StreamingRecognitionConfig(
+        config=speech.RecognitionConfig(
+            encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+            sample_rate_hertz=16000,
+            language_code="en-US",
+            alternative_language_codes=["ar-LB"],
+            enable_automatic_punctuation=True,
+            model="latest_short",
+            audio_channel_count=1,
+            speech_contexts=[speech.SpeechContext(phrases=_PHRASES, boost=20.0)],
+        ),
+        interim_results=True,
+    )
+
+    def build(interim: str = "") -> str:
+        parts = [s for s in final_segments if s.strip()]
+        if interim.strip():
+            parts.append(interim.strip())
         return " ".join(parts).strip()
 
-    def set_utterance_state(next_state: UtteranceState) -> None:
-        nonlocal utterance_state
-        if utterance_state == next_state:
-            return
-        print(f"[VOICE][{conn_id}] state {utterance_state.value} -> {next_state.value}")
-        utterance_state = next_state
+    loop = asyncio.get_running_loop()
 
-    def has_active_utterance() -> bool:
-        return utterance_state in {
-            UtteranceState.RECEIVING_AUDIO,
-            UtteranceState.STOP_RECEIVED,
-            UtteranceState.FINALIZING,
-        }
+    def _gen():
+        while True:
+            chunk = asyncio.run_coroutine_threadsafe(aq.get(), loop).result()
+            if chunk is None:
+                return
+            yield speech.StreamingRecognizeRequest(audio_content=chunk)
 
-    async def emit_terminal(event_type: str, **payload) -> bool:
-        nonlocal terminal_event_type, terminal_send_in_progress
-        if terminal_event_type is not None or terminal_send_in_progress:
-            print(
-                f"[VOICE][{conn_id}] duplicate_terminal_suppressed "
-                f"existing={terminal_event_type} ignored={event_type}"
-            )
-            return False
+    def _gen_aac():
+        """Transcode MP4/AAC to LINEAR16 PCM via FFmpeg, yielding STT requests."""
+        proc = subprocess.Popen(
+            [
+                "ffmpeg",
+                "-fflags", "+nobuffer",
+                "-i", "pipe:0",
+                "-f", "s16le",
+                "-ar", "16000",
+                "-ac", "1",
+                "pipe:1",
+                "-loglevel", "quiet",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
 
-        terminal_send_in_progress = True
-        event = {
-            "type": event_type,
-            "session_id": session_id,
-            "utterance_id": utterance_id,
-            **payload,
-        }
+        def _write_stdin():
+            try:
+                while True:
+                    chunk = asyncio.run_coroutine_threadsafe(aq.get(), loop).result()
+                    if chunk is None:
+                        break
+                    proc.stdin.write(chunk)
+                    proc.stdin.flush()
+            finally:
+                proc.stdin.close()
+
+        writer = threading.Thread(target=_write_stdin, daemon=True)
+        writer.start()
 
         try:
-            await websocket.send_json(event)
+            while True:
+                pcm = proc.stdout.read(4096)
+                if not pcm:
+                    break
+                yield speech.StreamingRecognizeRequest(audio_content=pcm)
         finally:
-            terminal_send_in_progress = False
+            writer.join(timeout=5)
+            proc.wait()
 
-        terminal_event_type = event_type
-        set_utterance_state(UtteranceState.TERMINAL_SENT)
-        print(
-            f"[VOICE][{conn_id}] terminal_sent type={event_type} "
-            f"session={session_id} utterance={utterance_id}"
-        )
-        return True
+    def _stt():
+        try:
+            gen = _gen_aac() if is_aac else _gen()
+            cfg = cfg_linear16 if is_aac else cfg_webm
+            for resp in _make_client().streaming_recognize(cfg, gen):
+                for result in resp.results:
+                    asyncio.run_coroutine_threadsafe(rq.put(result), loop).result(timeout=5)
+        except Exception as exc:
+            asyncio.run_coroutine_threadsafe(rq.put(exc), loop).result(timeout=5)
+        finally:
+            asyncio.run_coroutine_threadsafe(rq.put(None), loop).result(timeout=5)
 
-    async def start_stt_session() -> None:
-        nonlocal audio_queue, result_queue, stt_task, result_task
-
-        _audio_queue: asyncio.Queue = asyncio.Queue()
-        _result_queue: asyncio.Queue = asyncio.Queue()
-        audio_queue = _audio_queue
-        result_queue = _result_queue
-        loop = asyncio.get_running_loop()
-
-        encoding = _mime_to_encoding(mime_type)
-        print(
-            f"[VOICE][{conn_id}] stt_stream_start session={session_id} utterance={utterance_id} "
-            f"encoding={encoding} mime_type={mime_type}"
-        )
-        # Google validates Opus sample rate against the recognition config. In practice
-        # WEBM_OPUS and OGG_OPUS both need an explicit supported Opus output rate here.
-        is_ogg = "ogg" in mime_type
-        recognition_config_kwargs: dict = dict(
-            encoding=encoding,
-            language_code="en-US",
-            #alternative_language_codes=["ar-LB"],
-            enable_automatic_punctuation=True,
-            sample_rate_hertz=48000,
-        )
-        print(
-            f"[VOICE][{conn_id}] google_config "
-            f"encoding={encoding} mime_type={mime_type} "
-            f"sample_rate_included={'sample_rate_hertz' in recognition_config_kwargs} "
-            f"sample_rate={recognition_config_kwargs.get('sample_rate_hertz')}"
-        )
-
-        config = speech.StreamingRecognitionConfig(
-            config=speech.RecognitionConfig(**recognition_config_kwargs),
-            interim_results=True,
-        )
-
-        # For WEBM_OPUS we must patch the OpusHead "Input Sample Rate" field in the
-        # bitstream (Chrome writes 0; Google STT rejects it).  The OpusHead lives in
-        # the WebM Tracks→TrackEntry→CodecPrivate element, which is always in the
-        # initialization segment.  Chrome normally flushes it in the first timeslice
-        # chunk, but we scan every chunk until it is found to be safe.
-        need_opus_patch = not is_ogg
-        opus_header_patched = [False]
-
-        def _audio_gen():
-            """Sync generator that drains the async audio_queue for the STT thread."""
-            chunk_num = 0
-            while True:
-                future = asyncio.run_coroutine_threadsafe(_audio_queue.get(), loop)
-                chunk = future.result()
-                if chunk is None:   # sentinel — stop the stream
-                    if need_opus_patch and not opus_header_patched[0]:
-                        print(
-                            f"[VOICE][{conn_id}] opus_patch_not_found — "
-                            f"OpusHead magic never seen in {chunk_num} chunks; "
-                            f"Google STT may reject the stream"
-                        )
-                    return
-                chunk_num += 1
-                if need_opus_patch and not opus_header_patched[0]:
-                    patched, chunk = _patch_webm_opus_sample_rate(chunk)
-                    if patched:
-                        opus_header_patched[0] = True
-                        print(
-                            f"[VOICE][{conn_id}] opus_patch_applied chunk={chunk_num} "
-                            f"size={len(chunk)}"
-                        )
-                    else:
-                        print(
-                            f"[VOICE][{conn_id}] opus_patch_miss chunk={chunk_num} "
-                            f"size={len(chunk)} — OpusHead not yet seen"
-                        )
-                yield speech.StreamingRecognizeRequest(audio_content=chunk)
-
-        def _run_stt() -> None:
-            try:
-                client = create_speech_client()
-                responses = client.streaming_recognize(config, _audio_gen())
-                for response in responses:
-                    print(f"[VOICE][{conn_id}] stt_response results={bool(response.results)}")
-                    for result in response.results:
-                        transcript = result.alternatives[0].transcript if result.alternatives else ""
-                        print(
-                            f'[VOICE][{conn_id}] stt_response results={bool(response.results)} '
-                            f'transcript="{transcript}" is_final={result.is_final}'
-                        )
-                        asyncio.run_coroutine_threadsafe(
-                            _result_queue.put(result), loop
-                        ).result(timeout=5)
-            except Exception as exc:
-                asyncio.run_coroutine_threadsafe(
-                    _result_queue.put(exc), loop
-                ).result(timeout=5)
-            finally:
-                # Always put the sentinel so _read_results can exit cleanly
-                asyncio.run_coroutine_threadsafe(
-                    _result_queue.put(None), loop
-                ).result(timeout=5)
-
-        async def _read_results() -> None:
-            nonlocal latest_interim
-            while True:
-                item = await _result_queue.get()
-                if item is None:
-                    print(f"[VOICE][{conn_id}] result_reader_sentinel session={session_id} utterance={utterance_id}")
-                    break
-                if isinstance(item, Exception):
-                    print(f"[VOICE][{conn_id}] google_stt_error: {item}")
-                    await emit_terminal("error", message=str(item))
-                    break
-                result = item
-                if not result.alternatives:
-                    continue
-                text = result.alternatives[0].transcript.strip()
-                if result.is_final:
-                    if text:
-                        final_segments.append(text)
-                    latest_interim = ""
-                    snapshot = build_transcript()
-                else:
-                    latest_interim = text
-                    snapshot = build_transcript(latest_interim)
-
-                if not snapshot:
-                    continue
-
-                # App-level terminal transcript events should only be sent after
-                # the browser sends {type:"stop"}. Google may emit multiple
-                # is_final segments while the utterance is still in progress.
-                await websocket.send_json({
-                    "type": "partial_transcript",
-                    "snapshot": snapshot,
-                    "delta": text,
-                    "utterance_id": utterance_id,
-                    "session_id": session_id,
-                    "chunks": chunk_count,
-                })
-
-        stt_task = asyncio.create_task(run_in_threadpool(_run_stt))
-        result_task = asyncio.create_task(_read_results())
-
-    async def stop_stt(timeout_seconds: float | None = None) -> bool:
-        """Signal the STT stream to stop, then wait for both tasks to finish."""
-        nonlocal audio_queue, result_queue, stt_task, result_task
-        timed_out = False
-        loop = asyncio.get_running_loop()
-
-        def remaining_timeout(deadline: float | None) -> float | None:
-            if deadline is None:
-                return None
-            return max(0.0, deadline - loop.time())
-
-        deadline = None
-        if timeout_seconds is not None:
-            deadline = loop.time() + timeout_seconds
-
-        if audio_queue is not None:
-            await audio_queue.put(None)  # sentinel wakes up _audio_gen
-        if stt_task is not None:
-            try:
-                timeout = remaining_timeout(deadline)
-                if timeout is None:
-                    await stt_task
-                else:
-                    await asyncio.wait_for(asyncio.shield(stt_task), timeout=timeout)
-            except asyncio.TimeoutError:
-                timed_out = True
-                print(
-                    f"[VOICE][{conn_id}] stop_stt_timeout stage=stt_task "
-                    f"session={session_id} utterance={utterance_id}"
-                )
-            except Exception:
-                pass
-        if result_queue is not None and result_task is not None and not result_task.done():
-            result_queue.put_nowait(None)  # fallback in case the worker never delivered its sentinel
-        if result_task is not None:
-            try:
-                timeout = remaining_timeout(deadline)
-                if timeout is None:
-                    await result_task
-                else:
-                    await asyncio.wait_for(asyncio.shield(result_task), timeout=timeout)
-            except asyncio.TimeoutError:
-                timed_out = True
-                print(
-                    f"[VOICE][{conn_id}] stop_stt_timeout stage=result_task "
-                    f"session={session_id} utterance={utterance_id}"
-                )
-            except Exception:
-                pass
-        if timed_out:
-            if stt_task is not None and not stt_task.done():
-                stt_task.cancel()
-            if result_task is not None and not result_task.done():
-                result_task.cancel()
-                with suppress(Exception):
-                    await result_task
-        audio_queue = None
-        result_queue = None
-        stt_task = None
-        result_task = None
-        print(
-            f"[VOICE][{conn_id}] stt_stream_closed session={session_id} utterance={utterance_id} "
-            f"chunk_count={chunk_count} total_bytes={total_bytes}"
-        )
-        return not timed_out
-
-    await websocket.send_json({
-        "type": "ready",
-        "message": "voice websocket connected",
-        "max_bytes": MAX_BYTES,
-    })
+    async def _results():
+        nonlocal latest_interim, terminal_sent
+        while True:
+            item = await rq.get()
+            if item is None:
+                break
+            if isinstance(item, Exception):
+                terminal_sent = True
+                await websocket.send_json({"type": "error", "message": str(item)})
+                break
+            if not item.alternatives:
+                continue
+            text = item.alternatives[0].transcript.strip()
+            if item.is_final:
+                if text:
+                    final_segments.append(text)
+                latest_interim = ""
+                await websocket.send_json({"type": "partial", "confirmed": build(), "interim": ""})
+            else:
+                latest_interim = text
+                await websocket.send_json({"type": "partial", "confirmed": build(), "interim": text})
 
     try:
         while True:
-            message = await websocket.receive()
-
-            if message.get("type") == "websocket.disconnect":
-                print(f"[VOICE][{conn_id}] socket closed")
-                set_utterance_state(UtteranceState.CLOSED)
+            msg = await websocket.receive()
+            if msg.get("type") == "websocket.disconnect":
                 break
 
-            # ── Binary audio chunk ──────────────────────────────────────────
-            if message.get("bytes") is not None:
-                if utterance_state != UtteranceState.RECEIVING_AUDIO:
-                    if utterance_state in {
-                        UtteranceState.STOP_RECEIVED,
-                        UtteranceState.FINALIZING,
-                        UtteranceState.TERMINAL_SENT,
-                    }:
-                        print(f"[VOICE][{conn_id}] ignored_late_chunk_after_stop size={len(message['bytes'])}")
-                        continue
-                    print(
-                        f"[VOICE][{conn_id}] send_start_before_binary "
-                        f"state={utterance_state.value}"
-                    )
-                    await websocket.send_json({"type": "error", "message": "send start before binary chunks"})
-                    continue
-
-                raw = message["bytes"]
-                total_bytes += len(raw)
-                chunk_count += 1
-                if chunk_count == 1:
-                    print(f"[VOICE][{conn_id}] first_chunk size={len(raw)} header_hex={raw[:20].hex()}")
-                print(f"[VOICE][{conn_id}] chunk_count={chunk_count} total_bytes={total_bytes}")
-
-                if total_bytes > MAX_BYTES:
-                    await stop_stt()
-                    await emit_terminal("error", message="audio exceeds 25 MB")
-                    continue
-
-                if audio_queue is not None:
-                    await audio_queue.put(raw)
-
-                if chunk_count % CHUNK_ACK_EVERY == 0:
-                    await websocket.send_json({
-                        "type": "progress",
-                        "chunks": chunk_count,
-                        "bytes": total_bytes,
-                        "utterance_id": utterance_id,
-                    })
+            if (raw := msg.get("bytes")) is not None:
+                if first_chunk:
+                    if not is_aac:
+                        raw = _patch_opus_head(raw)
+                    first_chunk = False
+                await aq.put(raw)
                 continue
 
-            # ── JSON control message ────────────────────────────────────────
-            text_payload = message.get("text")
-            if text_payload is None:
+            if not (text := msg.get("text")):
                 continue
+            payload = json.loads(text)
+            ev = payload.get("type")
 
-            try:
-                payload = json.loads(text_payload)
-            except Exception:
-                await websocket.send_json({"type": "error", "message": "invalid json payload"})
-                continue
-
-            event_type = payload.get("type")
-
-            if event_type == "ping":
-                await websocket.send_json({"type": "pong"})
-                continue
-
-            if event_type == "start":
-                if has_active_utterance():
-                    await emit_terminal("error", message="utterance already in progress")
-                    continue
-
-                chunk_count = 0
-                total_bytes = 0
-                final_segments = []
-                latest_interim = ""
-                terminal_event_type = None
+            if ev == "start":
                 session_id = str(payload.get("session_id") or "")
                 utterance_id = str(payload.get("utterance_id") or uuid.uuid4())
-                mime_type = str(payload.get("mime_type") or "audio/webm")
-                if not mime_type.startswith(ALLOWED_MIME_PREFIX):
-                    mime_type = "audio/webm"
-                print(
-                    f"[VOICE][{conn_id}] start session={session_id} "
-                    f"utterance={utterance_id} mime_type={mime_type}"
-                )
+                mime_type = str(payload.get("mime_type") or "")
+                is_aac = mime_type.startswith("audio/mp4")
+                print(f"[VOICE][{conn_id}] start session={session_id} utterance={utterance_id} mime={mime_type} aac={is_aac}")
 
-                await start_stt_session()
-                set_utterance_state(UtteranceState.RECEIVING_AUDIO)
-
-                await websocket.send_json({
-                    "type": "recording_started",
-                    "session_id": session_id,
-                    "utterance_id": utterance_id,
-                    "mime_type": mime_type,
-                })
-                continue
-
-            if event_type == "audio_chunk":
-                if utterance_state != UtteranceState.RECEIVING_AUDIO:
-                    if utterance_state in {
-                        UtteranceState.STOP_RECEIVED,
-                        UtteranceState.FINALIZING,
-                        UtteranceState.TERMINAL_SENT,
-                    }:
-                        print(f"[VOICE][{conn_id}] ignored_late_base64_chunk_after_stop")
-                        continue
-                    await websocket.send_json({"type": "error", "message": "send start before chunk"})
-                    continue
-
-                audio_b64 = payload.get("audio_base64")
-                if not isinstance(audio_b64, str) or not audio_b64:
-                    await websocket.send_json({"type": "error", "message": "chunk requires audio_base64"})
-                    continue
-
-                try:
-                    raw = base64.b64decode(audio_b64)
-                except Exception:
-                    await websocket.send_json({"type": "error", "message": "invalid base64 audio chunk"})
-                    continue
-
-                total_bytes += len(raw)
-                chunk_count += 1
-                if chunk_count == 1:
-                    print(f"[VOICE][{conn_id}] first_chunk size={len(raw)} header_hex={raw[:20].hex()}")
-                print(f"[VOICE][{conn_id}] chunk_count={chunk_count} total_bytes={total_bytes}")
-
-                if total_bytes > MAX_BYTES:
-                    await stop_stt()
-                    await emit_terminal("error", message="audio exceeds 25 MB")
-                    continue
-
-                if audio_queue is not None:
-                    await audio_queue.put(raw)
-
-                if chunk_count % CHUNK_ACK_EVERY == 0:
+                if is_aac and not shutil.which("ffmpeg"):
+                    terminal_sent = True
                     await websocket.send_json({
-                        "type": "progress",
-                        "chunks": chunk_count,
-                        "bytes": total_bytes,
-                        "utterance_id": utterance_id,
+                        "type": "error",
+                        "message": "Server does not support MP4/AAC audio. Please use Chrome or Firefox.",
                     })
+                    break
+
+                st = asyncio.create_task(run_in_threadpool(_stt))
+                rt = asyncio.create_task(_results())
                 continue
 
-            if event_type == "stop":
-                if utterance_state != UtteranceState.RECEIVING_AUDIO:
-                    await websocket.send_json({"type": "error", "message": "no active utterance"})
-                    continue
-
-                set_utterance_state(UtteranceState.STOP_RECEIVED)
-                print(
-                    f"[VOICE][{conn_id}] stop received session={session_id} utterance={utterance_id} "
-                    f"chunk_count={chunk_count} total_bytes={total_bytes}"
-                )
-
-                if total_bytes == 0:
-                    await stop_stt()
-                    await emit_terminal(
-                        "no_speech",
-                        transcript="",
-                    )
-                    continue
-
-                # Signal STT stream to close, then emit one app-level terminal
-                # outcome built from the collected Google results.
-                set_utterance_state(UtteranceState.FINALIZING)
-                finalized = await stop_stt(timeout_seconds=POST_STOP_FINALIZATION_TIMEOUT_SEC)
-                if not finalized:
-                    await emit_terminal(
-                        "timeout",
-                        message="STT finalization timed out",
-                        phase="post_stop_finalization",
-                    )
-                    continue
-                if terminal_event_type is not None:
-                    continue
-
-                transcript = build_transcript(latest_interim)
-                if transcript:
-                    await emit_terminal(
-                        "final_transcript",
-                        transcript=transcript,
-                        chunks=chunk_count,
-                        bytes=total_bytes,
-                    )
-                else:
-                    await emit_terminal(
-                        "no_speech",
-                        transcript="",
-                        chunks=chunk_count,
-                        bytes=total_bytes,
-                    )
-                continue
-
-            await websocket.send_json({"type": "error", "message": f"unsupported event type: {event_type}"})
+            if ev == "stop":
+                await aq.put(None)
+                try:
+                    await asyncio.wait_for(asyncio.gather(st, rt), timeout=12.0)
+                except asyncio.TimeoutError:
+                    terminal_sent = True
+                    await websocket.send_json({"type": "error", "kind": "timeout", "message": "STT timed out"})
+                if not terminal_sent:
+                    transcript = build(latest_interim)
+                    if transcript:
+                        await websocket.send_json({"type": "final", "text": transcript, "utterance_id": utterance_id})
+                    else:
+                        await websocket.send_json({"type": "no_speech"})
+                break
 
     except WebSocketDisconnect:
-        print(f"[VOICE][{conn_id}] socket closed")
-        await stop_stt()
-        set_utterance_state(UtteranceState.CLOSED)
-        return
+        pass
+    except Exception as exc:
+        if not terminal_sent:
+            try:
+                await websocket.send_json({"type": "error", "message": str(exc)})
+            except Exception:
+                pass
+    finally:
+        await aq.put(None)
+        if st and not st.done():
+            st.cancel()
+        if rt and not rt.done():
+            rt.cancel()
+        print(f"[VOICE][{conn_id}] closed session={session_id}")

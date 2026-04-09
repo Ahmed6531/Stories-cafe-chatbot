@@ -3,47 +3,11 @@ import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Box, Typography, styled } from '@mui/material'
 import CategoryRail from '../components/menu/CategoryRail'
+import { PageWrap, SectionHeading, SectionLabel, StatusText } from '../components/menu/MenuPageChrome'
 import MenuList from '../components/MenuList'
 import MenuSkeleton from '../components/MenuSkeleton'
 import CategoryChipsSkeleton from '../components/CategoryChipsSkeleton'
 import { useMenuData } from '../hooks/useMenuData'
-
-// .page-wrap
-const PageWrap = styled(Box)(() => ({
-  width: '100%',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '10px',
-}));
-
-// .section-heading
-const SectionHeading = styled(Box)(() => ({
-  marginTop: '4px',
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  gap: '4px',
-}));
-
-// .section-title
-const SectionLabel = styled(Typography)(({ theme }) => ({
-  fontFamily: theme.brand.fontDisplay,
-  fontSize: '1.5rem',
-  fontWeight: 900,
-  letterSpacing: '0.04em',
-  textTransform: 'uppercase',
-  color: theme.brand.primary,
-  margin: 0,
-  textAlign: 'center',
-  position: 'relative',
-  paddingBottom: '8px',
-
-  [theme.breakpoints.down('md')]: {
-    fontSize: '1.25rem',
-    letterSpacing: '0.04em',
-    paddingBottom: '4px',
-  },
-}));
 
 // .state-wrap
 const StateWrap = styled(Box)(() => ({
@@ -65,16 +29,8 @@ const StateTitle = styled(Typography)(({ theme }) => ({
   color: theme.brand.primary,
 }));
 
-// .state-text
-const StatusText = styled(Typography, {
-  shouldForwardProp: (prop) => prop !== 'isError',
-})(({ theme, isError }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontSize: '16px',
-  fontWeight: 500,
-  color: isError ? '#b91c1c' : theme.brand.textSecondary,
-  margin: 0,
-}));
+
+
 
 // .subcatbar
 const SubcatBar = styled(Box)(() => ({

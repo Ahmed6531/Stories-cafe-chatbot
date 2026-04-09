@@ -1,24 +1,22 @@
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Box, Button, Container, Stack, Typography } from '@mui/material'
 import { useTheme } from '@mui/material/styles'
 import LocalGroceryStoreOutlinedIcon from '@mui/icons-material/LocalGroceryStoreOutlined'
 import { useCart } from '../state/useCart'
 import CartSummary from '../components/CartSummary'
+import CartItemsSkeleton from '../components/CartItemsSkeleton'
+import ClearCartModal from '../components/ClearCartModal'
 
 export default function Cart() {
   const theme = useTheme()
   const { brand } = theme
   const navigate = useNavigate()
-  const { state } = useCart()
+  const { state, clearCart } = useCart()
   const { items: cartItems, loading } = state
-
-  if (loading) {
-    return (
-      <Container sx={{ py: 3, textAlign: 'center' }}>
-        <Typography sx={{ fontFamily: brand.fontBase }}>Loading your cart...</Typography>
-      </Container>
-    )
-  }
+  const hasItems = cartItems.length > 0
+  const showEmptyState = !loading && !hasItems
+  const [clearModalOpen, setClearModalOpen] = useState(false)
 
   return (
     <Container
@@ -47,7 +45,13 @@ export default function Cart() {
         Your Cart
       </Typography>
 
-      {cartItems.length === 0 ? (
+      <ClearCartModal
+        open={clearModalOpen}
+        onClose={() => setClearModalOpen(false)}
+        onConfirm={clearCart}
+      />
+
+      {showEmptyState ? (
         <Stack spacing={2} alignItems="center" textAlign="center" sx={{ py: 8 }}>
           <LocalGroceryStoreOutlinedIcon sx={{ fontSize: 50, color: brand.primary, opacity: 0.3 }} />
           <Typography variant="h6" fontWeight={800} sx={{ color: brand.textPrimary }}>
@@ -80,6 +84,31 @@ export default function Cart() {
             items={cartItems}
             mode="cartSummary"
             title="Review Order"
+            itemsContent={loading ? <CartItemsSkeleton /> : null}
+            headerAction={
+              hasItems ? (
+                <Box
+                  component="button"
+                  type="button"
+                  onClick={() => setClearModalOpen(true)}
+                  sx={{
+                    border: 'none',
+                    background: 'transparent',
+                    p: 0,
+                    m: 0,
+                    color: '#b0b0a8',
+                    fontFamily: brand.fontBase,
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    lineHeight: 1,
+                    cursor: 'pointer',
+                    '&:hover': { color: '#888' },
+                  }}
+                >
+                  Clear all
+                </Box>
+              ) : null
+            }
             action={
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
                 <Button

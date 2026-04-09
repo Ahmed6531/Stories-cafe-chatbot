@@ -7,6 +7,7 @@ import {
   calculateSelectedOptionsDelta,
   createVariantGroupMap,
   resolveVariantGroupsForMenuItem,
+  sanitizeSelectedOptions,
 } from "../utils/variantPricing.js";
 
 const ORDER_TAX_RATE = 0.08;
@@ -14,15 +15,19 @@ const ORDER_TAX_RATE = 0.08;
 export async function createOrder(req, res) {
   const { orderType, customer, items, notesToBarista } = req.body || {};
   const cartId = req.get("x-cart-id") || req.body.cartId;
+  const userId = req.user?.id || null;
 
-  if (!orderType || !["pickup", "dine_in", "delivery"].includes(orderType)) {
+  console.log("[ORDER CREATE]", {
+    orderType,
+    itemCount: Array.isArray(items) ? items.length : 0,
+    cartId,
+  });
+
+  if (!orderType || !["pickup", "dine_in"].includes(orderType)) {
     return res.status(400).json({ error: "Invalid orderType" });
   }
   if (!customer?.name || !customer?.phone) {
     return res.status(400).json({ error: "Customer name and phone are required" });
-  }
-  if (orderType === "delivery" && !customer?.address) {
-    return res.status(400).json({ error: "Address is required for delivery" });
   }
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "Order items are required" });
@@ -33,15 +38,18 @@ export async function createOrder(req, res) {
 
   for (const line of items) {
     const { menuItemId, qty, selectedOptions = [], instructions = "" } = line || {};
+    const numericMenuItemId = Number(menuItemId);
     if (!menuItemId || !qty || qty < 1) {
       return res.status(400).json({ error: "Each item must include menuItemId and qty >= 1" });
     }
+    if (!Number.isFinite(numericMenuItemId)) {
+      return res.status(400).json({ error: `Invalid menuItemId: ${menuItemId}. Backend expects numeric id.` });
+    }
 
-    const menuItem = await MenuItem.findById(menuItemId);
+    const normalizedSelectedOptions = sanitizeSelectedOptions(selectedOptions);
+
+    const menuItem = await MenuItem.findOne({ id: numericMenuItemId });
     if (!menuItem) {
-      if (!isNaN(menuItemId)) {
-        return res.status(400).json({ error: `Invalid menuItemId: ${menuItemId}. Backend expects Mongo _id (ObjectId), not numeric id.` });
-      }
       return res.status(400).json({ error: "Menu item not found" });
     }
     if (!menuItem.isAvailable) {
@@ -55,10 +63,10 @@ export async function createOrder(req, res) {
       });
       const variantGroupsById = createVariantGroupMap(variantGroups);
       const resolvedVariantGroups = resolveVariantGroupsForMenuItem(menuItem, variantGroupsById);
-      optionsDelta = calculateSelectedOptionsDelta(selectedOptions, resolvedVariantGroups);
+      optionsDelta = calculateSelectedOptionsDelta(normalizedSelectedOptions, resolvedVariantGroups);
     } else {
-      for (const optLabel of selectedOptions) {
-        const found = (menuItem.options || []).find((o) => o.label === optLabel);
+      for (const selection of normalizedSelectedOptions) {
+        const found = (menuItem.options || []).find((o) => o.label === selection.optionName);
         if (found) optionsDelta += found.priceDelta;
       }
     }
@@ -68,11 +76,11 @@ export async function createOrder(req, res) {
     subtotal += lineTotal;
 
     orderLines.push({
-      menuItemId: menuItem._id,
+      menuItemId: numericMenuItemId,
       name: menuItem.name,
       qty,
       unitPrice,
-      selectedOptions,
+      selectedOptions: normalizedSelectedOptions,
       instructions: instructions || "",
       lineTotal
     });
@@ -80,6 +88,11 @@ export async function createOrder(req, res) {
 
   const tax = Math.round(subtotal * ORDER_TAX_RATE);
   const total = subtotal + tax;
+  console.log("[ORDER TOTALS]", {
+    subtotal,
+    tax,
+    total,
+  });
 
   let orderNumber = generateOrderNumber();
   for (let i = 0; i < 3; i++) {
@@ -89,6 +102,7 @@ export async function createOrder(req, res) {
   }
 
   const order = await Order.create({
+    userId,
     orderNumber,
     orderType,
     customer: {
@@ -103,9 +117,14 @@ export async function createOrder(req, res) {
   });
 
   if (cartId) {
-    await Cart.findOneAndDelete({ cartId });
+    const deletedCart = await Cart.findOneAndDelete({ cartId });
+    console.log("[CART DELETE]", {
+      cartId,
+      success: !!deletedCart,
+    });
   }
 
+  res.set("Cache-Control", "no-store");
   res.status(201).json({
     orderId: order._id,
     orderNumber: order.orderNumber,
@@ -115,6 +134,101 @@ export async function createOrder(req, res) {
 }
 
 export async function listOrders(req, res) {
-  const orders = await Order.find().sort({ createdAt: -1 }).limit(50);
+  const { status, orderType } = req.query;
+
+  const filter = {};
+
+  const validStatuses = ["received", "in_progress", "completed", "cancelled"];
+  const validTypes = ["pickup", "dine_in"];
+
+  if (status && validStatuses.includes(status)) {
+    filter.status = status;
+  }
+
+  if (orderType && validTypes.includes(orderType)) {
+    filter.orderType = orderType;
+  }
+
+  const orders = await Order.find(filter)
+    .sort({ createdAt: -1 })
+    .limit(50);
+
+  res.set("Cache-Control", "no-store");
   res.json({ orders });
+}
+
+export async function getMyOrders(req, res) {
+  const orders = await Order.find({ userId: req.user.id })
+    .sort({ createdAt: -1 })
+    .limit(20);
+
+  res.set("Cache-Control", "no-store");
+  res.json({ orders });
+}
+
+const ALLOWED_TRANSITIONS = {
+  received:    ["in_progress", "cancelled"],
+  in_progress: ["completed", "cancelled"],
+  completed:   [],
+  cancelled:   [],
+};
+
+export async function getOrderStatus(req, res) {
+  const { orderNumber } = req.params;
+
+  try {
+    const order = await Order.findOne({ orderNumber }).select("orderNumber status updatedAt");
+
+    if (!order) {
+      return res.status(404).json({ error: { code: "NOT_FOUND", message: "Order not found" } });
+    }
+
+    res.set("Cache-Control", "no-store");
+    res.json({ orderNumber: order.orderNumber, status: order.status, updatedAt: order.updatedAt });
+  } catch (err) {
+    res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Failed to fetch order status" } });
+  }
+}
+
+export async function updateOrderStatus(req, res) {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const validStatuses = ["received", "in_progress", "completed", "cancelled"];
+
+  if (!validStatuses.includes(status)) {
+    return res.status(400).json({ error: { code: "VALIDATION_ERROR", message: "Invalid status" } });
+  }
+
+  try {
+    const order = await Order.findById(id);
+
+    if (!order) {
+      return res.status(404).json({ error: { code: "NOT_FOUND", message: "Order not found" } });
+    }
+
+    const allowed = ALLOWED_TRANSITIONS[order.status] || [];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_TRANSITION",
+          message: `Cannot transition from '${order.status}' to '${status}'. Allowed: ${allowed.length ? allowed.join(", ") : "none (terminal state)"}.`,
+        },
+      });
+    }
+
+    order.status = status;
+    await order.save();
+
+    res.set("Cache-Control", "no-store");
+    res.json({
+      order: {
+        _id: order._id,
+        orderNumber: order.orderNumber,
+        status: order.status
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Failed to update order status" } });
+  }
 }

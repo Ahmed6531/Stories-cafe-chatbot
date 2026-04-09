@@ -1,11 +1,16 @@
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
+import MiniCartPopup from '../components/MiniCartPopup'
 import { useCart } from '../state/useCart'
+import { useSession } from '../hooks/useSession'
 import { styled, keyframes, useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Tooltip from '@mui/material/Tooltip'
 import ChatWidget from './ChatWidget/ChatWidget'
 import '../styles/index.css'
+
+const CHAT_STORAGE_KEY = 'chatMessages'
+const CHAT_STORAGE_TS_KEY = 'chatMessagesSavedAt'
 
 const Topbar = styled('header')(({ theme }) => ({
   padding: '0 20px',
@@ -121,7 +126,6 @@ const backdropFadeOut = keyframes`
   to   { opacity: 0; }
 `
 
-// Hamburger button — visible only on mobile
 const HamburgerBtn = styled('button')(() => ({
   display: 'none',
   '@media (max-width: 850px)': {
@@ -136,12 +140,12 @@ const HamburgerBtn = styled('button')(() => ({
     cursor: 'pointer',
     borderRadius: '8px',
     padding: 0,
+
     flexShrink: 0,
     '&:hover': { background: 'rgba(0,0,0,0.05)' },
   },
 }))
 
-// Faint shadow backdrop — sits below the topbar
 const MenuBackdrop = styled('div', {
   shouldForwardProp: (p) => p !== 'isClosing',
 })(({ isClosing }) => ({
@@ -155,7 +159,6 @@ const MenuBackdrop = styled('div', {
   animation: `${isClosing ? backdropFadeOut : backdropFadeIn} 0.38s ease forwards`,
 }))
 
-// Slide-in panel from the right — starts below the topbar
 const MenuPanel = styled('nav', {
   shouldForwardProp: (p) => p !== 'isClosing',
 })(({ isClosing }) => ({
@@ -174,7 +177,6 @@ const MenuPanel = styled('nav', {
   overflowY: 'auto',
   paddingTop: '50px',
 }))
-
 
 const MenuPanelItem = styled('button', {
   shouldForwardProp: (prop) => prop !== 'isActive',
@@ -197,7 +199,6 @@ const MenuPanelItem = styled('button', {
   '&:hover': { background: 'rgba(0, 112, 74, 0.06)', color: theme.brand.primary },
 }))
 
-// Hide topbar nav links on mobile
 const TopbarNavWrap = styled(Box)(() => ({
   display: 'flex',
   alignItems: 'center',
@@ -205,7 +206,6 @@ const TopbarNavWrap = styled(Box)(() => ({
   '@media (max-width: 850px)': { display: 'none' },
 }))
 
-// Hide topbar pill buttons on mobile — hamburger handles them
 const TopbarActionsWrap = styled(Box)(() => ({
   display: 'flex',
   flexDirection: 'row',
@@ -217,8 +217,8 @@ const TopbarActionsWrap = styled(Box)(() => ({
 export default function Navbar() {
   const theme = useTheme()
   const { brand } = theme
+  const { user, loading: sessionLoading, logout } = useSession()
 
-  const [isAuthed] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuClosing, setMenuClosing] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
@@ -229,22 +229,40 @@ export default function Navbar() {
   const [isOnline, setIsOnline] = useState(() => navigator.onLine)
 
   const pageRef = useRef(null)
+  const pendingCheckoutRef = useRef(false)
 
-  const { cartCount, refreshCart } = useCart()
+  const { cartCount, lastAddedItem, refreshCart, resetCart, clearLastAddedItem } = useCart()
+  const cartBtnRef = useRef(null)
   const location = useLocation()
   const navigate = useNavigate()
 
+  const onCart = location.pathname === '/cart' || location.pathname === '/checkout'
+  const miniCartOpen = !!lastAddedItem && !onCart
+
+  const isAuthed = !sessionLoading && !!user
+  const showGuestActions = !sessionLoading && !user
   const isChatAllowedRoute =
     location.pathname === '/' ||
     location.pathname.startsWith('/menu') ||
     location.pathname === '/cart' ||
     location.pathname.startsWith('/item/')
-
   const isSuccessRoute = location.pathname === '/success'
 
   useEffect(() => {
     pageRef.current?.scrollTo({ top: 0, behavior: 'auto' })
   }, [location.pathname, location.search])
+
+  const handleLogout = async () => {
+    await logout()
+    localStorage.removeItem('cartId')
+    localStorage.removeItem('chatSessionId')
+    localStorage.removeItem(CHAT_STORAGE_KEY)
+    localStorage.removeItem(CHAT_STORAGE_TS_KEY)
+    resetCart()
+    if (location.pathname.startsWith('/dashboard')) {
+      navigate('/')
+    }
+  }
 
   const closeMenu = () => {
     if (menuClosing) return
@@ -270,25 +288,35 @@ export default function Navbar() {
     setChatOpen(false)
     setChatRouteClosing(false)
     setDeferredChatClose(null)
+    if (pendingCheckoutRef.current) {
+      pendingCheckoutRef.current = false
+      navigate('/checkout')
+    }
   }
 
   useEffect(() => {
     if (!isChatAllowedRoute && chatOpen && !chatClosing && !chatRouteClosing) {
-      if (voiceSessionBusy) {
-        setDeferredChatClose('route')
-        return
-      }
-      setChatRouteClosing(true)
-      setChatClosing(true)
+      const timeoutId = window.setTimeout(() => {
+        if (voiceSessionBusy) {
+          setDeferredChatClose('route')
+          return
+        }
+        setChatRouteClosing(true)
+        setChatClosing(true)
+      }, 0)
+      return () => window.clearTimeout(timeoutId)
     }
     return undefined
   }, [isChatAllowedRoute, chatOpen, chatClosing, chatRouteClosing, voiceSessionBusy])
 
   useEffect(() => {
     if (!deferredChatClose || voiceSessionBusy || chatClosing) return
-    setChatRouteClosing(deferredChatClose === 'route')
-    setChatClosing(true)
-    setDeferredChatClose(null)
+    const timeoutId = window.setTimeout(() => {
+      setChatRouteClosing(deferredChatClose === 'route')
+      setChatClosing(true)
+      setDeferredChatClose(null)
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
   }, [deferredChatClose, voiceSessionBusy, chatClosing])
 
   useEffect(() => {
@@ -317,53 +345,59 @@ export default function Navbar() {
 
   return (
     <div className="app-shell">
+
+
       <div className="content-shell">
         <main className="main">
-          <Topbar>
-            <TopbarLeft>
-              <Box
-                component="img"
-                src="/stories-logo.png"
-                alt="Stories"
-                sx={{ maxWidth: '112px', maxHeight: '26px', objectFit: 'contain', flexShrink: 0 }}
-                onError={(e) => { e.currentTarget.style.display = 'none' }}
-              />
-              {!isSuccessRoute && (
+          {!isSuccessRoute && (
+            <Topbar>
+              <TopbarLeft>
+                <Box
+                  component="img"
+                  src="/stories-logo.png"
+                  alt="Stories"
+                  sx={{ maxWidth: '112px', maxHeight: '26px', objectFit: 'contain', flexShrink: 0 }}
+                  onError={(e) => { e.currentTarget.style.display = 'none' }}
+                />
                 <TopbarNavWrap>
                   <Box sx={{ width: '1px', height: '18px', bgcolor: '#e9e9e9', mx: '6px', flexShrink: 0 }} />
                   <TopNavLink to="/" isActive={location.pathname === '/'}>Home</TopNavLink>
                   <TopNavLink to="/menu" isActive={location.pathname.startsWith('/menu')}>Menu</TopNavLink>
+                  {isAuthed && (
+                    <TopNavLink to="/dashboard" isActive={location.pathname === '/dashboard'}>
+                      My Orders
+                    </TopNavLink>
+                  )}
                 </TopbarNavWrap>
-              )}
-            </TopbarLeft>
+              </TopbarLeft>
 
-            <TopbarActionsWrap sx={{ display: isSuccessRoute ? 'none' : undefined }}>
-              {isAuthed ? (
-                <TopPillBtn isAuth type="button" onClick={() => navigate(-1)}>Back</TopPillBtn>
-              ) : (
-                <TopPillBtn type="button" onClick={() => navigate('/login')}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="8" r="4" />
-                    <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-                  </svg>
-                  <span>Login</span>
+
+              <TopbarActionsWrap>
+                {isAuthed ? (
+                  <TopPillBtn isAuth type="button" onClick={handleLogout}>Logout</TopPillBtn>
+                ) : showGuestActions ? (
+                  <TopPillBtn type="button" onClick={() => navigate('/login')}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="8" r="4" />
+                      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+                    </svg>
+                    <span>Login</span>
+                  </TopPillBtn>
+                ) : null}
+
+                <TopPillBtn ref={cartBtnRef} type="button" onClick={() => navigate('/cart')}>
+                  <Box component="span" aria-hidden="true" sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="9" cy="21" r="1" />
+                      <circle cx="20" cy="21" r="1" />
+                      <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.95-1.57L23 6H6" />
+                    </svg>
+                  </Box>
+                  <span>Cart</span>
+                  {cartCount > 0 && <CartBadge>{cartCount}</CartBadge>}
                 </TopPillBtn>
-              )}
+              </TopbarActionsWrap>
 
-              <TopPillBtn type="button" onClick={() => navigate('/cart')}>
-                <Box component="span" aria-hidden="true" sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="9" cy="21" r="1" />
-                    <circle cx="20" cy="21" r="1" />
-                    <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.95-1.57L23 6H6" />
-                  </svg>
-                </Box>
-                <span>Cart</span>
-                {cartCount > 0 && <CartBadge>{cartCount}</CartBadge>}
-              </TopPillBtn>
-            </TopbarActionsWrap>
-
-            {!isSuccessRoute && (
               <HamburgerBtn
                 type="button"
                 aria-label={menuOpen ? 'Close menu' : 'Open menu'}
@@ -386,11 +420,19 @@ export default function Navbar() {
                   </svg>
                 )}
               </HamburgerBtn>
-            )}
-          </Topbar>
+            </Topbar>
+          )}
+
+          <MiniCartPopup
+            open={miniCartOpen}
+            onClose={clearLastAddedItem}
+            anchorRef={cartBtnRef}
+            lastAddedItem={lastAddedItem}
+            chatOpen={chatOpen}
+          />
 
           <div ref={pageRef} className="page">
-            <div className="page-content">
+            <div className={isSuccessRoute ? undefined : 'page-content'}>
               <Outlet />
             </div>
           </div>
@@ -404,6 +446,7 @@ export default function Navbar() {
             onCloseComplete={handleCloseComplete}
             onClose={closeChat}
             onVoiceSessionBusyChange={setVoiceSessionBusy}
+            onConfirm={() => { pendingCheckoutRef.current = true; closeChat() }}
             isOnline={isOnline}
             refreshCart={refreshCart}
             isSuccessRoute={isSuccessRoute}
@@ -444,12 +487,36 @@ export default function Navbar() {
               Cart
             </MenuPanelItem>
 
-            <MenuPanelItem type="button" isActive={location.pathname.startsWith('/login')} onClick={() => { closeMenu(); navigate('/login') }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-              </svg>
-              Login
-            </MenuPanelItem>
+            {isAuthed && (
+              <MenuPanelItem
+                type="button"
+                isActive={location.pathname === '/dashboard'}
+                onClick={() => { closeMenu(); navigate('/dashboard') }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
+                  <rect x="9" y="3" width="6" height="4" rx="1" />
+                  <path d="M9 12h6M9 16h4" />
+                </svg>
+                My Orders
+              </MenuPanelItem>
+            )}
+
+            {isAuthed ? (
+              <MenuPanelItem type="button" onClick={() => { closeMenu(); void handleLogout() }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                Logout
+              </MenuPanelItem>
+            ) : showGuestActions ? (
+              <MenuPanelItem type="button" isActive={location.pathname.startsWith('/login')} onClick={() => { closeMenu(); navigate('/login') }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+                </svg>
+                Login
+              </MenuPanelItem>
+            ) : null}
           </MenuPanel>
         </>
       )}
