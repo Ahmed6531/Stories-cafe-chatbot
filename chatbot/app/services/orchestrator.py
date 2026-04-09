@@ -6,6 +6,7 @@ from app.schemas.chat import ChatMessageResponse
 from app.services.llm_interpreter import try_interpret_message, _extract_add_items_from_message
 from app.services.session_store import (
     Session,
+    get_session,
     get_session_stage,
     set_session_stage,
     get_checkout_initiated,
@@ -1570,16 +1571,44 @@ async def process_chat_message(
                 )
 
             featured_items = await fetch_featured_items()
-            popular = suggest_popular_items(featured_items)
-            complementary = suggest_complementary_items(menu_items, last_matched_item)
+            # Ask each suggester for a broader candidate pool, then filter down here
+            # so previous upsells do not accidentally exhaust the current response.
+            popular = suggest_popular_items(featured_items, limit=6)
+            complementary = suggest_complementary_items(menu_items, last_matched_item, limit=6)
 
             suggestions = popular + complementary
             added_item_names = {item["matched_name"].lower() for item in successful_items}
 
-            filtered_suggestions = [
-                s for s in suggestions
-                if s.get("item_name", "").lower() not in added_item_names
-            ]
+            session = get_session(session_id)
+            upsell_shown: list[str] = session.setdefault("upsell_shown", [])
+            upsell_history = {
+                name.strip().lower()
+                for name in upsell_shown
+                if isinstance(name, str) and name.strip()
+            }
+
+            filtered_suggestions = []
+            filtered_names: set[str] = set()
+            for suggestion in suggestions:
+                suggestion_name = (suggestion.get("item_name") or "").strip().lower()
+                if (
+                    not suggestion_name
+                    or suggestion_name in added_item_names
+                    or suggestion_name in upsell_history
+                    or suggestion_name in filtered_names
+                ):
+                    continue
+
+                filtered_suggestions.append(suggestion)
+                filtered_names.add(suggestion_name)
+
+                if len(filtered_suggestions) == 2:
+                    break
+
+            for name in filtered_names:
+                if name not in upsell_history:
+                    upsell_shown.append(name)
+                    upsell_history.add(name)
 
             cart_summary = build_cart_summary(cart_result["cart"])
             suggestion_lines = [f"- {s['item_name']}" for s in filtered_suggestions]

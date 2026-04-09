@@ -488,6 +488,15 @@ export default function ChatWidget({
       if (data.intent === 'confirm_checkout' && data.metadata?.pipeline_stage === 'checkout_redirect') {
         setTimeout(() => onConfirm?.(), 1500)
       }
+
+      if (data.audio_base64) {
+        try {
+          const audio = new Audio(data.audio_base64)
+          audio.play().catch(() => {})
+        } catch {
+          // never break chat on audio failure
+        }
+      }
     } catch {
       appendMessage({
         id: Date.now() + 1,

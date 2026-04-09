@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from app.schemas.chat import ChatMessageRequest, ChatMessageResponse
 from app.services.orchestrator import process_chat_message
 from app.services.session_store import get_session
+from app.services.tts.tts_service import tts_service
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -41,4 +42,6 @@ async def send_message(payload: ChatMessageRequest) -> ChatMessageResponse:
         ):
             session["last_items"] = requested_items
 
+    audio = await tts_service.synthesize(response.reply)
+    response.audio_base64 = audio
     return response

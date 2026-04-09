@@ -9,6 +9,7 @@ class Session(TypedDict):
     last_intent: str | None
     stage: str | None
     checkout_initiated: bool
+    upsell_shown: list
 
 
 sessions: dict[str, Session] = {}
@@ -19,6 +20,7 @@ def get_session(session_id: str) -> Session:
         session = sessions[session_id]
         session.setdefault("stage", None)
         session.setdefault("checkout_initiated", False)
+        session.setdefault("upsell_shown", [])
         return session
 
     new_session: Session = {
@@ -28,6 +30,7 @@ def get_session(session_id: str) -> Session:
         "last_intent": None,
         "stage": None,
         "checkout_initiated": False,
+        "upsell_shown": [],
     }
     sessions[session_id] = new_session
     return new_session
