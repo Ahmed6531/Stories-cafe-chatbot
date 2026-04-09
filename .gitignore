@@ -6,9 +6,6 @@ chatbot/venv/
 chatbot/.venv/
 chatbot/.env
 __pycache__/
-<<<<<<< HEAD
 *.pyc
 .venv/
-=======
 *.pyc"chatbot/gcp-credentials.json" 
->>>>>>> dev
