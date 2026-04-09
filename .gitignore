@@ -1,9 +1,18 @@
 .env
 node_modules/
-node_modulesnpm
+
+# chatbot secrets and local env
 chatbot/gcp-credentials.json
+chatbot/.env
+
+# chatbot Python environments
 chatbot/venv/
 chatbot/.venv/
-chatbot/.env
+chatbot/venv_old/
+
+# Python caches and compiled files
 __pycache__/
-*.pyc"chatbot/gcp-credentials.json" 
+chatbot/**/__pycache__/
+*.pyc
+*.pyo
+*.pyd

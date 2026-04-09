@@ -3,6 +3,7 @@ import re
 import httpx
 
 from app.schemas.chat import ChatMessageResponse
+from app.services.fallback_assistant import generate_fallback_reply
 from app.services.llm_interpreter import try_interpret_message, _extract_add_items_from_message
 from app.services.session_store import (
     Session,
@@ -103,8 +104,22 @@ def detect_special_command(message: str) -> str | None:
     if any(
         phrase in message
         for phrase in [
+            "describe",
+            "tell me about",
+            "what is",
+            "what's",
+            "whats",
+            "can you describe",
+            "can u describe",
             "recommend",
             "suggest",
+            "suggestions",
+            "recommendations",
+            "recommend me",
+            "what do you recommend",
+            "any suggestions",
+            "any recommendation",
+            "what should i get",
             "good today",
             "what's good",
             "whats good",
@@ -113,6 +128,19 @@ def detect_special_command(message: str) -> str | None:
             "what do you have",
         ]
     ):
+        if any(
+            phrase in message
+            for phrase in [
+                "describe",
+                "tell me about",
+                "what is",
+                "what's",
+                "whats",
+                "can you describe",
+                "can u describe",
+            ]
+        ):
+            return "describe_item"
         return "recommendation_query"
 
     return None
@@ -138,6 +166,36 @@ def has_mixed_intent(message: str) -> bool:
 def detect_intent(message: str) -> str:
     message = message.lower()
     has_digit = any(char.isdigit() for char in message)
+
+    if any(
+        phrase in message
+        for phrase in [
+            "describe",
+            "tell me about",
+            "what is",
+            "what's",
+            "whats",
+            "can you describe",
+            "can u describe",
+        ]
+    ):
+        return "describe_item"
+
+    if any(
+        phrase in message
+        for phrase in [
+            "recommend",
+            "suggest",
+            "suggestions",
+            "recommendations",
+            "what's good",
+            "whats good",
+            "popular",
+            "surprise me",
+            "what should i get",
+        ]
+    ):
+        return "recommendation_query"
 
     if any(word in message for word in ["remove", "delete"]):
         return "remove_item"
@@ -195,6 +253,39 @@ def extract_item_query(message: str, default_quantity: int | None = 1):
     item_query = " ".join(item_words)
 
     return item_query, quantity
+
+
+def extract_describe_query(message: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9\s]+", " ", message.lower()).strip()
+    prefixes = [
+        "can you describe",
+        "can u describe",
+        "can you tell me about",
+        "can u tell me about",
+        "tell me about",
+        "describe",
+        "what is",
+        "what s",
+        "whats",
+    ]
+
+    for prefix in prefixes:
+        if cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix):].strip()
+            break
+
+    ignore_words = {
+        "a",
+        "an",
+        "the",
+        "please",
+        "item",
+        "menu",
+        "me",
+        "about",
+    }
+    words = [w for w in cleaned.split() if w not in ignore_words]
+    return " ".join(words).strip()
 
 
 def extract_requested_items(interpretation: dict) -> list[dict]:
@@ -892,6 +983,27 @@ async def process_chat_message(
         interpretation["intent"] = "add_items"
         intent = "add_items"
 
+    if (
+        interpretation.get("intent") == "unknown"
+        and interpretation.get("fallback_needed", False)
+        and any(
+            phrase in normalized_message
+            for phrase in [
+                "recommend",
+                "suggest",
+                "suggestions",
+                "recommendations",
+                "what's good",
+                "whats good",
+                "popular",
+                "surprise me",
+                "what should i get",
+            ]
+        )
+    ):
+        interpretation["intent"] = "recommendation_query"
+        intent = "recommendation_query"
+
     last_stage = get_session_stage(session_id)
     bare_affirmations = {"yes", "yep", "ok", "okay", "sure", "sounds good", "do it", "go ahead"}
     explicit_confirm = {"confirm", "confirm order", "proceed", "place it", "let's go"}
@@ -990,6 +1102,86 @@ async def process_chat_message(
                 metadata={
                     "normalized_message": normalized_message,
                     "pipeline_stage": "recommendation_done",
+                },
+            )
+
+        if intent == "describe_item":
+            describe_query = extract_describe_query(normalized_message)
+            if not describe_query:
+                requested_items = extract_requested_items(interpretation)
+                if requested_items:
+                    describe_query = (requested_items[0].get("item_name") or "").strip()
+
+            if not describe_query:
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply="Sure, which menu item would you like me to describe?",
+                    intent=intent,
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "describe_item_missing_query",
+                    },
+                )
+
+            menu_items = await fetch_menu_items()
+            matched_item = await find_menu_item_by_name(menu_items, describe_query)
+
+            if not matched_item:
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply=f"I couldn't find '{describe_query}' on the menu. Want me to suggest something similar?",
+                    intent=intent,
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "item_query": describe_query,
+                        "pipeline_stage": "describe_item_not_found",
+                    },
+                )
+
+            menu_item_id = matched_item.get("id") or matched_item.get("_id")
+            item_detail = await fetch_menu_item_detail(menu_item_id) if menu_item_id is not None else None
+            source_item = item_detail if isinstance(item_detail, dict) else matched_item
+
+            item_name = source_item.get("name") or matched_item.get("name") or "This item"
+            description = (source_item.get("description") or "").strip()
+            base_price = source_item.get("basePrice") or source_item.get("price")
+
+            if description and base_price:
+                reply_text = f"{item_name}: {description}\n\nPrice: {_fmt_price(base_price)}"
+            elif description:
+                reply_text = f"{item_name}: {description}"
+            elif base_price:
+                reply_text = f"{item_name} is available for {_fmt_price(base_price)}."
+            else:
+                reply_text = f"{item_name} is available on our menu."
+
+            return ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply=reply_text,
+                intent=intent,
+                cart_updated=False,
+                cart_id=cart_id,
+                defaults_used=[],
+                suggestions=[],
+                metadata={
+                    "normalized_message": normalized_message,
+                    "item_query": describe_query,
+                    "matched_item": {
+                        "id": matched_item.get("id") or matched_item.get("_id"),
+                        "name": matched_item.get("name"),
+                    },
+                    "pipeline_stage": "describe_item_done",
                 },
             )
 
@@ -1635,10 +1827,11 @@ async def process_chat_message(
                 },
             )
 
+        fallback_reply = await generate_fallback_reply(normalized_message)
         return ChatMessageResponse(
             session_id=session_id,
             status="ok",
-            reply="I'm not sure how to help with that yet.",
+            reply=fallback_reply or "I'm not sure how to help with that yet.",
             intent=intent,
             cart_updated=False,
             cart_id=cart_id,
@@ -1647,6 +1840,7 @@ async def process_chat_message(
             metadata={
                 "normalized_message": normalized_message,
                 "pipeline_stage": "fallback_response",
+                "fallback_source": "llm" if fallback_reply else "static",
             },
         )
 

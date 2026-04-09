@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-dotenv.config();
+dotenv.config({ override: true });
 
 if (!process.env.MONGODB_URI) {
   throw new Error("Missing required env var: MONGODB_URI");

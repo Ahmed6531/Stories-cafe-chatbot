@@ -9,7 +9,10 @@ class Settings(BaseSettings):
 
     express_api_base_url: str = "http://localhost:5000"
 
-    openai_provider: str = "azure"
+    openai_provider: str = "gemini"
+
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
 
     azure_openai_api_key: str = ""
     azure_openai_endpoint: str = ""
@@ -23,6 +26,9 @@ class Settings(BaseSettings):
     stt_model: str = "whisper-large-v3-turbo"
     stt_language: str = "en"
     google_credentials_json: str = ""
+
+    tts_enabled: bool = False
+    tts_voice: str = "en-US-Journey-F"
 
     model_config = SettingsConfigDict(
         env_file=".env",
