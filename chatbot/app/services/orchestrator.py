@@ -3,6 +3,7 @@ import re
 import httpx
 
 from app.schemas.chat import ChatMessageResponse
+<<<<<<< HEAD
 from app.services.fallback_assistant import generate_fallback_reply
 from app.services.llm_interpreter import try_interpret_message, _extract_add_items_from_message
 from app.services.session_store import (
@@ -12,6 +13,22 @@ from app.services.session_store import (
     get_checkout_initiated,
     set_checkout_initiated,
 )
+=======
+from app.utils.normalize import normalize_user_message
+from app.services.tools import (
+    fetch_menu_items,
+    fetch_featured_items,
+    get_cart,
+    add_item_to_cart,
+    observe_combo,
+    remove_from_cart,
+    clear_cart,
+)
+from app.services.suggestions import suggest_popular_items, suggest_complementary_items
+from app.services.http_client import ExpressAPIError
+from app.services.upsell import get_upsell_suggestions
+from app.services.upsell_llm import generate_casual_suggestion_copy
+>>>>>>> sprint4/feature-upsell-combo
 
 logger = logging.getLogger(__name__)
 
@@ -881,6 +898,11 @@ async def process_chat_message(
     from app.utils.normalize import normalize_user_message
     from app.services.tools import (
         add_item_to_cart,
+<<<<<<< HEAD
+=======
+        observe_combo,
+        remove_from_cart,
+>>>>>>> sprint4/feature-upsell-combo
         clear_cart,
         fetch_featured_items,
         fetch_menu_item_detail,
@@ -895,6 +917,8 @@ async def process_chat_message(
         suggest_popular_items,
     )
     from app.services.http_client import ExpressAPIError
+    from app.services.upsell import get_upsell_suggestions
+    from app.services.upsell_llm import generate_casual_suggestion_copy
 
     if session is not None and cart_id is None:
         cart_id = session["cart_id"]
@@ -1085,11 +1109,86 @@ async def process_chat_message(
             suggestions = suggest_popular_items(featured_items)
             suggestion_lines = [f"- {item['item_name']}" for item in suggestions if item.get("item_name")]
 
+<<<<<<< HEAD
             if suggestion_lines:
                 reply_text = "Here are some items you might like:\n" + "\n".join(suggestion_lines)
             else:
                 reply_text = "Here are some items you might like!"
 
+=======
+            cart_items = cart_result["cart"]
+            anchor_menu_item_ids = sorted({
+                int(item.get("menuItemId"))
+                for item in cart_items
+                if item.get("menuItemId") is not None and int(item.get("menuItemId")) != int(menu_item_id)
+            })
+            if anchor_menu_item_ids:
+                await observe_combo(anchor_menu_item_ids, int(menu_item_id))
+
+            upsell = await get_upsell_suggestions(
+                session_id=session_id,
+                intent=intent,
+                cart_items=cart_items,
+                menu_items=menu_items,
+            )
+
+            suggestions = popular + complementary + upsell
+            filtered_suggestions = [
+                s for s in suggestions
+                if s.get("item_name", "").lower() != matched_item.get("name", "").lower()
+            ]
+
+            combo_only_pick = next(
+                (
+                    s for s in filtered_suggestions
+                    if s.get("type") == "upsell" and s.get("upsell_source") == "combo"
+                ),
+                None,
+            )
+            if combo_only_pick:
+                filtered_suggestions = [combo_only_pick]
+            # Build cart summary with prices
+
+            cart_lines = []
+            for item in cart_items:
+                qty = item.get("qty", 1)
+                name = item.get("name", "item")
+                price = float(item.get("price", 0))
+                cart_lines.append(f"• {qty}x {name} — {_fmt_price(price)} each")
+
+            cart_summary = "\n".join(cart_lines)
+
+            # Per-item price for the confirmation line
+            added_price = float(matched_item.get("basePrice", matched_item.get("price", 0)))
+            price_note = f" ({_fmt_price(added_price)})" if added_price else ""
+
+            reply_text = (
+                f"Added {quantity}x {matched_item.get('name')}{price_note} to your cart.\n\n"
+                f"Your cart:\n"
+                f"{cart_summary}"
+            )
+
+            upsell_pick = next(
+                (
+                    s for s in filtered_suggestions
+                    if s.get("type") == "upsell"
+                    and s.get("upsell_source") == "combo"
+                    and s.get("item_name")
+                ),
+                None,
+            )
+
+            if upsell_pick:
+                reply_text += (
+                    f"\n\nWould you like to add {upsell_pick.get('item_name')}? "
+                    f"It pairs perfectly with {matched_item.get('name')}."
+                )
+                if upsell_pick.get("fun_fact"):
+                    reply_text += f"\nFun fact: {upsell_pick.get('fun_fact')}"
+            elif filtered_suggestions:
+                reply_text += "\n\nYou might also like:"
+                        
+>>>>>>> sprint4/feature-upsell-combo
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
@@ -1306,6 +1405,7 @@ async def process_chat_message(
                 },
             )
 
+<<<<<<< HEAD
         if intent == "update_quantity":
             cart_result = await get_cart(cart_id=cart_id)
             requested_items = extract_requested_items(interpretation)
@@ -1422,6 +1522,19 @@ async def process_chat_message(
             if cart_summary:
                 reply_text += f"\n\nYour cart now contains:\n{cart_summary}"
 
+=======
+        if intent == "recommendation_query":
+            featured_items = await fetch_featured_items()
+            suggestions = suggest_popular_items(featured_items)
+            suggestion_names = [
+                s.get("item_name") for s in suggestions if s.get("item_name")
+            ]
+            generated_line = await generate_casual_suggestion_copy(
+                context_item_name="today's menu",
+                suggestion_names=suggestion_names,
+            )
+            reply = generated_line or "Here are some items you might like!"
+>>>>>>> sprint4/feature-upsell-combo
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
