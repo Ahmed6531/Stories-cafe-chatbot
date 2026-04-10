@@ -16,6 +16,8 @@ class ChatMessageResponse(BaseModel):
     intent: str = "unknown"
     cart_updated: bool = False
     cart_id: str | None = None
-    defaults_used: list[dict[str, Any]] = Field(default_factory=list)
+    # Can contain human-readable default labels (e.g. "Medium", "Full Fat")
+    # and/or structured entries when needed.
+    defaults_used: list[Any] = Field(default_factory=list)
     suggestions: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

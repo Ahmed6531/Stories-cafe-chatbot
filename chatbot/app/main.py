@@ -1,10 +1,6 @@
-<<<<<<< HEAD
 ﻿from dotenv import load_dotenv
 load_dotenv(override=True)
 from fastapi import FastAPI
-=======
-﻿from fastapi import FastAPI
->>>>>>> sprint4/feature-upsell-combo
 from fastapi.middleware.cors import CORSMiddleware
 from app.API.routes_chat import router as chat_router
 from app.API.voice import router as voice_router

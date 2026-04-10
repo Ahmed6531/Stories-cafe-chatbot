@@ -16,7 +16,37 @@ _PAIR_FUN_FACTS = {
     ("latte", "cheese croissant"): "The creamy body of a latte balances the flaky, salty richness of a cheese croissant.",
     ("cappuccino", "croissant"): "Foamy cappuccino and buttery pastry is a classic cafe pairing because texture contrast makes both stand out.",
     ("espresso", "dessert"): "Espresso is often paired with sweets because bitterness helps highlight dessert flavors.",
+    ("latte", "chocolate croissant"): "Milk-forward lattes pair beautifully with chocolate pastry because the dairy smooths cocoa bitterness.",
+    ("latte", "turkey & cheese"): "A mellow latte softens savory notes, making turkey and cheese feel richer without overpowering it.",
+    ("cappuccino", "cheese croissant"): "Cappuccino foam adds lightness that complements the dense, buttery bite of a cheese croissant.",
+    ("cappuccino", "chocolate croissant"): "Chocolate and cappuccino are a cafe staple: cocoa depth meets airy milk foam for balance.",
+    ("americano", "cheese croissant"): "Americano's clean finish helps reset the palate between rich, cheesy pastry bites.",
+    ("americano", "turkey & cheese"): "A crisp americano cuts through savory sandwich richness and keeps each bite tasting fresh.",
+    ("double espresso", "chocolate croissant"): "A strong espresso shot intensifies chocolate aromas, creating a bolder dessert-like pairing.",
+    ("espresso", "chocolate croissant"): "Espresso's roast notes naturally amplify cocoa flavor in chocolate pastries.",
+    ("espresso macchiato", "cheese croissant"): "A touch of milk in macchiato rounds acidity while preserving espresso intensity against buttery pastry.",
+    ("double espresso macchiato", "cheese croissant"): "The bolder espresso body stands up to rich pastry while milk keeps the sip smooth.",
+    ("mocha", "chocolate croissant"): "Mocha with chocolate pastry layers cocoa-on-cocoa for a rich, indulgent combo.",
+    ("white mocha", "cheese croissant"): "Sweet white mocha contrasts salty cheese pastry for a balanced sweet-savory experience.",
+    ("matcha latte", "croissant"): "Matcha's earthy profile pairs with buttery pastry by adding gentle bitterness and aroma.",
+    ("chai latte", "muffin"): "Warming chai spices pair naturally with baked goods and make muffin flavors feel deeper.",
+    ("flat white", "cheese croissant"): "Flat white offers concentrated coffee flavor with silky milk, ideal for rich savory pastries.",
+    ("cold brew", "cookie"): "Cold brew's smooth, low-acid profile works well with sweet cookies without feeling too heavy.",
+    ("iced latte", "cookie"): "An iced latte cools sweetness and keeps cookie pairings light and refreshing.",
+    ("frappe", "chocolate croissant"): "A chilled frappe and warm pastry create a hot-cold contrast that boosts texture and flavor.",
+    ("espresso frap", "chocolate croissant"): "Frozen espresso drinks pair well with chocolate pastry because temperature contrast highlights sweetness.",
+    ("tea", "dessert"): "Tea's aromatic notes can lift dessert flavors while keeping the finish clean.",
+    ("green tea", "dessert"): "Green tea's gentle bitterness balances sugary desserts and keeps the palate refreshed.",
+    ("black tea", "croissant"): "Black tea tannins pair nicely with buttery pastry by adding structure and balance.",
 }
+
+_GENERIC_PAIR_FUN_FACTS = [
+    "A contrasting sip-and-bite combo helps each flavor stand out more clearly.",
+    "Pairing different textures usually makes cafe combos feel more satisfying.",
+    "Alternating a rich bite with a fresh sip keeps the palate balanced.",
+    "A good drink-and-food match often boosts aroma and aftertaste together.",
+    "Sweet and savory contrasts can make both items taste more vibrant.",
+]
 
 
 def _safe_lower(value: Any) -> str:
@@ -101,10 +131,77 @@ def _build_combo_fun_fact(anchor_item: dict[str, Any] | None, suggested_item: di
     suggested_is_food = _is_food_item(suggested_item)
 
     if anchor_is_drink and suggested_is_food:
-        return "Drink + pastry pairings work well because sweetness can soften coffee bitterness."
+        return random.choice(
+            [
+                "Drink + pastry pairings work well because sweetness can soften coffee bitterness.",
+                "A pastry bite between sips can smooth roast intensity and highlight aroma.",
+                "Coffee and pastry pairings usually work best when one is rich and the other is clean-finishing.",
+            ]
+        )
     if anchor_is_food and suggested_is_drink:
-        return "A warm or iced drink helps cleanse the palate between rich pastry bites."
-    return None
+        return random.choice(
+            [
+                "A warm or iced drink helps cleanse the palate between rich pastry bites.",
+                "Sips between bites refresh the palate and keep savory notes balanced.",
+                "A good beverage pairing can lighten rich bakery flavors.",
+            ]
+        )
+    return random.choice(_GENERIC_PAIR_FUN_FACTS)
+
+
+def _category_key(item: dict[str, Any] | None) -> str:
+    if not isinstance(item, dict):
+        return "unknown"
+    category = _safe_lower(item.get("category"))
+    subcategory = _safe_lower(item.get("subcategory"))
+    if category and subcategory:
+        return f"{category}:{subcategory}"
+    return category or subcategory or "unknown"
+
+
+def _pick_diverse_random(
+    items: list[dict[str, Any]],
+    limit: int,
+    *,
+    used_categories: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    if limit <= 0 or not items:
+        return []
+
+    used_categories = set(used_categories or set())
+    shuffled = list(items)
+    random.shuffle(shuffled)
+
+    selected: list[dict[str, Any]] = []
+
+    # Pass 1: prefer categories not used yet.
+    for item in shuffled:
+        if len(selected) >= limit:
+            break
+        key = _category_key(item)
+        if key in used_categories:
+            continue
+        selected.append(item)
+        used_categories.add(key)
+
+    # Pass 2: fill any remaining slots regardless of category.
+    if len(selected) < limit:
+        selected_ids = {
+            int(item.get("id"))
+            for item in selected
+            if isinstance(item, dict) and item.get("id") is not None
+        }
+        for item in shuffled:
+            if len(selected) >= limit:
+                break
+            item_id = int(item.get("id")) if isinstance(item, dict) and item.get("id") is not None else None
+            if item_id is not None and item_id in selected_ids:
+                continue
+            selected.append(item)
+            if item_id is not None:
+                selected_ids.add(item_id)
+
+    return selected
 
 
 def should_upsell(session_id: str, intent: str, cart_items: list[dict]) -> bool:
@@ -113,15 +210,21 @@ def should_upsell(session_id: str, intent: str, cart_items: list[dict]) -> bool:
     if not cart_items:
         return False
 
-    # Increment turn counter for this session
-    turn = _session_turn_counter.get(session_id, 0) + 1
-    _session_turn_counter[session_id] = turn
+    # Turn is incremented once per incoming chat message via record_turn().
+    turn = _session_turn_counter.get(session_id, 0)
 
     last_shown = _upsell_last_shown.get(session_id, -999)
     if turn - last_shown < UPSELL_COOLDOWN_TURNS:
         return False
 
     return True
+
+
+def record_turn(session_id: str) -> int:
+    """Increment and return the conversation turn for this session."""
+    turn = _session_turn_counter.get(session_id, 0) + 1
+    _session_turn_counter[session_id] = turn
+    return turn
 
 
 async def suggest_upsell_items(
@@ -134,11 +237,6 @@ async def suggest_upsell_items(
         for item in menu_items
         if item.get("id") is not None
     }
-    menu_by_name = {
-        _safe_lower(item.get("name")): item
-        for item in menu_items
-        if item.get("name")
-    }
     cart_names = {_safe_lower(i.get("name")) for i in cart_items}
     cart_menu_item_ids = {
         int(i.get("menuItemId"))
@@ -146,41 +244,60 @@ async def suggest_upsell_items(
         if i.get("menuItemId") is not None
     }
     cart_categories = {_safe_lower(i.get("category")) for i in cart_items}
+    recent_item = cart_items[-1] if cart_items else None
+    recent_menu_item_id = (
+        int(recent_item.get("menuItemId"))
+        if isinstance(recent_item, dict) and recent_item.get("menuItemId") is not None
+        else None
+    )
+    recent_is_drink = _is_drink_item(recent_item)
+    recent_is_food = _is_food_item(recent_item)
 
     combo_stats = await fetch_combo_suggestions(
         anchor_menu_item_ids=sorted(cart_menu_item_ids),
         exclude_menu_item_ids=sorted(cart_menu_item_ids),
-        limit=max(limit * 3, 5),
+        limit=max(limit * 10, 20),
     )
-    combo_candidates = []
+    combo_ranked_by_id: dict[int, dict[str, Any]] = {}
     combo_fun_facts_by_id: dict[int, str] = {}
-    seen_combo_ids: set[int] = set()
     for combo in combo_stats:
         suggested_menu_item_id = combo.get("suggestedMenuItemId")
         if suggested_menu_item_id is None:
             continue
         combo_count = int(combo.get("count") or 0)
-        if combo_count < MIN_COMBO_COUNT_FOR_UPSELL:
+        if combo_count < 1:
             continue
 
-        item = menu_by_id.get(int(suggested_menu_item_id))
+        suggested_id = int(suggested_menu_item_id)
+        item = menu_by_id.get(suggested_id)
         if not item:
+            continue
+        if not item.get("isAvailable", True):
+            continue
+        if _safe_lower(item.get("name")) in cart_names:
             continue
 
         anchor_menu_item_id = combo.get("anchorMenuItemId")
         anchor_item = menu_by_id.get(int(anchor_menu_item_id)) if anchor_menu_item_id is not None else None
-        if not _is_complementary_pair(anchor_item, item):
-            continue
-
-        if not item.get("isAvailable", True):
-            continue
-        if int(suggested_menu_item_id) in seen_combo_ids:
-            continue
-        seen_combo_ids.add(int(suggested_menu_item_id))
+        is_complementary = _is_complementary_pair(anchor_item, item)
         fun_fact = _build_combo_fun_fact(anchor_item, item)
-        if fun_fact:
-            combo_fun_facts_by_id[int(suggested_menu_item_id)] = fun_fact
-        combo_candidates.append(item)
+        existing = combo_ranked_by_id.get(suggested_id)
+
+        # Keep the strongest signal per suggested item id.
+        if (
+            existing is None
+            or combo_count > int(existing.get("count") or 0)
+            or (is_complementary and not bool(existing.get("is_complementary")))
+        ):
+            combo_ranked_by_id[suggested_id] = {
+                "count": combo_count,
+                "item": item,
+                "is_complementary": is_complementary,
+                "fun_fact": fun_fact,
+                "anchor_menu_item_id": int(anchor_menu_item_id) if anchor_menu_item_id is not None else None,
+            }
+            if fun_fact:
+                combo_fun_facts_by_id[suggested_id] = fun_fact
 
     has_drink = any(
         w in cat for cat in cart_categories
@@ -191,7 +308,7 @@ async def suggest_upsell_items(
         for w in ["pastry", "dessert", "bakery", "cake", "cookie", "muffin", "croissant"]
     )
 
-    candidates = []
+    candidates: list[dict[str, Any]] = []
     for item in menu_items:
         if not item.get("isAvailable", True):
             continue
@@ -204,17 +321,73 @@ async def suggest_upsell_items(
         item_is_drink = any(w in cat or w in sub for w in ["beverage", "coffee", "latte", "tea", "drink", "frap"])
         item_is_food = any(w in cat or w in sub for w in ["pastry", "dessert", "bakery", "cake", "cookie", "muffin", "croissant"])
 
-        # cross-suggest: cart has drink → suggest food, and vice versa
+        # Prefer complement of the most recently added item.
+        if recent_is_food:
+            if item_is_drink:
+                candidates.append(item)
+            continue
+        if recent_is_drink:
+            if item_is_food:
+                candidates.append(item)
+            continue
+
+        # Fallback when recent item category is unclear.
         if has_drink and item_is_food:
             candidates.append(item)
         elif has_food and item_is_drink:
             candidates.append(item)
 
+    combo_records = list(combo_ranked_by_id.values())
+
+    # Priority policy:
+    # 1) high-frequency complementary combos
+    # 2) high-frequency combos (any category)
+    # 3) any observed combo
+    scoped_combo_records = (
+        [
+            record
+            for record in combo_records
+            if recent_menu_item_id is not None and record.get("anchor_menu_item_id") == recent_menu_item_id
+        ]
+        or combo_records
+    )
+
+    priority_combo_records = [
+        record
+        for record in scoped_combo_records
+        if int(record.get("count") or 0) >= MIN_COMBO_COUNT_FOR_UPSELL and bool(record.get("is_complementary"))
+    ]
+    if not priority_combo_records:
+        priority_combo_records = [
+            record
+            for record in scoped_combo_records
+            if int(record.get("count") or 0) >= MIN_COMBO_COUNT_FOR_UPSELL
+        ]
+    if not priority_combo_records:
+        priority_combo_records = scoped_combo_records
+
+    if recent_is_food:
+        preferred = [record for record in priority_combo_records if _is_drink_item(record.get("item"))]
+        if preferred:
+            priority_combo_records = preferred
+    elif recent_is_drink:
+        preferred = [record for record in priority_combo_records if _is_food_item(record.get("item"))]
+        if preferred:
+            priority_combo_records = preferred
+
+    priority_combo_records.sort(
+        key=lambda record: (
+            -int(record.get("count") or 0),
+            not bool(record.get("is_complementary")),
+        )
+    )
+    combo_items_ordered = [record["item"] for record in priority_combo_records if isinstance(record.get("item"), dict)]
+
     # Merge candidates while preserving combo priority and avoiding duplicates.
     merged_candidates: list[dict] = []
     seen_names: set[str] = set()
 
-    for item in combo_candidates + candidates:
+    for item in combo_items_ordered + candidates:
         name = _safe_lower(item.get("name"))
         if not name or name in seen_names:
             continue
@@ -222,16 +395,39 @@ async def suggest_upsell_items(
         merged_candidates.append(item)
 
     if not merged_candidates:
-        return []
+        # Ultimate fallback: suggest any available item not already in cart.
+        merged_candidates = [
+            item
+            for item in menu_items
+            if isinstance(item, dict)
+            and item.get("isAvailable", True)
+            and _safe_lower(item.get("name")) not in cart_names
+        ]
+        if not merged_candidates:
+            return []
 
-    if combo_candidates:
-        selected = merged_candidates[:limit]
-    else:
-        selected = random.sample(merged_candidates, min(limit, len(merged_candidates)))
+    # Stage 1: always take the highest-frequency combos first.
+    selected: list[dict[str, Any]] = combo_items_ordered[:limit]
+
+    # Stage 2: if we still need slots, fill with diverse random candidates.
+    if len(selected) < limit:
+        selected_ids = {
+            int(item.get("id"))
+            for item in selected
+            if item.get("id") is not None
+        }
+        random_pool = [
+            item for item in merged_candidates
+            if item.get("id") is not None and int(item.get("id")) not in selected_ids
+        ]
+        used_categories = {_category_key(item) for item in selected}
+        selected.extend(
+            _pick_diverse_random(random_pool, limit - len(selected), used_categories=used_categories)
+        )
 
     combo_candidate_ids = {
         int(item.get("id"))
-        for item in combo_candidates
+        for item in combo_items_ordered
         if item.get("id") is not None
     }
 
@@ -241,7 +437,14 @@ async def suggest_upsell_items(
             "item_name": item["name"],
             "menu_item_id": item.get("id"),
             "upsell_source": "combo" if item.get("id") in combo_candidate_ids else "fallback",
-            "fun_fact": combo_fun_facts_by_id.get(int(item.get("id"))) if item.get("id") in combo_candidate_ids and item.get("id") is not None else None,
+            "fun_fact": (
+                combo_fun_facts_by_id.get(int(item.get("id")))
+                if item.get("id") in combo_candidate_ids and item.get("id") is not None
+                else _build_combo_fun_fact(
+                    cart_items[-1] if cart_items else None,
+                    item,
+                )
+            ),
         }
         for item in selected
     ]

@@ -3,32 +3,16 @@ import re
 import httpx
 
 from app.schemas.chat import ChatMessageResponse
-<<<<<<< HEAD
 from app.services.fallback_assistant import generate_fallback_reply
 from app.services.llm_interpreter import try_interpret_message, _extract_add_items_from_message
 from app.services.session_store import (
     Session,
+    get_session,
     get_session_stage,
     set_session_stage,
     get_checkout_initiated,
     set_checkout_initiated,
 )
-=======
-from app.utils.normalize import normalize_user_message
-from app.services.tools import (
-    fetch_menu_items,
-    fetch_featured_items,
-    get_cart,
-    add_item_to_cart,
-    observe_combo,
-    remove_from_cart,
-    clear_cart,
-)
-from app.services.suggestions import suggest_popular_items, suggest_complementary_items
-from app.services.http_client import ExpressAPIError
-from app.services.upsell import get_upsell_suggestions
-from app.services.upsell_llm import generate_casual_suggestion_copy
->>>>>>> sprint4/feature-upsell-combo
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +53,31 @@ ADDON_CANDIDATES = {
     "extra bag": ["extra bag"],
 }
 
+NUMBER_WORDS = {
+    "zero": 0,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
+
+
+def extract_quantity_value(message: str) -> int | None:
+    words = str(message or "").lower().split()
+    for word in words:
+        if word.isdigit():
+            return int(word)
+    for word in words:
+        if word in NUMBER_WORDS:
+            return NUMBER_WORDS[word]
+    return None
+
 
 def _fmt_price(value) -> str:
     return f"L.L {int(float(value or 0)):,}"
@@ -85,6 +94,71 @@ def _format_failed_item_line(failed_item: dict) -> str:
     item_name = failed_item.get("item_name", "item")
     message = failed_item.get("message")
     return f"- {item_name}: {message}" if message else f"- {item_name}"
+
+
+def _lower_text(value) -> str:
+    return str(value or "").lower().strip()
+
+
+def _is_beverage_like(item: dict | None) -> bool:
+    if not item:
+        return False
+    hay = f"{_lower_text(item.get('category'))} {_lower_text(item.get('subcategory'))}"
+    return any(
+        word in hay
+        for word in [
+            "beverage",
+            "beverages",
+            "mixed beverages",
+            "coffee",
+            "black coffee",
+            "tea",
+            "drink",
+            "drinks",
+            "latte",
+            "frap",
+        ]
+    )
+
+
+def _is_food_like(item: dict | None) -> bool:
+    if not item:
+        return False
+    hay = f"{_lower_text(item.get('category'))} {_lower_text(item.get('subcategory'))}"
+    return any(
+        word in hay
+        for word in [
+            "pastry",
+            "pastries",
+            "dessert",
+            "desserts",
+            "bakery",
+            "cake",
+            "cakes",
+            "cookie",
+            "cookies",
+            "muffin",
+            "muffins",
+            "croissant",
+            "croissants",
+            "roll",
+            "rolls",
+        ]
+    )
+
+
+def _is_recordable_combo_pair(anchor_item: dict | None, suggested_item: dict | None) -> bool:
+    anchor_is_beverage = _is_beverage_like(anchor_item)
+    anchor_is_food = _is_food_like(anchor_item)
+    suggested_is_beverage = _is_beverage_like(suggested_item)
+    suggested_is_food = _is_food_like(suggested_item)
+
+    if not (anchor_is_beverage or anchor_is_food):
+        return False
+    if not (suggested_is_beverage or suggested_is_food):
+        return False
+
+    return (anchor_is_beverage and suggested_is_food) or (anchor_is_food and suggested_is_beverage)
 
 
 def detect_special_command(message: str) -> str | None:
@@ -183,6 +257,7 @@ def has_mixed_intent(message: str) -> bool:
 def detect_intent(message: str) -> str:
     message = message.lower()
     has_digit = any(char.isdigit() for char in message)
+    has_quantity_word = any(word in NUMBER_WORDS for word in message.split())
 
     if any(
         phrase in message
@@ -218,7 +293,7 @@ def detect_intent(message: str) -> str:
         return "remove_item"
     if "set" in message or "update" in message:
         return "update_quantity"
-    if has_digit and any(word in message for word in ["change", "make"]):
+    if (has_digit or has_quantity_word) and any(word in message for word in ["change", "make"]):
         return "update_quantity"
     if "cart" in message:
         return "view_cart"
@@ -234,11 +309,9 @@ def extract_item_query(message: str, default_quantity: int | None = 1):
     message = message.lower()
 
     words = message.split()
-    quantity = default_quantity
-
-    for word in words:
-        if word.isdigit():
-            quantity = int(word)
+    quantity = extract_quantity_value(message)
+    if quantity is None:
+        quantity = default_quantity
 
     ignore_words = {
         "a",
@@ -266,7 +339,10 @@ def extract_item_query(message: str, default_quantity: int | None = 1):
         "want",
     }
 
-    item_words = [w for w in words if w not in ignore_words and not w.isdigit()]
+    item_words = [
+        w for w in words
+        if w not in ignore_words and not w.isdigit() and w not in NUMBER_WORDS
+    ]
     item_query = " ".join(item_words)
 
     return item_query, quantity
@@ -895,14 +971,16 @@ async def process_chat_message(
     session: Session | None = None,
 ) -> ChatMessageResponse:
 
+    # Ensure we always have a persistent session object across turns for
+    # clarification flows (e.g., "add croissant" -> "cheese").
+    if session is None:
+        session = get_session(session_id)
+
     from app.utils.normalize import normalize_user_message
     from app.services.tools import (
         add_item_to_cart,
-<<<<<<< HEAD
-=======
         observe_combo,
         remove_from_cart,
->>>>>>> sprint4/feature-upsell-combo
         clear_cart,
         fetch_featured_items,
         fetch_menu_item_detail,
@@ -917,11 +995,30 @@ async def process_chat_message(
         suggest_popular_items,
     )
     from app.services.http_client import ExpressAPIError
+    from app.services.item_clarification import (
+        apply_customization_response,
+        apply_smart_defaults,
+        build_customization_prompt,
+        build_customization_suggestions,
+        build_defaults_confirmation_prompt,
+        build_defaults_confirmation_suggestions,
+        build_menu_choice_prompt,
+        build_menu_choice_suggestions,
+        collect_missing_variant_groups,
+        find_ambiguous_menu_matches,
+        _is_frozen_yogurt,
+        resolve_menu_choice,
+    )
     from app.services.upsell import get_upsell_suggestions
     from app.services.upsell_llm import generate_casual_suggestion_copy
+    from app.services.upsell import record_turn
 
     if session is not None and cart_id is None:
         cart_id = session["cart_id"]
+
+    # Count every incoming chat message as a turn so upsell cooldown
+    # behaves correctly even through multi-turn clarification flows.
+    record_turn(session_id)
 
     normalized_message = normalize_user_message(message)
     special_command = detect_special_command(normalized_message)
@@ -1040,6 +1137,273 @@ async def process_chat_message(
         interpretation["fallback_needed"] = False
         intent = "confirm_checkout"
 
+    if (
+        last_stage == "update_quantity_missing"
+        and session is not None
+        and intent != "update_quantity"
+    ):
+        qty_from_followup = extract_quantity_value(normalized_message)
+        session_items = session.get("last_items") if isinstance(session.get("last_items"), list) else []
+        last_item = session_items[0] if session_items and isinstance(session_items[0], dict) else None
+        if qty_from_followup is not None and last_item:
+            patched_item = {
+                "item_name": last_item.get("item_name"),
+                "quantity": qty_from_followup,
+                "size": last_item.get("size"),
+                "options": last_item.get("options") if isinstance(last_item.get("options"), dict) else {"milk": None, "sugar": None},
+                "addons": last_item.get("addons") if isinstance(last_item.get("addons"), list) else [],
+                "instructions": last_item.get("instructions") if isinstance(last_item.get("instructions"), str) else "",
+            }
+            interpretation = {
+                "intent": "update_quantity",
+                "items": [patched_item],
+                "confidence": 1.0,
+                "fallback_needed": False,
+            }
+            intent = "update_quantity"
+
+    pending_clarification = session.get("pending_clarification") if session is not None else None
+    if isinstance(pending_clarification, dict):
+        clarification_type = pending_clarification.get("type")
+
+        if clarification_type == "menu_choice":
+            selected_candidate = resolve_menu_choice(
+                normalized_message,
+                pending_clarification.get("candidates") or [],
+            )
+            if not selected_candidate:
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply=build_menu_choice_prompt(
+                        pending_clarification.get("item_query") or "item",
+                        pending_clarification.get("candidates") or [],
+                    ),
+                    intent="add_items",
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=build_menu_choice_suggestions(
+                        pending_clarification.get("candidates") or [],
+                    ),
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "clarification_menu_choice_pending",
+                    },
+                )
+
+            base_item = dict(pending_clarification.get("requested_item") or {})
+            base_item["item_name"] = selected_candidate.get("name")
+            interpretation = {
+                "intent": "add_items",
+                "items": [base_item],
+                "confidence": 1.0,
+                "fallback_needed": False,
+                "_resolved_clarification": True,
+            }
+            intent = "add_items"
+            session["pending_clarification"] = None
+            set_session_stage(session_id, None)
+
+        elif clarification_type == "item_customization":
+            base_item = dict(pending_clarification.get("requested_item") or {})
+            updated_item = apply_customization_response(
+                base_item,
+                normalized_message,
+                pending_clarification.get("menu_detail"),
+            )
+            remaining_groups = collect_missing_variant_groups(
+                updated_item,
+                pending_clarification.get("menu_detail"),
+            )
+            if remaining_groups:
+                session["pending_clarification"] = {
+                    **pending_clarification,
+                    "requested_item": updated_item,
+                }
+                session["last_items"] = [updated_item]
+                session["last_intent"] = "add_items"
+                set_session_stage(session_id, "item_customization")
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply=build_customization_prompt(
+                        updated_item.get("item_name") or "this item",
+                        remaining_groups,
+                    ),
+                    intent="add_items",
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=build_customization_suggestions(remaining_groups),
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "clarification_item_customization_pending",
+                    },
+                )
+
+            interpretation = {
+                "intent": "add_items",
+                "items": [updated_item],
+                "confidence": 1.0,
+                "fallback_needed": False,
+                "_resolved_clarification": True,
+            }
+            intent = "add_items"
+            session["pending_clarification"] = None
+            set_session_stage(session_id, None)
+
+        elif clarification_type == "defaults_confirmation":
+            base_item = dict(pending_clarification.get("requested_item") or {})
+            menu_det = pending_clarification.get("menu_detail")
+            original_item = dict(pending_clarification.get("original_item") or base_item)
+            item_display_name = pending_clarification.get("item_query") or base_item.get("item_name") or "this item"
+
+            _DEFAULTS_OK = {
+                "no", "nope", "nah", "no thanks", "no change",
+                "looks good", "looks great", "looks perfect",
+                "add it", "add as is", "add as-is",
+                "sounds good", "sounds great", "perfect",
+                "ok", "okay", "fine", "that's fine", "that's great",
+                "go ahead", "yes please", "please add it",
+                "looks good add it", "that works", "great",
+            }
+            _CHANGE_ONLY = {"change it", "change", "actually", "no wait", "wait", "edit it"}
+
+            stripped = normalized_message.strip().lower()
+
+            if stripped in _DEFAULTS_OK:
+                interpretation = {
+                    "intent": "add_items",
+                    "items": [base_item],
+                    "confidence": 1.0,
+                    "fallback_needed": False,
+                    "_resolved_clarification": True,
+                }
+                intent = "add_items"
+                session["pending_clarification"] = None
+                set_session_stage(session_id, None)
+
+            elif stripped in _CHANGE_ONLY:
+                all_missing = collect_missing_variant_groups(original_item, menu_det)
+                session["pending_clarification"] = {
+                    "type": "item_customization",
+                    "requested_item": base_item,
+                    "menu_detail": menu_det,
+                }
+                session["last_items"] = [base_item]
+                session["last_intent"] = "add_items"
+                set_session_stage(session_id, "item_customization")
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply=build_customization_prompt(item_display_name, all_missing) if all_missing
+                          else f"Sure! What would you like to change about your {item_display_name}?",
+                    intent="add_items",
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=build_customization_suggestions(all_missing),
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "defaults_confirmation_change_requested",
+                    },
+                )
+
+            else:
+                updated_item = apply_customization_response(base_item, normalized_message, menu_det)
+                remaining = collect_missing_variant_groups(updated_item, menu_det)
+                still_required = [g for g in remaining if bool(g.get("isRequired"))]
+                if still_required:
+                    session["pending_clarification"] = {
+                        "type": "item_customization",
+                        "requested_item": updated_item,
+                        "menu_detail": menu_det,
+                    }
+                    session["last_items"] = [updated_item]
+                    session["last_intent"] = "add_items"
+                    set_session_stage(session_id, "item_customization")
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="ok",
+                        reply=build_customization_prompt(item_display_name, still_required),
+                        intent="add_items",
+                        cart_updated=False,
+                        cart_id=cart_id,
+                        defaults_used=[],
+                        suggestions=build_customization_suggestions(still_required),
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "pipeline_stage": "defaults_confirmation_still_required",
+                        },
+                    )
+                else:
+                    interpretation = {
+                        "intent": "add_items",
+                        "items": [updated_item],
+                        "confidence": 1.0,
+                        "fallback_needed": False,
+                        "_resolved_clarification": True,
+                    }
+                    intent = "add_items"
+                    session["pending_clarification"] = None
+                    set_session_stage(session_id, None)
+
+    # Recovery path: if the session stage says we're customizing an item but
+    # pending_clarification was lost, apply the response to the last item.
+    if (
+        not isinstance(pending_clarification, dict)
+        and session is not None
+        and get_session_stage(session_id) in {"item_customization", "defaults_confirmation"}
+    ):
+        last_items = session.get("last_items")
+        last_item = last_items[0] if isinstance(last_items, list) and last_items and isinstance(last_items[0], dict) else None
+        item_name = (last_item or {}).get("item_name") if isinstance(last_item, dict) else None
+
+        if item_name:
+            menu_items = await fetch_menu_items()
+            matched_item = await find_menu_item_by_name(menu_items, item_name)
+            if matched_item:
+                menu_item_id = matched_item.get("id") or matched_item.get("_id")
+                menu_detail = await fetch_menu_item_detail(menu_item_id) if menu_item_id is not None else None
+                updated_item = apply_customization_response(last_item, normalized_message, menu_detail)
+                remaining_groups = collect_missing_variant_groups(updated_item, menu_detail)
+
+                if remaining_groups:
+                    session["pending_clarification"] = {
+                        "type": "item_customization",
+                        "requested_item": updated_item,
+                        "menu_detail": menu_detail,
+                    }
+                    session["last_items"] = [updated_item]
+                    session["last_intent"] = "add_items"
+                    set_session_stage(session_id, "item_customization")
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="ok",
+                        reply=build_customization_prompt(updated_item.get("item_name") or "this item", remaining_groups),
+                        intent="add_items",
+                        cart_updated=False,
+                        cart_id=cart_id,
+                        defaults_used=[],
+                        suggestions=build_customization_suggestions(remaining_groups),
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "pipeline_stage": "clarification_recovered_item_customization_pending",
+                        },
+                    )
+
+                interpretation = {
+                    "intent": "add_items",
+                    "items": [updated_item],
+                    "confidence": 1.0,
+                    "fallback_needed": False,
+                    "_resolved_clarification": True,
+                }
+                intent = "add_items"
+                session["pending_clarification"] = None
+                set_session_stage(session_id, None)
+
     try:
         if intent in {"add_item", "add_items", "update_quantity", "remove_item"} and has_mixed_intent(normalized_message):
             return ChatMessageResponse(
@@ -1062,6 +1426,8 @@ async def process_chat_message(
             if session is not None:
                 session["last_items"] = []
                 session["last_intent"] = None
+                session["pending_clarification"] = None
+                set_session_stage(session_id, None)
 
             return ChatMessageResponse(
                 session_id=session_id,
@@ -1106,24 +1472,15 @@ async def process_chat_message(
 
         if intent == "recommendation_query":
             featured_items = await fetch_featured_items()
-            suggestions = suggest_popular_items(featured_items)
-            suggestion_lines = [f"- {item['item_name']}" for item in suggestions if item.get("item_name")]
-
-<<<<<<< HEAD
-            if suggestion_lines:
-                reply_text = "Here are some items you might like:\n" + "\n".join(suggestion_lines)
-            else:
-                reply_text = "Here are some items you might like!"
-
-=======
+            popular = suggest_popular_items(featured_items)
+            cart_result = await get_cart(cart_id=cart_id)
             cart_items = cart_result["cart"]
-            anchor_menu_item_ids = sorted({
-                int(item.get("menuItemId"))
-                for item in cart_items
-                if item.get("menuItemId") is not None and int(item.get("menuItemId")) != int(menu_item_id)
-            })
-            if anchor_menu_item_ids:
-                await observe_combo(anchor_menu_item_ids, int(menu_item_id))
+            menu_items = await fetch_menu_items()
+
+            complementary = []
+            if cart_items:
+                anchor_item = cart_items[-1]
+                complementary = suggest_complementary_items(menu_items, anchor_item)
 
             upsell = await get_upsell_suggestions(
                 session_id=session_id,
@@ -1133,71 +1490,33 @@ async def process_chat_message(
             )
 
             suggestions = popular + complementary + upsell
-            filtered_suggestions = [
-                s for s in suggestions
-                if s.get("item_name", "").lower() != matched_item.get("name", "").lower()
-            ]
+            seen_names: set[str] = set()
+            filtered_suggestions = []
+            for suggestion in suggestions:
+                item_name = (suggestion.get("item_name") or "").strip()
+                if not item_name:
+                    continue
+                key = item_name.lower()
+                if key in seen_names:
+                    continue
+                seen_names.add(key)
+                filtered_suggestions.append(suggestion)
 
-            combo_only_pick = next(
-                (
-                    s for s in filtered_suggestions
-                    if s.get("type") == "upsell" and s.get("upsell_source") == "combo"
-                ),
-                None,
-            )
-            if combo_only_pick:
-                filtered_suggestions = [combo_only_pick]
-            # Build cart summary with prices
-
-            cart_lines = []
-            for item in cart_items:
-                qty = item.get("qty", 1)
-                name = item.get("name", "item")
-                price = float(item.get("price", 0))
-                cart_lines.append(f"• {qty}x {name} — {_fmt_price(price)} each")
-
-            cart_summary = "\n".join(cart_lines)
-
-            # Per-item price for the confirmation line
-            added_price = float(matched_item.get("basePrice", matched_item.get("price", 0)))
-            price_note = f" ({_fmt_price(added_price)})" if added_price else ""
-
-            reply_text = (
-                f"Added {quantity}x {matched_item.get('name')}{price_note} to your cart.\n\n"
-                f"Your cart:\n"
-                f"{cart_summary}"
-            )
-
-            upsell_pick = next(
-                (
-                    s for s in filtered_suggestions
-                    if s.get("type") == "upsell"
-                    and s.get("upsell_source") == "combo"
-                    and s.get("item_name")
-                ),
-                None,
-            )
-
-            if upsell_pick:
-                reply_text += (
-                    f"\n\nWould you like to add {upsell_pick.get('item_name')}? "
-                    f"It pairs perfectly with {matched_item.get('name')}."
-                )
-                if upsell_pick.get("fun_fact"):
-                    reply_text += f"\nFun fact: {upsell_pick.get('fun_fact')}"
-            elif filtered_suggestions:
-                reply_text += "\n\nYou might also like:"
+            suggestion_lines = [f"- {s['item_name']}" for s in filtered_suggestions]
+            if suggestion_lines:
+                reply_text = "Here are some picks you might like:\n" + "\n".join(suggestion_lines)
+            else:
+                reply_text = "I can help with suggestions once you add an item to your cart."
                         
->>>>>>> sprint4/feature-upsell-combo
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
                 reply=reply_text,
                 intent=intent,
                 cart_updated=False,
-                cart_id=cart_id,
+                cart_id=cart_result["cart_id"],
                 defaults_used=[],
-                suggestions=suggestions,
+                suggestions=filtered_suggestions,
                 metadata={
                     "normalized_message": normalized_message,
                     "pipeline_stage": "recommendation_done",
@@ -1405,7 +1724,6 @@ async def process_chat_message(
                 },
             )
 
-<<<<<<< HEAD
         if intent == "update_quantity":
             cart_result = await get_cart(cart_id=cart_id)
             requested_items = extract_requested_items(interpretation)
@@ -1440,6 +1758,10 @@ async def process_chat_message(
             target_item = requested_items[0] if requested_items else {}
             item_query = target_item.get("item_name")
             quantity = target_item.get("quantity")
+            if quantity is None:
+                quantity = extract_quantity_value(normalized_message)
+                if quantity is not None and isinstance(target_item, dict):
+                    target_item["quantity"] = quantity
 
             if not item_query:
                 return ChatMessageResponse(
@@ -1457,11 +1779,130 @@ async def process_chat_message(
                     },
                 )
 
-            if quantity is None or quantity < 1:
+            customization_hints = [
+                "milk", "sugar", "shot", "size",
+                "small", "medium", "med", "large",
+                "skim", "full fat", "regular milk", "whole milk",
+                "almond", "oat", "soy", "coconut", "lactose",
+                "decaf", "vanilla", "caramel", "mocha", "hazelnut",
+                "whipped", "drizzle", "flavor", "topping",
+            ]
+            has_customization_hint = any(hint in normalized_message for hint in customization_hints)
+
+            if quantity is None and has_customization_hint and requested_item_has_customization(target_item):
+                matched_cart_item = await find_menu_item_by_name(cart_result["cart"], item_query)
+                if not matched_cart_item:
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="ok",
+                        reply=f"I couldn't find {item_query} in your cart.",
+                        intent=intent,
+                        cart_updated=False,
+                        cart_id=cart_result["cart_id"],
+                        defaults_used=[],
+                        suggestions=[],
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "requested_items": requested_items,
+                            "cart": cart_result["cart"],
+                            "pipeline_stage": "cart_item_not_found",
+                        },
+                    )
+
+                line_id = matched_cart_item.get("lineId") or matched_cart_item.get("_id")
+                if line_id is None:
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="error",
+                        reply="I found the item in your cart, but I couldn't update it right now.",
+                        intent=intent,
+                        cart_updated=False,
+                        cart_id=cart_result["cart_id"],
+                        defaults_used=[],
+                        suggestions=[],
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "matched_item": matched_cart_item,
+                            "pipeline_stage": "cart_line_id_missing",
+                        },
+                    )
+
+                menu_item_id = matched_cart_item.get("menuItemId")
+                if menu_item_id is None:
+                    menu_items = await fetch_menu_items()
+                    matched_menu_item = await find_menu_item_by_name(menu_items, matched_cart_item.get("name", item_query))
+                    if matched_menu_item:
+                        menu_item_id = matched_menu_item.get("id") or matched_menu_item.get("_id")
+
+                if menu_item_id is None:
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="error",
+                        reply="I found your item, but I couldn't apply those customizations right now.",
+                        intent=intent,
+                        cart_updated=False,
+                        cart_id=cart_result["cart_id"],
+                        defaults_used=[],
+                        suggestions=[],
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "matched_item": matched_cart_item,
+                            "pipeline_stage": "menu_item_id_missing_for_customization_update",
+                        },
+                    )
+
+                menu_detail = await fetch_menu_item_detail(menu_item_id)
+                selected_options, instructions = map_requested_item_to_selected_options(target_item, menu_detail)
+                current_qty = int(matched_cart_item.get("qty") or 1)
+
+                removed = await remove_item_from_cart(line_id=line_id, cart_id=cart_result["cart_id"])
+                updated_cart_result = await add_item_to_cart(
+                    menu_item_id=menu_item_id,
+                    qty=current_qty,
+                    selected_options=selected_options,
+                    instructions=instructions,
+                    cart_id=removed["cart_id"],
+                )
+                set_session_stage(session_id, None)
+
+                cart_summary = build_cart_summary(updated_cart_result["cart"])
+                reply_text = f"Updated {matched_cart_item.get('name', item_query)} with your new customization."
+                if cart_summary:
+                    reply_text += f"\n\nYour cart now contains:\n{cart_summary}"
+
                 return ChatMessageResponse(
                     session_id=session_id,
                     status="ok",
-                    reply=f"What quantity should I set for {item_query}?",
+                    reply=reply_text,
+                    intent="update_item",
+                    cart_updated=True,
+                    cart_id=updated_cart_result["cart_id"],
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "requested_items": requested_items,
+                        "matched_item": matched_cart_item,
+                        "cart": updated_cart_result["cart"],
+                        "pipeline_stage": "update_item_customization_done",
+                    },
+                )
+
+            if quantity is None or quantity < 1:
+                matched_for_prompt = await find_menu_item_by_name(cart_result["cart"], item_query)
+                prompt_item_name = (
+                    matched_for_prompt.get("name", item_query)
+                    if isinstance(matched_for_prompt, dict)
+                    else item_query
+                )
+                if session is not None:
+                    session["last_items"] = [target_item]
+                    session["last_intent"] = "update_quantity"
+                set_session_stage(session_id, "update_quantity_missing")
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply=f"What quantity should I set for {prompt_item_name}?",
                     intent=intent,
                     cart_updated=False,
                     cart_id=cart_result["cart_id"],
@@ -1516,25 +1957,13 @@ async def process_chat_message(
                 qty=quantity,
                 cart_id=cart_result["cart_id"],
             )
+            set_session_stage(session_id, None)
             cart_summary = build_cart_summary(updated_cart_result["cart"])
             reply_text = f"Updated {matched_cart_item.get('name', item_query)} to quantity {quantity}."
 
             if cart_summary:
                 reply_text += f"\n\nYour cart now contains:\n{cart_summary}"
 
-=======
-        if intent == "recommendation_query":
-            featured_items = await fetch_featured_items()
-            suggestions = suggest_popular_items(featured_items)
-            suggestion_names = [
-                s.get("item_name") for s in suggestions if s.get("item_name")
-            ]
-            generated_line = await generate_casual_suggestion_copy(
-                context_item_name="today's menu",
-                suggestion_names=suggestion_names,
-            )
-            reply = generated_line or "Here are some items you might like!"
->>>>>>> sprint4/feature-upsell-combo
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
@@ -1687,6 +2116,7 @@ async def process_chat_message(
         if intent in {"add_item", "add_items"}:
             menu_items = await fetch_menu_items()
             requested_items = extract_requested_items(interpretation)
+            from_clarification = bool(interpretation.get("_resolved_clarification"))
             requested_items = resolve_add_items_from_session(
                 requested_items,
                 interpretation,
@@ -1755,10 +2185,42 @@ async def process_chat_message(
             last_matched_item = None
             cart_result = None
             current_cart_id = cart_id
+            multi_item_request = len(requested_items) > 1
 
             for requested_item in requested_items:
                 item_query = requested_item.get("item_name")
                 quantity = requested_item.get("quantity") or 1
+
+                ambiguous_matches = [] if from_clarification else find_ambiguous_menu_matches(menu_items, item_query or "")
+                if ambiguous_matches:
+                    if session is not None:
+                        session["pending_clarification"] = {
+                            "type": "menu_choice",
+                            "item_query": item_query,
+                            "requested_item": requested_item,
+                            "candidates": [
+                                {"id": item.get("id"), "name": item.get("name")}
+                                for item in ambiguous_matches
+                            ],
+                        }
+                        session["last_items"] = [requested_item]
+                        session["last_intent"] = "add_items"
+                    set_session_stage(session_id, "menu_choice")
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="ok",
+                        reply=build_menu_choice_prompt(item_query or "item", ambiguous_matches),
+                        intent="add_items",
+                        cart_updated=False,
+                        cart_id=current_cart_id,
+                        defaults_used=[],
+                        suggestions=build_menu_choice_suggestions(ambiguous_matches),
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "requested_items": requested_items,
+                            "pipeline_stage": "add_item_needs_menu_choice",
+                        },
+                    )
 
                 matched_item = await find_menu_item_by_name(menu_items, item_query or "")
                 if not matched_item:
@@ -1775,9 +2237,109 @@ async def process_chat_message(
                     )
                     continue
 
-                menu_detail = None
-                if requested_item_has_customization(requested_item):
-                    menu_detail = await fetch_menu_item_detail(menu_item_id)
+                menu_detail = await fetch_menu_item_detail(menu_item_id)
+
+                missing_variant_groups = [] if from_clarification else collect_missing_variant_groups(requested_item, menu_detail)
+                if missing_variant_groups and not from_clarification:
+                    item_display_name = matched_item.get("name", requested_item.get("item_name", "this item"))
+                    clarification_item = {
+                        **requested_item,
+                        "item_name": item_display_name,
+                        "quantity": quantity,
+                    }
+
+                    if _is_frozen_yogurt(menu_detail):
+                        # Frozen yogurt keeps the old full-clarification flow
+                        if session is not None:
+                            session["pending_clarification"] = {
+                                "type": "item_customization",
+                                "requested_item": clarification_item,
+                                "menu_detail": menu_detail,
+                            }
+                            session["last_items"] = [clarification_item]
+                            session["last_intent"] = "add_items"
+                        set_session_stage(session_id, "item_customization")
+                        return ChatMessageResponse(
+                            session_id=session_id,
+                            status="ok",
+                            reply=build_customization_prompt(item_display_name, missing_variant_groups),
+                            intent="add_items",
+                            cart_updated=False,
+                            cart_id=current_cart_id,
+                            defaults_used=[],
+                            suggestions=build_customization_suggestions(missing_variant_groups),
+                            metadata={
+                                "normalized_message": normalized_message,
+                                "requested_items": requested_items,
+                                "pipeline_stage": "add_item_needs_customization",
+                            },
+                        )
+
+                    # Smart defaults path (everything except frozen yogurt)
+                    updated_defaults_item, applied_labels, still_required = apply_smart_defaults(
+                        clarification_item, menu_detail
+                    )
+
+                    if still_required:
+                        # Defaults applied for size/milk; still ask for other required groups
+                        if session is not None:
+                            session["pending_clarification"] = {
+                                "type": "item_customization",
+                                "requested_item": updated_defaults_item,
+                                "menu_detail": menu_detail,
+                            }
+                            session["last_items"] = [updated_defaults_item]
+                            session["last_intent"] = "add_items"
+                        set_session_stage(session_id, "item_customization")
+                        return ChatMessageResponse(
+                            session_id=session_id,
+                            status="ok",
+                            reply=build_customization_prompt(item_display_name, still_required),
+                            intent="add_items",
+                            cart_updated=False,
+                            cart_id=current_cart_id,
+                            defaults_used=applied_labels,
+                            suggestions=build_customization_suggestions(still_required),
+                            metadata={
+                                "normalized_message": normalized_message,
+                                "requested_items": requested_items,
+                                "pipeline_stage": "add_item_needs_customization",
+                            },
+                        )
+
+                    if applied_labels:
+                        if not multi_item_request:
+                            # Single-item request: ask for confirmation after applying defaults.
+                            if session is not None:
+                                session["pending_clarification"] = {
+                                    "type": "defaults_confirmation",
+                                    "requested_item": updated_defaults_item,
+                                    "original_item": clarification_item,
+                                    "menu_detail": menu_detail,
+                                    "applied_labels": applied_labels,
+                                    "item_query": item_display_name,
+                                }
+                                session["last_items"] = [updated_defaults_item]
+                                session["last_intent"] = "add_items"
+                            set_session_stage(session_id, "defaults_confirmation")
+                            return ChatMessageResponse(
+                                session_id=session_id,
+                                status="ok",
+                                reply=build_defaults_confirmation_prompt(item_display_name, applied_labels),
+                                intent="add_items",
+                                cart_updated=False,
+                                cart_id=current_cart_id,
+                                defaults_used=applied_labels,
+                                suggestions=build_defaults_confirmation_suggestions(),
+                                metadata={
+                                    "normalized_message": normalized_message,
+                                    "requested_items": requested_items,
+                                    "pipeline_stage": "add_item_defaults_applied",
+                                },
+                            )
+                        # Multi-item request: apply defaults and continue processing remaining items.
+                        requested_item = updated_defaults_item
+                    # else: only addon/sugar groups were missing — fall through to add
 
                 selected_options, instructions = map_requested_item_to_selected_options(
                     requested_item,
@@ -1816,6 +2378,28 @@ async def process_chat_message(
                     continue
 
                 current_cart_id = cart_result["cart_id"]
+
+                menu_items_by_id = {
+                    int(item.get("id")): item
+                    for item in menu_items
+                    if isinstance(item, dict) and item.get("id") is not None
+                }
+                anchor_menu_item_ids = sorted(
+                    {
+                        int(item.get("menuItemId"))
+                        for item in cart_result["cart"]
+                        if isinstance(item, dict) and item.get("menuItemId") is not None
+                        and int(item.get("menuItemId")) != int(menu_item_id)
+                    }
+                )
+                filtered_anchor_menu_item_ids = [
+                    anchor_id
+                    for anchor_id in anchor_menu_item_ids
+                    if _is_recordable_combo_pair(menu_items_by_id.get(anchor_id), matched_item)
+                ]
+                if filtered_anchor_menu_item_ids:
+                    await observe_combo(filtered_anchor_menu_item_ids, int(menu_item_id))
+
                 last_matched_item = matched_item
                 successful_items.append(
                     {
@@ -1878,7 +2462,14 @@ async def process_chat_message(
             popular = suggest_popular_items(featured_items)
             complementary = suggest_complementary_items(menu_items, last_matched_item)
 
-            suggestions = popular + complementary
+            upsell = await get_upsell_suggestions(
+                session_id=session_id,
+                intent=intent,
+                cart_items=cart_result["cart"],
+                menu_items=menu_items,
+            )
+
+            suggestions = popular + complementary + upsell
             added_item_names = {item["matched_name"].lower() for item in successful_items}
 
             filtered_suggestions = [
@@ -1888,7 +2479,6 @@ async def process_chat_message(
 
             cart_summary = build_cart_summary(cart_result["cart"])
             suggestion_lines = [f"- {s['item_name']}" for s in filtered_suggestions]
-            suggestion_text = "\n".join(suggestion_lines)
 
             if len(successful_items) == 1 and not failed_items:
                 added_item = successful_items[0]
@@ -1918,8 +2508,40 @@ async def process_chat_message(
 
                 reply_text = "\n\n".join(reply_parts)
 
-            if suggestion_lines:
-                reply_text += f"\n\nYou might also like:\n{suggestion_text}"
+            upsell_pick = next(
+                (
+                    s
+                    for s in filtered_suggestions
+                    if s.get("type") == "upsell"
+                    and s.get("item_name")
+                ),
+                None,
+            )
+
+            if upsell_pick and last_matched_item:
+                context_name = (
+                    (upsell_pick.get("anchor_item_name") or "").strip()
+                    or last_matched_item.get("name")
+                    or successful_items[0]["matched_name"]
+                )
+                casual_copy = await generate_casual_suggestion_copy(
+                    context_item_name=context_name,
+                    suggestion_names=[upsell_pick.get("item_name")],
+                )
+                if casual_copy:
+                    reply_text += f"\n\n{casual_copy}"
+                else:
+                    reply_text += f"\n\nWould you like to add {upsell_pick.get('item_name')}?"
+                if upsell_pick.get("fun_fact"):
+                    reply_text += f"\n{upsell_pick.get('fun_fact')}"
+            upsell_response_suggestions = [upsell_pick] if upsell_pick else []
+
+            if session is not None:
+                session["cart_id"] = current_cart_id
+                session["last_items"] = list(requested_items)
+                session["last_intent"] = "add_items"
+                session["pending_clarification"] = None
+                set_session_stage(session_id, None)
 
             return ChatMessageResponse(
                 session_id=session_id,
@@ -1929,7 +2551,7 @@ async def process_chat_message(
                 cart_updated=True,
                 cart_id=current_cart_id,
                 defaults_used=[],
-                suggestions=filtered_suggestions,
+                suggestions=upsell_response_suggestions,
                 metadata={
                     "normalized_message": normalized_message,
                     "requested_items": requested_items,

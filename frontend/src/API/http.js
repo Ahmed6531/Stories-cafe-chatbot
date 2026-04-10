@@ -60,6 +60,10 @@ http.interceptors.response.use(
     return res;
   },
   (error) => {
+    if (axios.isCancel(error) || error?.code === "ERR_CANCELED") {
+      return Promise.reject(error);
+    }
+
     const requestUrl = error.config?.url || "";
     const isSessionBootstrap = requestUrl.includes("/auth/me");
     if (!isSessionBootstrap) {
