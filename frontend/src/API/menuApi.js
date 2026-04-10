@@ -1,4 +1,5 @@
 import http from './http'
+import { normalizeVariantGroupIds } from "../utils/variantGroups"
 
 let categoriesCache = null
 let categoriesRequest = null
@@ -9,13 +10,22 @@ let categoriesRequest = null
 function transformMenuItem(item) {
   if (!item.id || !item.name) return null;
   const hasImage = Boolean(item.image && String(item.image).trim());
+
+  // category is now a populated Category object {name, slug, image, subcategories}.
+  // Expose the full object plus convenience accessors so callers don't have to
+  // guard everywhere.
+  const category = item.category && typeof item.category === 'object'
+    ? item.category
+    : null;
+
   return {
     id: item.id,
     name: item.name,
     description: item.description,
     price: item.price || item.basePrice || 0,
     basePrice: item.basePrice || item.price || 0,
-    category: item.category,
+    category,                                       // full Category object
+    categorySlug: category?.slug || null,           // convenience: used for URL routing
     subcategory: item.subcategory || null,
     slug: item.slug || null,
     // null instead of '/images/placeholder.png' — that file doesn't exist and
@@ -27,12 +37,17 @@ function transformMenuItem(item) {
     isAvailable: item.isAvailable !== undefined ? item.isAvailable : true,
     isFeatured: item.isFeatured || false,
     options: item.options || [],
-    variantGroups: item.variantGroups || [],
+    variantGroups: normalizeVariantGroupIds(item.variantGroups),
     variants: (item.variants || []).map(v => ({
       ...v,
       id: v.groupId || v.id
     })).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)),
   }
+}
+
+export function invalidateCategoriesCache() {
+  categoriesCache = null
+  categoriesRequest = null
 }
 
 export async function fetchMenuCategories() {

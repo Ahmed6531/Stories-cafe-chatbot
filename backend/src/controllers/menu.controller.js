@@ -1,5 +1,6 @@
 import { MenuItem } from "../models/MenuItem.js";
 import { VariantGroup } from "../models/VariantGroup.js";
+import { Category } from "../models/Category.js";
 import { Counter } from "../models/Counter.js";
 import { deleteGCSImage } from "../middleware/upload.js";
 
@@ -66,17 +67,116 @@ async function generateSlug(name, excludeId = null) {
   }
 }
 
+function normalizeVariantGroupIds(variantGroups = []) {
+  if (!Array.isArray(variantGroups)) {
+    return [];
+  }
+
+  const seen = new Set();
+  const normalized = [];
+
+  variantGroups.forEach((groupRef) => {
+    const rawId =
+      typeof groupRef === "string"
+        ? groupRef
+        : groupRef && typeof groupRef === "object"
+          ? groupRef.groupId || groupRef.id
+          : "";
+    const trimmed = typeof rawId === "string" ? rawId.trim() : "";
+    if (!trimmed || seen.has(trimmed)) {
+      return;
+    }
+
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  });
+
+  return normalized;
+}
+
+function getVariantGroupCategoryId(group) {
+  return group?.categoryId || group?.ctagId || null;
+}
+
+async function validateVariantGroupsForCategory({ categoryId, variantGroups, context }) {
+  const normalizedIds = normalizeVariantGroupIds(variantGroups);
+
+  if (normalizedIds.length === 0) {
+    console.log("[menu/variant-groups/validate]", {
+      context,
+      categoryId: String(categoryId),
+      requestedGroupIds: [],
+      matchedGroupIds: [],
+      invalidGroups: [],
+    });
+    return { validGroupIds: [], invalidGroups: [] };
+  }
+
+  const matchedGroups = await VariantGroup.find({
+    groupId: { $in: normalizedIds },
+  })
+    .select("groupId adminName name categoryId ctagId isActive")
+    .lean();
+
+  const groupsById = new Map(
+    matchedGroups.map((group) => [String(group.groupId), group]),
+  );
+
+  const invalidGroups = normalizedIds
+    .map((groupId) => {
+      const group = groupsById.get(groupId);
+      if (!group) {
+        return { groupId, reason: "unknown" };
+      }
+
+      if (group.isActive === false) {
+        return { groupId, reason: "deleted" };
+      }
+
+      const resolvedCategoryId = getVariantGroupCategoryId(group);
+      if (!resolvedCategoryId || String(resolvedCategoryId) !== String(categoryId)) {
+        return {
+          groupId,
+          reason: "wrong-category",
+          groupCategoryId: resolvedCategoryId ? String(resolvedCategoryId) : null,
+        };
+      }
+
+      return null;
+    })
+    .filter(Boolean);
+
+  console.log("[menu/variant-groups/validate]", {
+    context,
+    categoryId: String(categoryId),
+    requestedGroupIds: normalizedIds,
+    matchedGroupIds: matchedGroups.map((group) => group.groupId),
+    matchedCategoryRefs: matchedGroups.map((group) => ({
+      groupId: group.groupId,
+      categoryId: group.categoryId ? String(group.categoryId) : null,
+      ctagId: group.ctagId ? String(group.ctagId) : null,
+      isActive: group.isActive !== false,
+    })),
+    invalidGroups,
+  });
+
+  return {
+    validGroupIds: normalizedIds.filter(
+      (groupId) => !invalidGroups.some((entry) => entry.groupId === groupId),
+    ),
+    invalidGroups,
+  };
+}
+
 // ─── GET /menu/categories ─────────────────────────────────────────────────────
 
 export async function getMenuCategories(req, res) {
   try {
-    const categories = await MenuItem.distinct("category", {
-      category: { $exists: true, $ne: null },
-    });
-    res.status(200).json({
-      success: true,
-      categories: categories.filter(Boolean).sort(),
-    });
+    const categories = await Category.find({ isActive: true })
+      .sort({ order: 1, name: 1 })
+      .select("name slug image subcategories")
+      .lean();
+    res.status(200).json({ success: true, categories });
   } catch (error) {
     console.error("Failed to fetch menu categories:", error.message);
     res.status(500).json({ success: false, error: "Failed to load menu categories." });
@@ -89,10 +189,9 @@ export async function getMenu(req, res) {
   try {
     console.log("📥 GET /menu request received");
     const items = await MenuItem.find({})
-      .select(
-        "id name slug image category subcategory description basePrice isAvailable isFeatured"
-      )
-      .sort({ category: 1, name: 1 });
+      .populate("category", "name slug image subcategories")
+      .select("id name slug image category subcategory description basePrice isAvailable isFeatured variantGroups")
+      .sort({ name: 1 });
     console.log(`📤 Returning ${items.length} menu items`);
     res.status(200).json({ success: true, count: items.length, items });
   } catch (error) {
@@ -107,7 +206,8 @@ export async function getMenuItem(req, res) {
   try {
     const { id } = req.params;
     console.log(`📥 GET /menu/${id} request received`);
-    const menuItem = await MenuItem.findOne({ id: parseInt(id) });
+    const menuItem = await MenuItem.findOne({ id: parseInt(id) })
+      .populate("category", "name slug image subcategories");
     if (!menuItem) {
       return res.status(404).json({ success: false, error: "Menu item not found" });
     }
@@ -115,6 +215,7 @@ export async function getMenuItem(req, res) {
     if (menuItem.variantGroups?.length > 0) {
       const variantGroups = await VariantGroup.find({
         groupId: { $in: menuItem.variantGroups },
+        isActive: { $ne: false },
       });
       itemResponse.variants = menuItem.variantGroups
         .map((groupId) => {
@@ -140,9 +241,9 @@ export async function getFeaturedMenu(req, res) {
     const featuredItems = await MenuItem.find({
       isFeatured: true,
       isAvailable: true,
-    }).select(
-      "id name slug image category subcategory description basePrice isAvailable isFeatured"
-    );
+    })
+      .populate("category", "name slug image subcategories")
+      .select("id name slug image category subcategory description basePrice isAvailable isFeatured");
     res.status(200).json({ success: true, count: featuredItems.length, items: featuredItems });
   } catch (error) {
     res.status(500).json({ success: false, error: "Failed to load featured menu." });
@@ -151,13 +252,22 @@ export async function getFeaturedMenu(req, res) {
 
 // ─── GET /menu/category/:category ────────────────────────────────────────────
 
+// :category param is now a category slug (e.g. "coffee"), not a display name.
 export async function getMenuByCategory(req, res) {
   try {
-    const { category } = req.params;
-    const items = await MenuItem.find({
-      category: { $regex: new RegExp(`^${category}$`, "i") },
+    const { category: slug } = req.params;
+    const categoryDoc = await Category.findOne({ slug, isActive: true }).lean();
+    if (!categoryDoc) {
+      return res.status(404).json({ success: false, error: "Category not found." });
+    }
+    const items = await MenuItem.find({ category: categoryDoc._id })
+      .populate("category", "name slug image subcategories");
+    res.status(200).json({
+      success: true,
+      count: items.length,
+      category: categoryDoc,
+      items,
     });
-    res.status(200).json({ success: true, count: items.length, category, items });
   } catch (error) {
     res.status(500).json({ success: false, error: "Failed to load items by category." });
   }
@@ -170,17 +280,24 @@ export async function createMenuItem(req, res) {
     console.log("📥 POST /menu request received");
     const {
       name,
-      category,
+      categoryId,
+      subcategory = null,
       description,
       basePrice,
       image = "",
       isAvailable,
       isFeatured,
+      variantGroups = [],
     } = req.body;
+
+    console.log("[menu/create] payload", {
+      categoryId,
+      variantGroupIds: normalizeVariantGroupIds(variantGroups),
+    });
 
     const missingFields = [];
     if (!name)                   missingFields.push("name");
-    if (!category)               missingFields.push("category");
+    if (!categoryId)             missingFields.push("categoryId");
     if (!description)            missingFields.push("description");
     if (basePrice === undefined) missingFields.push("basePrice");
 
@@ -188,6 +305,28 @@ export async function createMenuItem(req, res) {
       return res.status(400).json({
         success: false,
         error: `Missing or incorrect field(s): ${missingFields.join(", ")}`,
+      });
+    }
+
+    const categoryDoc = await Category.findById(categoryId).lean();
+    if (!categoryDoc) {
+      return res.status(400).json({ success: false, error: "Category not found." });
+    }
+
+    const {
+      validGroupIds,
+      invalidGroups,
+    } = await validateVariantGroupsForCategory({
+      categoryId: categoryDoc._id,
+      variantGroups,
+      context: "create",
+    });
+
+    if (invalidGroups.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: "One or more variant groups are invalid for the selected category.",
+        invalidVariantGroups: invalidGroups,
       });
     }
 
@@ -200,13 +339,14 @@ export async function createMenuItem(req, res) {
       id: newId,
       name: name.trim(),
       slug,
-      category: category.trim(),
+      category: categoryDoc._id,
+      subcategory: subcategory || null,
       description: description.trim(),
       basePrice: parseFloat(basePrice),
       image: image.trim(),
       isAvailable: isAvailable !== false,
       isFeatured: isFeatured === true || isFeatured === "true",
-      variantGroups: [],
+      variantGroups: validGroupIds,
     });
 
     await newItem.save();
@@ -284,10 +424,11 @@ export async function updateMenuItem(req, res) {
     delete req.body.slug;
 
     const allowedFields = [
-      "name", "image", "category", "subcategory",
+      "name", "image", "subcategory",
       "description", "basePrice", "isAvailable", "isFeatured", "variantGroups",
     ];
     const updateData = {};
+    let resolvedCategoryId = null;
 
     for (const field of allowedFields) {
       if (!(field in req.body)) continue;
@@ -300,6 +441,51 @@ export async function updateMenuItem(req, res) {
       } else {
         updateData[field] = req.body[field];
       }
+    }
+
+    // categoryId handled separately — must resolve to an existing Category ObjectId
+    if ("categoryId" in req.body) {
+      const categoryDoc = await Category.findById(req.body.categoryId).lean();
+      if (!categoryDoc) {
+        return res.status(400).json({ success: false, error: "Category not found." });
+      }
+      resolvedCategoryId = categoryDoc._id;
+      updateData.category = categoryDoc._id;
+    }
+
+    if (resolvedCategoryId == null) {
+      const existingItem = await MenuItem.findOne({ id: numericId }).select("category").lean();
+      if (!existingItem) {
+        return res.status(404).json({ success: false, error: "Menu item not found" });
+      }
+      resolvedCategoryId = existingItem.category;
+    }
+
+    if ("variantGroups" in req.body) {
+      console.log("[menu/update] payload", {
+        itemId: numericId,
+        categoryId: resolvedCategoryId ? String(resolvedCategoryId) : null,
+        variantGroupIds: normalizeVariantGroupIds(req.body.variantGroups),
+      });
+
+      const {
+        validGroupIds,
+        invalidGroups,
+      } = await validateVariantGroupsForCategory({
+        categoryId: resolvedCategoryId,
+        variantGroups: req.body.variantGroups,
+        context: `update:${numericId}`,
+      });
+
+      if (invalidGroups.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: "One or more variant groups are invalid for the selected category.",
+          invalidVariantGroups: invalidGroups,
+        });
+      }
+
+      updateData.variantGroups = validGroupIds;
     }
 
     if (updateData.name) {

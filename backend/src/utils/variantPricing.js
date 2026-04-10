@@ -17,7 +17,12 @@ function normalizeSelectedOption(selection) {
   const suboptionSource = selection.suboptionName ?? selection.sub;
   const suboptionName = suboptionSource == null ? "" : String(suboptionSource).trim();
 
-  return suboptionName ? { optionName, suboptionName } : { optionName };
+  // Preserve groupId so it flows through to cart and order storage.
+  const groupId = selection.groupId ? String(selection.groupId).trim() : undefined;
+
+  const result = suboptionName ? { optionName, suboptionName } : { optionName };
+  if (groupId) result.groupId = groupId;
+  return result;
 }
 
 function selectedOptionKey(selection) {

@@ -29,12 +29,37 @@ export async function submitMenuItem({
   setFormError,
   setSaving,
 }) {
+  const sanitizedVariantGroups = Array.isArray(variantGroups)
+    ? variantGroups.reduce((groupIds, groupRef) => {
+        const rawId =
+          typeof groupRef === "string"
+            ? groupRef
+            : groupRef && typeof groupRef === "object"
+              ? groupRef.groupId || groupRef.id
+              : ""
+        const groupId = typeof rawId === "string" ? rawId.trim() : ""
+        if (!groupId || groupIds.includes(groupId)) {
+          return groupIds
+        }
+
+        groupIds.push(groupId)
+        return groupIds
+      }, [])
+    : []
+
   // Build the JSON payload — note basePrice (not price) to match the backend schema
   const payload = {
     ...form,
     basePrice: Number(form.basePrice),
-    variantGroups,
+    variantGroups: sanitizedVariantGroups,
   };
+
+  console.debug("[AdminItems] submit payload", {
+    editingId,
+    categoryId: form.categoryId,
+    variantGroupIds: sanitizedVariantGroups,
+    payload,
+  })
 
   setSaving(true);
 

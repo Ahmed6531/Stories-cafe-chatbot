@@ -14,6 +14,7 @@ import AdminDashboard from "../pages/admin/AdminDashboard"
 import AdminItems from "../pages/admin/AdminItems"
 import AdminOrders from "../pages/admin/AdminOrders"
 import AdminVariantGroups from "../pages/admin/AdminVariantGroups"
+import AdminCategories from "../pages/admin/AdminCategories"
 import AdminLogin from "../pages/admin/AdminLogin"
 import AdminGuard from "../components/admin/AdminGuard";
 import AuthGuard from "../components/auth/AuthGuard";
@@ -35,7 +36,7 @@ export default function AppRoutes() {
         <Route index element={<AdminDashboard />} />
         <Route path="items" element={<AdminItems />} />
         <Route path="variant-groups" element={<AdminVariantGroups />} />
-        <Route path="categories" element={<div>Admin Categories (later)</div>} />
+        <Route path="categories" element={<AdminCategories />} />
         <Route path="orders" element={<AdminOrders />} />
       </Route>
 
