@@ -13,12 +13,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-GEMINI_MODEL_CANDIDATES = (
-    "gemini-2.5-flash",
-    "gemini-flash-latest",
-    "gemini-2.5-flash-lite",
-)
-
 _FALLBACK_BASE_PROMPT = (
     "You are the friendly barista and assistant at Stories Cafe. "
     "You can help with menu questions, café info, opening hours, and general help. "
@@ -178,15 +172,6 @@ def _normalize_gemini_model_name(model_name: str | None) -> str:
     return normalized
 
 
-def _iter_gemini_models(preferred_model: str | None):
-    seen = set()
-    for model_name in (preferred_model, *GEMINI_MODEL_CANDIDATES):
-        normalized = _normalize_gemini_model_name(model_name)
-        if normalized and normalized not in seen:
-            seen.add(normalized)
-            yield normalized
-
-
 async def _generate_with_azure_openai(user_message: str, system_prompt: str) -> str | None:
     if not settings.azure_openai_api_key or not settings.azure_openai_endpoint:
         return None
@@ -257,33 +242,25 @@ async def _generate_with_gemini(user_message: str, system_prompt: str) -> str | 
         return None
 
     genai.configure(api_key=settings.gemini_api_key)
-    last_error = None
+    model_name = _normalize_gemini_model_name(settings.gemini_model)
+    if not model_name:
+        logger.warning("Gemini fallback assistant missing configured model name")
+        return None
 
-    for model_name in _iter_gemini_models(settings.gemini_model):
-        try:
-            model = genai.GenerativeModel(
-                model_name=model_name,
-                system_instruction=system_prompt,
-            )
-            response = await model.generate_content_async(
-                user_message,
-                generation_config={"temperature": 0.6, "max_output_tokens": 220},
-            )
-            content = response.text.strip() if response.text else None
-
-            return content if content else None
-        except Exception as exc:
-            last_error = exc
-            logger.warning("Gemini fallback assistant call failed for model %s: %s", model_name, exc)
-            error_text = str(exc).lower()
-            if "not found" in error_text or "not supported" in error_text:
-                continue
-            break
-
-    if last_error:
-        logger.warning("Gemini fallback assistant unavailable after model fallbacks: %s", last_error)
-
-    return None
+    try:
+        model = genai.GenerativeModel(
+            model_name=model_name,
+            system_instruction=system_prompt,
+        )
+        response = await model.generate_content_async(
+            user_message,
+            generation_config={"temperature": 0.6, "max_output_tokens": 220},
+        )
+        content = response.text.strip() if response.text else None
+        return content if content else None
+    except Exception as exc:
+        logger.warning("Gemini fallback assistant call failed for model %s: %s", model_name, exc)
+        return None
 
 
 async def generate_fallback_reply(user_message: str, reason: str = "") -> str | None:

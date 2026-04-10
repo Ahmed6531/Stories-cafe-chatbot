@@ -10,13 +10,6 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-GEMINI_MODEL_CANDIDATES = (
-    "gemini-2.5-flash",
-    "gemini-flash-latest",
-    "gemini-2.5-flash-lite",
-)
-
-
 def _normalize_gemini_model_name(model_name: str | None) -> str:
     normalized = (model_name or "").strip()
     if normalized.startswith("models/"):
@@ -500,18 +493,9 @@ def _should_use_heuristic_items(parsed_items: list[Dict[str, Any]], heuristic_it
     return False
 
 
-def _iter_gemini_models(preferred_model: str | None):
-    seen = set()
-    for model_name in (preferred_model, *GEMINI_MODEL_CANDIDATES):
-        normalized = _normalize_gemini_model_name(model_name)
-        if normalized and normalized not in seen:
-            seen.add(normalized)
-            yield normalized
-
-
 def _generate_gemini_content(prompt: str) -> str | None:
     api_key = (settings.gemini_api_key or os.getenv("GEMINI_API_KEY") or "").strip()
-    preferred_model = _normalize_gemini_model_name(
+    model_name = _normalize_gemini_model_name(
         settings.gemini_model or os.getenv("GEMINI_MODEL")
     )
 
@@ -519,38 +503,24 @@ def _generate_gemini_content(prompt: str) -> str | None:
         logger.warning({"stage": "llm_api_key_missing"})
         return None
 
+    if not model_name:
+        logger.warning({"stage": "llm_model_missing"})
+        return None
+
     genai.configure(api_key=api_key)
-    last_error = None
-
-    for model_name in _iter_gemini_models(preferred_model):
-        try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
-            return (response.text or "").strip()
-        except Exception as exc:
-            last_error = exc
-            logger.warning(
-                {
-                    "stage": "llm_model_attempt_failed",
-                    "model": model_name,
-                    "error": str(exc),
-                }
-            )
-            error_text = str(exc).lower()
-            if "not found" in error_text or "not supported" in error_text:
-                continue
-            break
-
-    if last_error:
+    try:
+        model = genai.GenerativeModel(model_name)
+        response = model.generate_content(prompt)
+        return (response.text or "").strip()
+    except Exception as exc:
         logger.warning(
             {
-                "stage": "llm_all_model_attempts_failed",
-                "preferred_model": preferred_model,
-                "error": str(last_error),
+                "stage": "llm_model_attempt_failed",
+                "model": model_name,
+                "error": str(exc),
             }
         )
-
-    return None
+        return None
 
 
 def _build_intent_prompt(context_block: str, message: str) -> str:
