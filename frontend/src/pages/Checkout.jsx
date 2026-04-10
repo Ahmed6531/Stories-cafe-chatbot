@@ -129,6 +129,7 @@ export default function Checkout() {
         }))
         lockDeadCart(localStorage.getItem('cartId'))
         localStorage.removeItem('cartId')
+        sessionStorage.removeItem('chatSessionId')
         localStorage.removeItem('chatSessionId')
         localStorage.removeItem('chatMessages')
         localStorage.removeItem('chatMessagesSavedAt')

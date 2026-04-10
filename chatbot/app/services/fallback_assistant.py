@@ -19,20 +19,98 @@ GEMINI_MODEL_CANDIDATES = (
     "gemini-2.5-flash-lite",
 )
 
-FALLBACK_SYSTEM_PROMPT = (
-    "You are Stories Cafe's barista and assistant. "
-    "Reply to customers in a friendly, helpful, and concise way using complete sentences. "
-    "Do not invent policies, prices, or order status. "
-    "If you are unsure, guide the user to menu, cart, or checkout actions."
+_FALLBACK_BASE_PROMPT = (
+    "You are the friendly barista and assistant at Stories Cafe. "
+    "You can help with menu questions, café info, opening hours, and general help. "
+    "Reply in a warm, concise way using complete sentences. "
+    "You must NEVER fabricate cart actions or pretend to add, remove, or modify items. "
+    "Never invent menu items, prices, or order status. "
+    "Always end uncertain replies with a question that moves the conversation forward."
+)
+
+_FALLBACK_REASON_HINTS: dict[str, str] = {
+    "bare_affirmation_needs_context": (
+        " The user sent a bare yes/ok/sure with no clear context. "
+        "Ask them what they meant — for example: "
+        "'Just to confirm — did you want to checkout, or is there something else I can help with?'"
+    ),
+    "entity_not_found": (
+        " The item the user mentioned wasn't found on the menu. "
+        "Acknowledge this politely and ask them to clarify or suggest they browse the menu."
+    ),
+    "low_confidence": (
+        " The request was unclear. "
+        "Gently ask the user to rephrase what they'd like to do."
+    ),
+    "unknown_intent": (
+        " The request is unclear or off-topic. "
+        "Offer a helpful redirect. Never say 'I don't understand' — "
+        "always suggest something the user can do (browse menu, add items, checkout)."
+    ),
+    "llm_parse_failed": (
+        " There was a technical issue parsing the request. "
+        "Apologise briefly and ask the user to try again."
+    ),
+    "repeat_order_no_history": (
+        " The user wants to repeat a previous order but no history is available in this session. "
+        "Let them know and invite them to place a fresh order."
+    ),
+}
+
+_FALLBACK_BASE_PROMPT = (
+    "You are the friendly barista and assistant at Stories Cafe. "
+    "You help customers order food and drinks, answer menu questions, "
+    "and assist with their cart. "
+    "Keep replies short, warm, and conversational - like a real barista. "
+    "Never fabricate cart actions or invent menu items. "
+    "Always end with a question or clear invitation to continue."
+)
+
+_FALLBACK_REASON_HINTS["unknown_intent"] = (
+    " The customer said something unclear or unexpected. "
+    "Do not say 'Welcome' - they are already in a conversation. "
+    "Respond as if you didn't quite catch what they meant: "
+    "ask them what they'd like to order or how you can help. "
+    "Keep it to one or two sentences."
+)
+_FALLBACK_REASON_HINTS["bare_affirmation_needs_context"] = (
+    " The customer said yes/ok/sure with no clear context. "
+    "Ask what they meant - for example: "
+    "'Just to confirm - did you want to checkout, or is there something else I can help with?'"
 )
 
 
+def _build_fallback_system_prompt(reason: str) -> str:
+    hint = _FALLBACK_REASON_HINTS.get(reason, "")
+    return _FALLBACK_BASE_PROMPT + hint
+
+
+# Legacy constant kept for any external code that references it directly.
+FALLBACK_SYSTEM_PROMPT = _FALLBACK_BASE_PROMPT
+
+_SAFE_STATIC_REPLY_TABLE: dict[str, str] = {
+    "hi": "Hi! What can I get for you today?",
+    "hey": "Hey! What can I get for you?",
+    "hello": "Hello! What would you like to order?",
+    "hiya": "Hi there! What can I get you?",
+    "good morning": "Good morning! What can I get for you?",
+    "good afternoon": "Good afternoon! What would you like?",
+    "good evening": "Good evening! What can I get for you?",
+    "thanks": "You're welcome! Anything else?",
+    "thank you": "You're welcome! Let me know if you need anything else.",
+    "thx": "You're welcome!",
+    "cheers": "Cheers! Anything else I can help with?",
+    "great": "Great! Anything else?",
+    "perfect": "Perfect! Anything else?",
+    "awesome": "Glad to help! Anything else?",
+}
+
+
 def _safe_static_reply(user_message: str) -> str:
-    normalized = (user_message or "").strip().lower()
-    if any(token in normalized for token in ["thanks", "thank you", "thx"]):
-        return "You're welcome! Happy to help."
-    if any(token in normalized for token in ["hi", "hello", "hey"]):
-        return "Hi! How can I help with your order today?"
+    normalized = " ".join((user_message or "").strip().lower().split())
+    static_reply = _SAFE_STATIC_REPLY_TABLE.get(normalized)
+    if static_reply:
+        return static_reply
     return "I can help with menu details, cart updates, or checkout."
 
 
@@ -109,7 +187,7 @@ def _iter_gemini_models(preferred_model: str | None):
             yield normalized
 
 
-async def _generate_with_azure_openai(user_message: str) -> str | None:
+async def _generate_with_azure_openai(user_message: str, system_prompt: str) -> str | None:
     if not settings.azure_openai_api_key or not settings.azure_openai_endpoint:
         return None
 
@@ -124,7 +202,7 @@ async def _generate_with_azure_openai(user_message: str) -> str | None:
     }
     payload = {
         "messages": [
-            {"role": "system", "content": FALLBACK_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
         "temperature": 0.6,
@@ -143,7 +221,7 @@ async def _generate_with_azure_openai(user_message: str) -> str | None:
         return None
 
 
-async def _generate_with_openai(user_message: str) -> str | None:
+async def _generate_with_openai(user_message: str, system_prompt: str) -> str | None:
     if not settings.openai_api_key:
         return None
 
@@ -155,7 +233,7 @@ async def _generate_with_openai(user_message: str) -> str | None:
     payload = {
         "model": settings.openai_model,
         "messages": [
-            {"role": "system", "content": FALLBACK_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
         "temperature": 0.6,
@@ -174,7 +252,7 @@ async def _generate_with_openai(user_message: str) -> str | None:
         return None
 
 
-async def _generate_with_gemini(user_message: str) -> str | None:
+async def _generate_with_gemini(user_message: str, system_prompt: str) -> str | None:
     if not _GENAI_AVAILABLE or not settings.gemini_api_key:
         return None
 
@@ -185,7 +263,7 @@ async def _generate_with_gemini(user_message: str) -> str | None:
         try:
             model = genai.GenerativeModel(
                 model_name=model_name,
-                system_instruction=FALLBACK_SYSTEM_PROMPT,
+                system_instruction=system_prompt,
             )
             response = await model.generate_content_async(
                 user_message,
@@ -208,40 +286,51 @@ async def _generate_with_gemini(user_message: str) -> str | None:
     return None
 
 
-async def generate_fallback_reply(user_message: str) -> str | None:
+async def generate_fallback_reply(user_message: str, reason: str = "") -> str | None:
+    """
+    Generate a context-aware fallback reply.
+
+    Args:
+        user_message: The user's message.
+        reason:       The reason string from the intent pipeline (e.g.
+                      "bare_affirmation_needs_context", "low_confidence",
+                      "unknown_intent", "entity_not_found").  Used to build a
+                      contextual system prompt so the fallback reply is helpful
+                      rather than generic.
+    """
     message = (user_message or "").strip()
     if not message:
         return None
 
+    system_prompt = _build_fallback_system_prompt(reason)
     provider = (settings.openai_provider or "").lower().strip()
 
     if provider == "gemini":
-        reply = await _generate_with_gemini(message)
+        reply = await _generate_with_gemini(message, system_prompt)
         if reply:
             return _finalize_reply(message, reply)
-        # cascade to OpenAI then Azure as fallbacks
-        reply = await _generate_with_openai(message)
+        reply = await _generate_with_openai(message, system_prompt)
         if reply:
             return _finalize_reply(message, reply)
-        return _finalize_reply(message, await _generate_with_azure_openai(message))
+        return _finalize_reply(message, await _generate_with_azure_openai(message, system_prompt))
 
     if provider == "azure":
-        reply = await _generate_with_azure_openai(message)
+        reply = await _generate_with_azure_openai(message, system_prompt)
         if reply:
             return _finalize_reply(message, reply)
-        return _finalize_reply(message, await _generate_with_openai(message))
+        return _finalize_reply(message, await _generate_with_openai(message, system_prompt))
 
     if provider == "openai":
-        reply = await _generate_with_openai(message)
+        reply = await _generate_with_openai(message, system_prompt)
         if reply:
             return _finalize_reply(message, reply)
-        return _finalize_reply(message, await _generate_with_azure_openai(message))
+        return _finalize_reply(message, await _generate_with_azure_openai(message, system_prompt))
 
-    # unknown provider — try all in order
-    reply = await _generate_with_gemini(message)
+    # Unknown provider — try all in order
+    reply = await _generate_with_gemini(message, system_prompt)
     if reply:
         return _finalize_reply(message, reply)
-    reply = await _generate_with_azure_openai(message)
+    reply = await _generate_with_azure_openai(message, system_prompt)
     if reply:
         return _finalize_reply(message, reply)
-    return _finalize_reply(message, await _generate_with_openai(message))
+    return _finalize_reply(message, await _generate_with_openai(message, system_prompt))

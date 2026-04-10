@@ -354,6 +354,8 @@ export default function ChatWidget({
     clearPartials()
     setMessages([])
     setChipsVisible(true)
+    sessionStorage.removeItem('chatSessionId')
+    localStorage.removeItem('chatSessionId')
     localStorage.removeItem(CHAT_STORAGE_KEY)
     localStorage.removeItem(CHAT_STORAGE_TS_KEY)
     // eslint-disable-next-line react-hooks/exhaustive-deps

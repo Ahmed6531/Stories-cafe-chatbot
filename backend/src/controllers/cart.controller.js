@@ -5,6 +5,7 @@ import { VariantGroup } from "../models/VariantGroup.js";
 import {
   calculateSelectedOptionsDelta,
   createVariantGroupMap,
+  enrichSelectedOptionsWithGroupMetadata,
   resolveVariantGroupsForMenuItem,
   sanitizeSelectedOptions,
   sameSelectedOptions,
@@ -162,9 +163,11 @@ async function buildCartResponse(cart) {
       image: menuItem.image,
       qty: line.qty,
       price: price,
-      selectedOptions: sortSelectedOptionsForDisplay(line.selectedOptions, resolvedVariantGroups).map((s) => ({
-        ...(s.toObject?.() ?? s),
-        groupName: variantGroupsById.get(s.groupId)?.name ?? null,
+      selectedOptions: enrichSelectedOptionsWithGroupMetadata(
+        sortSelectedOptionsForDisplay(line.selectedOptions, resolvedVariantGroups),
+        resolvedVariantGroups,
+      ).map((selection) => ({
+        ...(selection.toObject?.() ?? selection),
       })),
       instructions: line.instructions || "",
       isAvailable: !!menuItem.isAvailable,

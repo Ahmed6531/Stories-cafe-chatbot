@@ -4,12 +4,31 @@ import httpx
 
 from app.schemas.chat import ChatMessageResponse
 from app.services.fallback_assistant import generate_fallback_reply
-from app.services.llm_interpreter import try_interpret_message, _extract_add_items_from_message
+from app.services.intent_pipeline import resolve_intent
+from app.services.llm_interpreter import _extract_json_object, _generate_gemini_content
 from app.services.session_store import (
     Session,
+    clear_guided_order_session,
+    get_guided_order_phase,
+    get_guided_order_item_id,
+    get_guided_order_item_name,
+    get_guided_order_optional_groups,
+    get_guided_order_quantity,
+    get_guided_order_required_groups,
+    get_guided_order_selections,
+    get_guided_order_step,
     get_session_stage,
     set_session_stage,
     get_checkout_initiated,
+    set_guided_order_phase,
+    set_guided_order_groups,
+    set_guided_order_item_id,
+    set_guided_order_item_name,
+    set_guided_order_optional_groups,
+    set_guided_order_quantity,
+    set_guided_order_required_groups,
+    set_guided_order_selections,
+    set_guided_order_step,
     set_checkout_initiated,
 )
 
@@ -52,6 +71,101 @@ ADDON_CANDIDATES = {
     "extra bag": ["extra bag"],
 }
 
+GUIDED_SKIP_WORDS = frozenset({"none", "skip", "nothing", "no"})
+GUIDED_ABORT_WORDS = frozenset({
+    "nevermind",
+    "never mind",
+    "cancel",
+    "forget it",
+    "forget that",
+    "actually forget it",
+    "stop",
+    "don't add",
+    "do not add",
+    "cancel that",
+    "abort",
+})
+STATIC_REPLY_TABLE: dict[str, str] = {
+    "hi": "Hi! What can I get for you today?",
+    "hey": "Hey! What can I get for you?",
+    "hello": "Hello! What would you like to order?",
+    "hiya": "Hi there! What can I get you?",
+    "good morning": "Good morning! What can I get for you?",
+    "good afternoon": "Good afternoon! What would you like?",
+    "good evening": "Good evening! What can I get for you?",
+    "thanks": "You're welcome! Anything else?",
+    "thank you": "You're welcome! Let me know if you need anything else.",
+    "thx": "You're welcome!",
+    "cheers": "Cheers! Anything else I can help with?",
+    "great": "Great! Anything else?",
+    "perfect": "Perfect! Anything else?",
+    "awesome": "Glad to help! Anything else?",
+}
+GUIDED_DIRECT_WORDS = frozenset({
+    "none",
+    "skip",
+    "no thanks",
+    "nothing",
+    "no",
+    "done",
+    "add it",
+    "add to cart",
+    "add",
+    "yes",
+    "yep",
+    "that's it",
+    "nothing else",
+    "looks good",
+})
+GUIDED_DEFAULT_ALL_WORDS = frozenset({
+    "default",
+    "defaults",
+    "use default",
+    "use defaults",
+    "just the default",
+    "default everything",
+    "default all",
+    "just default",
+    "whatever",
+    "anything",
+    "don't care",
+    "no preference",
+    "your choice",
+    "up to you",
+    "surprise me",
+})
+GUIDED_DONE_WORDS = frozenset({
+    "done",
+    "add it",
+    "add to cart",
+    "add",
+    "yes",
+    "yep",
+    "that's it",
+    "nothing else",
+    "no thanks",
+    "nope",
+    "no",
+    "nothing",
+    "looks good",
+    "perfect",
+    "great",
+})
+STATIC_FALLBACK_MESSAGES = {
+    "bare_affirmation_needs_context": (
+        "Just to confirm - did you mean to checkout, or is there something else I can help with?"
+    ),
+}
+GUIDED_REQUIRED_GROUP_KEYWORDS = ("size", "milk type", "milk")
+TOKEN_EQUIVALENTS = {
+    "not": "no",
+    "without": "no",
+    "warmed": "warming",
+    "warm": "warming",
+    "unwarmed": "no warming",
+    "iced": "ice",
+}
+
 
 def _fmt_price(value) -> str:
     return f"L.L {int(float(value or 0)):,}"
@@ -70,499 +184,30 @@ def _format_failed_item_line(failed_item: dict) -> str:
     return f"- {item_name}: {message}" if message else f"- {item_name}"
 
 
-def detect_special_command(message: str) -> str | None:
-    message = message.lower()
-
-    if any(
-        phrase in message
-        for phrase in [
-            "clear cart",
-            "empty cart",
-            "remove all",
-            "start over",
-            "reset cart",
-            "clear my cart",
-            "delete my cart",
-            "empty my cart",
-            "delete cart",
-        ]
-    ):
-        return "clear_cart"
-    if any(
-        phrase in message
-        for phrase in [
-            "checkout",
-            "check out",
-            "place order",
-            "pay now",
-            "confirm order",
-            "proceed to pay",
-            "i want to pay",
-        ]
-    ):
-        return "checkout"
-    if any(
-        phrase in message
-        for phrase in [
-            "describe",
-            "tell me about",
-            "what is",
-            "what's",
-            "whats",
-            "can you describe",
-            "can u describe",
-            "recommend",
-            "suggest",
-            "suggestions",
-            "recommendations",
-            "recommend me",
-            "what do you recommend",
-            "any suggestions",
-            "any recommendation",
-            "what should i get",
-            "good today",
-            "what's good",
-            "whats good",
-            "surprise",
-            "popular",
-            "what do you have",
-        ]
-    ):
-        if any(
-            phrase in message
-            for phrase in [
-                "describe",
-                "tell me about",
-                "what is",
-                "what's",
-                "whats",
-                "can you describe",
-                "can u describe",
-            ]
-        ):
-            return "describe_item"
-        return "recommendation_query"
-
-    return None
+def is_menu_item_available(menu_item: dict | None) -> bool:
+    if not isinstance(menu_item, dict):
+        return False
+    return menu_item.get("isAvailable") is not False
 
 
-def has_mixed_intent(message: str) -> bool:
-    message = message.lower()
-    has_add = bool(
-        re.search(
-            r"\b(add|get|order)\b|want to (?:add|order)|would like to (?:add|order)",
-            message,
+def is_out_of_stock_error(error: Exception | str | None) -> bool:
+    err_lower = str(error or "").lower()
+    return any(
+        phrase in err_lower
+        for phrase in (
+            "out of stock",
+            "not available",
+            "unavailable",
+            "sold out",
         )
     )
-    has_remove = bool(re.search(r"\b(remove|delete)\b", message))
-    has_update = bool(re.search(r"\b(set|update)\b", message)) or (
-        any(char.isdigit() for char in message)
-        and bool(re.search(r"\b(change|make)\b", message))
-    )
-
-    return sum([has_add, has_remove, has_update]) > 1
 
 
-def detect_intent(message: str) -> str:
-    message = message.lower()
-    has_digit = any(char.isdigit() for char in message)
-
-    if any(
-        phrase in message
-        for phrase in [
-            "describe",
-            "tell me about",
-            "what is",
-            "what's",
-            "whats",
-            "can you describe",
-            "can u describe",
-        ]
-    ):
-        return "describe_item"
-
-    if any(
-        phrase in message
-        for phrase in [
-            "recommend",
-            "suggest",
-            "suggestions",
-            "recommendations",
-            "what's good",
-            "whats good",
-            "popular",
-            "surprise me",
-            "what should i get",
-        ]
-    ):
-        return "recommendation_query"
-
-    if any(word in message for word in ["remove", "delete"]):
-        return "remove_item"
-    if "set" in message or "update" in message:
-        return "update_quantity"
-    if has_digit and any(word in message for word in ["change", "make"]):
-        return "update_quantity"
-    if "cart" in message:
-        return "view_cart"
-    if any(phrase in message for phrase in ["checkout", "check out", "place order", "pay now"]):
-        return "checkout"
-    if any(word in message for word in ["add", "get", "order", "want"]):
-        return "add_items"
-
-    return "unknown"
+def build_out_of_stock_message(item_name: str | None) -> str:
+    clean_name = (item_name or "that item").strip() or "that item"
+    return f"{clean_name} is out of stock right now."
 
 
-def extract_item_query(message: str, default_quantity: int | None = 1):
-    message = message.lower()
-
-    words = message.split()
-    quantity = default_quantity
-
-    for word in words:
-        if word.isdigit():
-            quantity = int(word)
-
-    ignore_words = {
-        "a",
-        "add",
-        "an",
-        "cart",
-        "change",
-        "delete",
-        "from",
-        "get",
-        "i",
-        "it",
-        "make",
-        "me",
-        "my",
-        "only",
-        "order",
-        "please",
-        "quantity",
-        "remove",
-        "set",
-        "the",
-        "to",
-        "update",
-        "want",
-    }
-
-    item_words = [w for w in words if w not in ignore_words and not w.isdigit()]
-    item_query = " ".join(item_words)
-
-    return item_query, quantity
-
-
-def extract_describe_query(message: str) -> str:
-    cleaned = re.sub(r"[^a-z0-9\s]+", " ", message.lower()).strip()
-    prefixes = [
-        "can you describe",
-        "can u describe",
-        "can you tell me about",
-        "can u tell me about",
-        "tell me about",
-        "describe",
-        "what is",
-        "what s",
-        "whats",
-    ]
-
-    for prefix in prefixes:
-        if cleaned.startswith(prefix):
-            cleaned = cleaned[len(prefix):].strip()
-            break
-
-    ignore_words = {
-        "a",
-        "an",
-        "the",
-        "please",
-        "item",
-        "menu",
-        "me",
-        "about",
-    }
-    words = [w for w in cleaned.split() if w not in ignore_words]
-    return " ".join(words).strip()
-
-
-def extract_requested_items(interpretation: dict) -> list[dict]:
-    items = interpretation.get("items")
-    normalized_items = []
-    default_quantity = 1 if interpretation.get("intent") in {"add_item", "add_items"} else None
-
-    if isinstance(items, list):
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-
-            item_name = (item.get("item_name") or "").strip()
-            if not item_name:
-                continue
-
-            quantity = item.get("quantity")
-            if quantity is None and default_quantity is not None:
-                quantity = default_quantity
-
-            normalized_items.append(
-                {
-                    "item_name": item_name,
-                    "quantity": quantity,
-                    "size": item.get("size"),
-                    "options": item.get("options")
-                    if isinstance(item.get("options"), dict)
-                    else {"milk": None, "sugar": None},
-                    "addons": item.get("addons")
-                    if isinstance(item.get("addons"), list)
-                    else [],
-                    "instructions": item.get("instructions")
-                    if isinstance(item.get("instructions"), str)
-                    else "",
-                }
-            )
-
-    if normalized_items:
-        return normalized_items
-
-    legacy_item_name = (interpretation.get("item_name") or "").strip()
-    if not legacy_item_name:
-        return []
-
-    legacy_quantity = interpretation.get("quantity")
-    if legacy_quantity is None and default_quantity is not None:
-        legacy_quantity = default_quantity
-
-    return [
-        {
-            "item_name": legacy_item_name,
-            "quantity": legacy_quantity,
-            "size": interpretation.get("size"),
-            "options": interpretation.get("options")
-            if isinstance(interpretation.get("options"), dict)
-            else {"milk": None, "sugar": None},
-            "addons": interpretation.get("addons")
-            if isinstance(interpretation.get("addons"), list)
-            else [],
-            "instructions": interpretation.get("instructions")
-            if isinstance(interpretation.get("instructions"), str)
-            else "",
-        }
-    ]
-
-
-def resolve_requested_items_from_session(
-    intent: str,
-    requested_items: list[dict],
-    interpretation: dict,
-    session: Session | None,
-) -> list[dict]:
-    if session is None or intent not in {"update_quantity", "remove_item"}:
-        return requested_items
-
-    session_items = session.get("last_items")
-    if not isinstance(session_items, list) or not session_items:
-        return requested_items
-
-    session_item = session_items[0]
-    if not isinstance(session_item, dict):
-        return requested_items
-
-    session_item_name = (session_item.get("item_name") or "").strip()
-    if not session_item_name:
-        return requested_items
-
-    if requested_items:
-        current_item = requested_items[0]
-        if (current_item.get("item_name") or "").strip():
-            return requested_items
-    else:
-        raw_items = interpretation.get("items")
-        if isinstance(raw_items, list) and raw_items:
-            current_item = raw_items[0] if isinstance(raw_items[0], dict) else {}
-        else:
-            current_item = {
-                "item_name": interpretation.get("item_name"),
-                "quantity": interpretation.get("quantity"),
-                "size": interpretation.get("size"),
-                "options": interpretation.get("options"),
-                "addons": interpretation.get("addons"),
-                "instructions": interpretation.get("instructions"),
-            }
-
-        if (current_item.get("item_name") or "").strip():
-            return requested_items
-
-    current_quantity = current_item.get("quantity")
-    current_size = current_item.get("size")
-    current_options = current_item.get("options")
-    current_addons = current_item.get("addons")
-    current_instructions = current_item.get("instructions")
-    session_options = session_item.get("options")
-    options = current_options if isinstance(current_options, dict) else session_options
-    if not isinstance(options, dict):
-        options = {"milk": None, "sugar": None}
-    addons = current_addons if isinstance(current_addons, list) else session_item.get("addons", [])
-    if not isinstance(addons, list):
-        addons = []
-    instructions = current_instructions if isinstance(current_instructions, str) else session_item.get("instructions", "")
-    if not isinstance(instructions, str):
-        instructions = ""
-
-    return [
-        {
-            "item_name": session_item_name,
-            "quantity": current_quantity if current_quantity is not None else (
-                session_item.get("quantity") if intent == "remove_item" else None
-            ),
-            "size": current_size if current_size is not None else session_item.get("size"),
-            "options": options,
-            "addons": addons,
-            "instructions": instructions,
-        }
-    ]
-
-
-def resolve_add_items_from_session(
-    requested_items: list[dict],
-    interpretation: dict,
-    session: Session | None,
-) -> list[dict]:
-    if session is None or not interpretation.get("fallback_needed", False):
-        return requested_items
-
-    follow_up_item_names = {
-        "same one",
-        "another one",
-        "one more",
-        "more",
-        "another",
-        "item",
-        "it",
-        "that",
-        "this",
-    }
-
-    if requested_items:
-        current_item = requested_items[0]
-        current_item_name = (current_item.get("item_name") or "").strip().lower()
-        if current_item_name and current_item_name not in follow_up_item_names:
-            return requested_items
-    else:
-        raw_items = interpretation.get("items")
-        if isinstance(raw_items, list) and raw_items:
-            current_item = raw_items[0] if isinstance(raw_items[0], dict) else {}
-        else:
-            current_item = {
-                "item_name": interpretation.get("item_name"),
-                "quantity": interpretation.get("quantity"),
-                "size": interpretation.get("size"),
-                "options": interpretation.get("options"),
-                "addons": interpretation.get("addons"),
-                "instructions": interpretation.get("instructions"),
-            }
-
-        current_item_name = (current_item.get("item_name") or "").strip().lower()
-        current_quantity = current_item.get("quantity")
-        if current_quantity is None:
-            current_quantity = interpretation.get("quantity")
-
-        if (
-            current_item_name
-            and current_item_name not in follow_up_item_names
-            and current_quantity is None
-        ):
-            return requested_items
-
-    session_items = session.get("last_items")
-    if not isinstance(session_items, list) or not session_items:
-        return requested_items
-
-    session_item = session_items[0]
-    if not isinstance(session_item, dict):
-        return requested_items
-
-    session_item_name = (session_item.get("item_name") or "").strip()
-    if not session_item_name:
-        return requested_items
-
-    current_size = current_item.get("size")
-    current_options = current_item.get("options")
-    current_addons = current_item.get("addons")
-    current_instructions = current_item.get("instructions")
-    session_options = session_item.get("options")
-    options = current_options if isinstance(current_options, dict) else session_options
-    if not isinstance(options, dict):
-        options = {"milk": None, "sugar": None}
-    session_addons = session_item.get("addons") if isinstance(session_item.get("addons"), list) else []
-    addons = current_addons if isinstance(current_addons, list) else session_addons
-    if not isinstance(addons, list):
-        addons = []
-    session_instructions = session_item.get("instructions") if isinstance(session_item.get("instructions"), str) else ""
-    instructions = current_instructions if isinstance(current_instructions, str) else session_instructions
-    if not isinstance(instructions, str):
-        instructions = ""
-    quantity = current_item.get("quantity")
-    if quantity is None:
-        quantity = interpretation.get("quantity")
-    if quantity is None:
-        quantity = 1
-
-    return [
-        {
-            "item_name": session_item_name,
-            "quantity": quantity,
-            "size": current_size if current_size is not None else session_item.get("size"),
-            "options": options,
-            "addons": addons,
-            "instructions": instructions,
-        }
-    ]
-
-
-def is_invalid_fallback_query(item_query: str) -> bool:
-    if not item_query:
-        return True
-
-    words = item_query.split()
-    return len(words) > 6
-
-
-def validate_requested_items(
-    message: str,
-    intent: str,
-    requested_items: list[dict],
-    fallback_needed: bool,
-) -> bool:
-    if has_mixed_intent(message):
-        return False
-
-    if intent in {"add_item", "add_items"}:
-        if not requested_items:
-            return False
-
-        if any(not (item.get("item_name") or "").strip() for item in requested_items):
-            return False
-
-        if any((item.get("quantity") or 0) < 1 for item in requested_items):
-            return False
-
-        if any(" and " in (item.get("item_name") or "").lower() for item in requested_items):
-            return False
-
-        if fallback_needed and any(is_invalid_fallback_query(item.get("item_name", "")) for item in requested_items):
-            return False
-
-    if intent in {"update_quantity", "remove_item"}:
-        if not requested_items:
-            return False
-        if not (requested_items[0].get("item_name") or "").strip():
-            return False
-        if len(requested_items) > 1:
-            return False
-
-    return True
 
 
 def normalize_modifier_text(value: str | None) -> str:
@@ -586,6 +231,17 @@ def add_unique_phrase(parts: list[str], value: str | None) -> None:
         return
 
     parts.append(cleaned_value)
+
+
+def split_instruction_fragments(value: str | None) -> list[str]:
+    if not isinstance(value, str):
+        return []
+
+    return [
+        fragment.strip()
+        for fragment in re.split(r"[;,]+", value)
+        if fragment and fragment.strip()
+    ]
 
 
 def expand_candidates(raw_value: str | None, candidate_map: dict[str, list[str]]) -> list[str]:
@@ -653,6 +309,54 @@ def iter_variant_options(menu_detail: dict | None) -> list[tuple[dict, dict]]:
     return variant_options
 
 
+def _tokenize_modifier(value: str) -> set[str]:
+    normalized = normalize_modifier_text(value)
+    if not normalized:
+        return set()
+
+    expanded_tokens: list[str] = []
+    for token in normalized.split():
+        replacement = TOKEN_EQUIVALENTS.get(token, token)
+        expanded_tokens.extend(replacement.split())
+
+    return set(expanded_tokens)
+
+
+def _best_token_overlap(option_name: str | None, candidates: list[str]) -> tuple[int, float, float]:
+    option_tokens = _tokenize_modifier(option_name or "")
+    best_overlap_count = 0
+    best_candidate_ratio = 0.0
+    best_option_ratio = 0.0
+
+    for candidate in candidates:
+        candidate_tokens = _tokenize_modifier(candidate)
+        if not candidate_tokens or not option_tokens:
+            continue
+        overlap = candidate_tokens & option_tokens
+        overlap_count = len(overlap)
+        candidate_ratio = overlap_count / len(candidate_tokens)
+        option_ratio = overlap_count / len(option_tokens)
+        if (
+            overlap_count > best_overlap_count
+            or (
+                overlap_count == best_overlap_count
+                and (candidate_ratio > best_candidate_ratio or option_ratio > best_option_ratio)
+            )
+        ):
+            best_overlap_count = overlap_count
+            best_candidate_ratio = candidate_ratio
+            best_option_ratio = option_ratio
+
+    return best_overlap_count, best_candidate_ratio, best_option_ratio
+
+
+def _phrase_contains_whole(lhs: str, rhs: str) -> bool:
+    if not lhs or not rhs:
+        return False
+    pattern = rf"(?<![a-z0-9]){re.escape(lhs)}(?![a-z0-9])"
+    return bool(re.search(pattern, rhs))
+
+
 def score_variant_option(
     group: dict,
     option: dict,
@@ -682,8 +386,20 @@ def score_variant_option(
             continue
         if option_name == candidate:
             score = max(score, 100)
-        elif allow_contains and (candidate in option_name or option_name in candidate):
+        elif allow_contains and (
+            _phrase_contains_whole(candidate, option_name)
+            or _phrase_contains_whole(option_name, candidate)
+        ):
             score = max(score, 80)
+        else:
+            candidate_tokens = _tokenize_modifier(candidate)
+            option_tokens = _tokenize_modifier(option_name)
+            if candidate_tokens and option_tokens:
+                overlap = candidate_tokens & option_tokens
+                candidate_ratio = len(overlap) / len(candidate_tokens)
+                option_ratio = len(overlap) / len(option_tokens)
+                if candidate_ratio >= 0.6 or option_ratio >= 0.6:
+                    score = max(score, 60)
 
     if score and preferred_size and preferred_size in option_name:
         score += 5
@@ -706,6 +422,7 @@ def find_variant_option(
 ) -> dict | None:
     best_option = None
     best_score = 0
+    best_overlap = (0, 0.0, 0.0)
 
     for group, option in iter_variant_options(menu_detail):
         score = score_variant_option(
@@ -717,9 +434,18 @@ def find_variant_option(
             allow_contains=allow_contains,
             enforce_preferred_size=enforce_preferred_size,
         )
-        if score > best_score:
+        overlap = _best_token_overlap(option.get("name"), candidates)
+        if (
+            score > best_score
+            or (
+                score == best_score
+                and score > 0
+                and overlap > best_overlap
+            )
+        ):
             best_score = score
             best_option = option
+            best_overlap = overlap
 
     return best_option
 
@@ -737,16 +463,432 @@ def append_selected_option(selected_options: list[dict], option_name: str | None
     selected_options.append({"optionName": option_name.strip()})
 
 
+def find_closest_variant_suggestion(
+    menu_detail: dict | None,
+    unmatched_fragment: str,
+    threshold: int = 40,
+) -> str | None:
+    best_name = None
+    best_score = threshold
+    normalized_fragment = normalize_modifier_text(unmatched_fragment)
+    if not normalized_fragment:
+        return None
+
+    for group, option in iter_variant_options(menu_detail):
+        score = score_variant_option(
+            group,
+            option,
+            candidates=[normalized_fragment],
+            allow_contains=True,
+        )
+        if score <= 0:
+            overlap_count, candidate_ratio, option_ratio = _best_token_overlap(
+                option.get("name"),
+                [normalized_fragment],
+            )
+            if overlap_count > 0 and (candidate_ratio >= 0.34 or option_ratio >= 0.34):
+                score = 41
+        if score > best_score:
+            best_score = score
+            best_name = option.get("name")
+
+    return best_name
+
+
+def active_variant_options(group: dict) -> list[dict]:
+    options = group.get("options") if isinstance(group, dict) else None
+    if not isinstance(options, list):
+        return []
+    all_options = [
+        option
+        for option in options
+        if isinstance(option, dict) and option.get("name")
+    ]
+    active_options = [
+        option
+        for option in all_options
+        if option.get("isActive") is not False
+    ]
+    return active_options if active_options else all_options
+
+
+def _normalize_whitespace(value: str | None) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _is_required_guided_group(group: dict) -> bool:
+    if not isinstance(group, dict):
+        return False
+
+    if group.get("isRequired") is True or group.get("required") is True:
+        return True
+
+    group_name = normalize_modifier_text(group.get("name"))
+    return any(keyword in group_name for keyword in GUIDED_REQUIRED_GROUP_KEYWORDS)
+
+
+def _group_max_selections(group: dict) -> int | None:
+    if not isinstance(group, dict):
+        return 1
+
+    value = group.get("maxSelections", group.get("max"))
+    if value in (None, "", False):
+        return None if group.get("multiSelect") else 1
+
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _selection_list(value) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    return []
+
+
+def _selection_summary_parts(selections: dict) -> list[str]:
+    parts: list[str] = []
+    if not isinstance(selections, dict):
+        return parts
+
+    for value in selections.values():
+        parts.extend(_selection_list(value))
+    return parts
+
+
+def _build_selected_options_from_selections(selections: dict) -> list[dict]:
+    selected_options: list[dict] = []
+    for option_name in _selection_summary_parts(selections):
+        append_selected_option(selected_options, option_name)
+    return selected_options
+
+
+def _find_guided_group(groups: list[dict], group_name: str | None) -> dict | None:
+    normalized_query = normalize_modifier_text(group_name)
+    if not normalized_query:
+        return None
+
+    best_group = None
+    best_score = 0
+    query_tokens = set(normalized_query.split())
+
+    for group in groups:
+        candidate_name = normalize_modifier_text(group.get("name"))
+        if not candidate_name:
+            continue
+        if candidate_name == normalized_query:
+            return group
+
+        score = 0
+        if normalized_query in candidate_name or candidate_name in normalized_query:
+            score = 80
+        else:
+            candidate_tokens = set(candidate_name.split())
+            overlap = query_tokens & candidate_tokens
+            if query_tokens and candidate_tokens:
+                if len(overlap) / len(query_tokens) >= 0.6 or len(overlap) / len(candidate_tokens) >= 0.6:
+                    score = 60
+
+        if score > best_score:
+            best_score = score
+            best_group = group
+
+    return best_group
+
+
+def _find_group_for_option_name(groups: list[dict], option_name: str) -> tuple[dict, str] | tuple[None, None]:
+    normalized_option = normalize_modifier_text(option_name)
+    if not normalized_option:
+        return None, None
+
+    for group in groups:
+        for option in active_variant_options(group):
+            candidate_name = option.get("name")
+            if normalize_modifier_text(candidate_name) == normalized_option:
+                return group, candidate_name
+
+    return None, None
+
+
+def _match_option_records_for_group(group: dict, user_message: str) -> list[tuple[dict, int]]:
+    normalized_message = normalize_modifier_text(user_message)
+    if not normalized_message:
+        return []
+
+    matches: list[tuple[dict, int, tuple[int, float, float]]] = []
+    for option in active_variant_options(group):
+        score = score_variant_option(
+            group,
+            option,
+            candidates=[normalized_message],
+            allow_contains=True,
+        )
+        if score > 0:
+            matches.append((option, score, _best_token_overlap(option.get("name"), [normalized_message])))
+
+    matches.sort(
+        key=lambda entry: (
+            -entry[1],
+            -entry[2][0],
+            -entry[2][1],
+            -entry[2][2],
+            normalize_modifier_text(entry[0].get("name")),
+        )
+    )
+    return [(option, score) for option, score, _overlap in matches]
+
+
+def _match_option_names_for_group(group: dict, user_message: str) -> list[str]:
+    max_selections = _group_max_selections(group)
+    option_names: list[str] = []
+
+    for option, _score in _match_option_records_for_group(group, user_message):
+        option_name = option.get("name")
+        if not isinstance(option_name, str) or not option_name.strip():
+            continue
+        if any(normalize_modifier_text(existing) == normalize_modifier_text(option_name) for existing in option_names):
+            continue
+        option_names.append(option_name.strip())
+        if max_selections is not None and len(option_names) >= max_selections:
+            break
+
+    return option_names
+
+
+def _set_group_selection(selections: dict, group: dict, option_names: list[str], *, replace: bool) -> list[str]:
+    group_name = group.get("name")
+    if not isinstance(group_name, str) or not group_name.strip():
+        return []
+
+    clean_names = [name.strip() for name in option_names if isinstance(name, str) and name.strip()]
+    if not clean_names:
+        return []
+
+    max_selections = _group_max_selections(group)
+    existing_names = [] if replace else _selection_list(selections.get(group_name))
+    combined_names: list[str] = []
+    for name in [*existing_names, *clean_names]:
+        if any(normalize_modifier_text(existing) == normalize_modifier_text(name) for existing in combined_names):
+            continue
+        combined_names.append(name)
+        if max_selections is not None and len(combined_names) >= max_selections:
+            break
+
+    if max_selections == 1:
+        selections[group_name] = combined_names[0]
+    else:
+        selections[group_name] = combined_names
+    return clean_names
+
+
+def _build_group_options_text(group: dict) -> str:
+    return ", ".join(
+        option.get("name", "")
+        for option in active_variant_options(group)
+        if option.get("name")
+    )
+
+
+def _make_guided_passthrough_resolved() -> dict:
+    return {
+        "intent": "guided_order_response",
+        "confidence": 1.0,
+        "items": [],
+        "follow_up_ref": None,
+        "needs_clarification": False,
+        "reason": "guided_direct_word",
+        "source": "deterministic",
+        "route_to_fallback": False,
+        "fallback_needed": False,
+    }
+
+
+def _phase3_heuristic(
+    normalized_message: str,
+    optional_groups: list[dict],
+    current_selections: dict,
+) -> dict | None:
+    del current_selections
+    msg = _normalize_whitespace(normalized_message)
+    if not msg:
+        return None
+
+    phase3_done_words = frozenset({
+        "done",
+        "add it",
+        "add to cart",
+        "add",
+        "skip",
+        "none",
+        "yes",
+        "yep",
+        "yeah",
+        "that's it",
+        "nothing else",
+        "looks good",
+        "perfect",
+        "great",
+        "no",
+        "nope",
+        "no thanks",
+        "nothing",
+    })
+    if msg in phase3_done_words:
+        return {
+            "action": "finalize",
+            "group_name": None,
+            "selections": [],
+            "reply_hint": None,
+        }
+
+    normalized_msg = normalize_modifier_text(msg)
+    for group in optional_groups:
+        for option in active_variant_options(group):
+            option_name = option.get("name", "")
+            if normalize_modifier_text(option_name) == normalized_msg:
+                return {
+                    "action": "select",
+                    "group_name": group.get("name"),
+                    "selections": [option_name],
+                    "reply_hint": None,
+                }
+
+    for group in optional_groups:
+        normalized_group_name = normalize_modifier_text(group.get("name", ""))
+        if not normalized_group_name or normalized_group_name not in normalized_msg:
+            continue
+        if any(token in normalized_msg for token in ("what", "which", "options", "have", "available")):
+            return {
+                "action": "query_options",
+                "group_name": group.get("name"),
+                "selections": [],
+                "reply_hint": f"For {group.get('name')}: {_build_group_options_text(group)}.",
+            }
+
+    return None
+
+
+def _guided_group_rank(group_name: str) -> tuple[int, str]:
+    normalized_name = normalize_modifier_text(group_name)
+    if "size" in normalized_name:
+        return (0, normalized_name)
+    if "milk" in normalized_name:
+        return (1, normalized_name)
+    if any(keyword in normalized_name for keyword in ("extra", "addon", "add on", "topping", "syrup")):
+        return (3, normalized_name)
+    return (2, normalized_name)
+
+
+def build_guided_order_groups(menu_detail: dict | None) -> tuple[list[dict], list[dict]]:
+    groups: list[dict] = []
+    variants = menu_detail.get("variants") if isinstance(menu_detail, dict) else None
+    if not isinstance(variants, list):
+        return [], []
+
+    for group in variants:
+        if not isinstance(group, dict):
+            continue
+
+        active_options = active_variant_options(group)
+        if len(active_options) < 2:
+            continue
+
+        group_name = group.get("name")
+        if not group_name:
+            continue
+
+        normalized_name = normalize_modifier_text(group_name)
+        if any(normalize_modifier_text(existing.get("name")) == normalized_name for existing in groups):
+            continue
+
+        group_copy = dict(group)
+        group_copy["options"] = active_options
+        groups.append(group_copy)
+
+    groups.sort(key=lambda group: _guided_group_rank(group.get("name") or ""))
+    required_groups = [group for group in groups if _is_required_guided_group(group)]
+    optional_groups = [group for group in groups if not _is_required_guided_group(group)]
+    return required_groups, optional_groups
+
+
+def build_guided_order_prompt(
+    item_name: str,
+    group: dict,
+    *,
+    include_item_name: bool = False,
+    allow_skip: bool = True,
+) -> str:
+    option_names = _build_group_options_text(group)
+    group_name = (group.get("name") or "option").lower()
+    max_selections = _group_max_selections(group)
+    count_hint = ""
+    if max_selections and max_selections > 1:
+        count_hint = f" You can choose up to {max_selections}."
+
+    base_prompt = (
+        f"What {group_name} would you like for your {item_name}? Options: {option_names}.{count_hint}"
+        if include_item_name
+        else f"What {group_name} would you like? Options: {option_names}.{count_hint}"
+    )
+    if allow_skip:
+        return f"{base_prompt} Say 'skip' to use the default."
+    return base_prompt
+
+
+def build_optional_review_prompt(
+    item_name: str,
+    current_selections: dict,
+    optional_groups: list[dict],
+) -> str:
+    summary_parts = _selection_summary_parts(current_selections)
+    summary = ", ".join(summary_parts) if summary_parts else "no customizations yet"
+
+    lines = [f"Got it! Here's what I have for your {item_name}: {summary}."]
+    lines.append("Would you like to customize anything else?")
+
+    for group in optional_groups:
+        group_label = group.get("name") or "Option"
+        max_selections = _group_max_selections(group)
+        count_hint = f" (up to {max_selections})" if max_selections and max_selections > 1 else ""
+        option_names = _build_group_options_text(group)
+        lines.append(f"- {group_label}{count_hint}: {option_names}")
+
+    lines.append("Say 'done' or 'add to cart' to add as is, or tell me what you'd like.")
+    return "\n".join(lines)
+
+
+def build_guided_instructions_prompt(item_name: str | None = None) -> str:
+    if item_name:
+        return f"Any special instructions for your {item_name}? Say 'none' to skip."
+    return "Any special instructions? Say 'none' to skip."
+
+
 def map_requested_item_to_selected_options(
     requested_item: dict,
     menu_detail: dict | None,
-) -> tuple[list[dict], str]:
+) -> tuple[list[dict], str, list[dict]]:
     if not isinstance(requested_item, dict):
-        return [], ""
+        return [], "", []
 
     selected_options: list[dict] = []
     instruction_parts: list[str] = []
+    unmatched_suggestions: list[dict] = []
     options = requested_item.get("options") if isinstance(requested_item.get("options"), dict) else {}
+
+    def record_unmatched_modifier(fragment: str | None) -> None:
+        if not isinstance(fragment, str) or not fragment.strip():
+            return
+
+        add_unique_phrase(instruction_parts, fragment)
+        unmatched_suggestions.append(
+            {
+                "fragment": fragment.strip(),
+                "suggestion": find_closest_variant_suggestion(menu_detail, fragment),
+            }
+        )
 
     resolved_size = None
     size_value = requested_item.get("size")
@@ -766,7 +908,7 @@ def map_requested_item_to_selected_options(
             append_selected_option(selected_options, matched_size.get("name"))
             resolved_size = normalize_modifier_text(matched_size.get("name")) or preferred_size
         else:
-            add_unique_phrase(instruction_parts, size_value)
+            record_unmatched_modifier(size_value)
             resolved_size = preferred_size
 
     milk_value = options.get("milk")
@@ -788,7 +930,7 @@ def map_requested_item_to_selected_options(
         if matched_milk:
             append_selected_option(selected_options, matched_milk.get("name"))
         else:
-            add_unique_phrase(instruction_parts, milk_value)
+            record_unmatched_modifier(milk_value)
 
     sugar_value = options.get("sugar")
     if isinstance(sugar_value, str) and sugar_value.strip():
@@ -800,7 +942,7 @@ def map_requested_item_to_selected_options(
         if matched_sugar:
             append_selected_option(selected_options, matched_sugar.get("name"))
         else:
-            add_unique_phrase(instruction_parts, sugar_value)
+            record_unmatched_modifier(sugar_value)
 
     addons = requested_item.get("addons")
     if isinstance(addons, list):
@@ -814,11 +956,20 @@ def map_requested_item_to_selected_options(
             if matched_addon:
                 append_selected_option(selected_options, matched_addon.get("name"))
             else:
-                add_unique_phrase(instruction_parts, str(addon))
+                record_unmatched_modifier(str(addon))
 
-    add_unique_phrase(instruction_parts, requested_item.get("instructions"))
+    for fragment in split_instruction_fragments(requested_item.get("instructions")):
+        matched_instruction = find_variant_option(
+            menu_detail,
+            [normalize_modifier_text(fragment)],
+            allow_contains=True,
+        )
+        if matched_instruction:
+            append_selected_option(selected_options, matched_instruction.get("name"))
+        else:
+            record_unmatched_modifier(fragment)
 
-    return selected_options, "; ".join(instruction_parts)
+    return selected_options, "; ".join(instruction_parts), unmatched_suggestions
 
 
 def _build_bill(cart_items: list[dict]) -> dict:
@@ -871,6 +1022,182 @@ def build_cart_summary(cart_items: list[dict]) -> str:
     return "\n".join(cart_lines)
 
 
+async def _finalize_guided_order(
+    session_id: str,
+    cart_id: str | None,
+    normalized_message: str,
+    *,
+    add_item_to_cart,
+    instructions_text: str = "",
+    pipeline_stage: str = "guided_ordering_done",
+    intent: str = "guided_order_response",
+) -> ChatMessageResponse:
+    from app.services.http_client import ExpressAPIError
+
+    item_id = get_guided_order_item_id(session_id)
+    item_name = get_guided_order_item_name(session_id)
+    quantity = get_guided_order_quantity(session_id)
+    selections = get_guided_order_selections(session_id)
+
+    if item_id is None or quantity is None:
+        clear_guided_order_session(session_id)
+        set_session_stage(session_id, None)
+        return ChatMessageResponse(
+            session_id=session_id,
+            status="ok",
+            reply="Something went wrong. What would you like to order?",
+            intent=intent,
+            cart_updated=False,
+            cart_id=cart_id,
+            defaults_used=[],
+            suggestions=[],
+            metadata={
+                "normalized_message": normalized_message,
+                "pipeline_stage": "guided_ordering_missing_state",
+            },
+        )
+
+    selected_options = _build_selected_options_from_selections(selections)
+
+    try:
+        cart_result = await add_item_to_cart(
+            menu_item_id=item_id,
+            qty=quantity,
+            selected_options=selected_options,
+            instructions=instructions_text,
+            cart_id=cart_id,
+        )
+    except ExpressAPIError as add_err:
+        if is_out_of_stock_error(add_err):
+            clear_guided_order_session(session_id)
+            set_session_stage(session_id, None)
+            return ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply=build_out_of_stock_message(item_name),
+                intent=intent,
+                cart_updated=False,
+                cart_id=cart_id,
+                defaults_used=[],
+                suggestions=[],
+                metadata={
+                    "normalized_message": normalized_message,
+                    "guided_order_item_id": item_id,
+                    "guided_order_item_name": item_name,
+                    "pipeline_stage": "guided_ordering_out_of_stock",
+                },
+            )
+        raise
+
+    cart_summary = build_cart_summary(cart_result["cart"])
+    summary_parts = _selection_summary_parts(selections)
+    if instructions_text:
+        summary_parts.append(instructions_text)
+    selection_summary = ", ".join(summary_parts)
+    summary_suffix = f" ({selection_summary})" if selection_summary else ""
+
+    clear_guided_order_session(session_id)
+    set_session_stage(session_id, None)
+
+    reply_text = f"Added {quantity}x {item_name}{summary_suffix} to your cart."
+    if cart_summary:
+        reply_text += f"\n\nYour cart now contains:\n{cart_summary}"
+
+    return ChatMessageResponse(
+        session_id=session_id,
+        status="ok",
+        reply=reply_text,
+        intent=intent,
+        cart_updated=True,
+        cart_id=cart_result["cart_id"],
+        defaults_used=[],
+        suggestions=[],
+        metadata={
+            "normalized_message": normalized_message,
+            "guided_order_item_id": item_id,
+            "guided_order_item_name": item_name,
+            "guided_order_selections": selections,
+            "guided_order_instructions": instructions_text,
+            "cart": cart_result["cart"],
+            "pipeline_stage": pipeline_stage,
+        },
+    )
+
+
+async def _interpret_phase3_response(
+    user_message: str,
+    item_name: str,
+    optional_groups: list[dict],
+    current_selections: dict,
+) -> dict:
+    groups_lines = []
+    for group in optional_groups:
+        option_names = _build_group_options_text(group)
+        max_selections = _group_max_selections(group)
+        max_hint = f" (max {max_selections})" if max_selections else ""
+        groups_lines.append(f"- {group.get('name', 'Option')}{max_hint}: {option_names}")
+
+    current_lines = []
+    for group_name, value in (current_selections or {}).items():
+        display_value = ", ".join(_selection_list(value))
+        if display_value:
+            current_lines.append(f"- {group_name}: {display_value}")
+
+    prompt = f"""
+You are interpreting a customer's reply during a cafe ordering customization flow.
+
+The customer is customizing: {item_name}
+
+Available optional groups and their options:
+{chr(10).join(groups_lines) if groups_lines else "- None"}
+
+Current selections already made:
+{chr(10).join(current_lines) if current_lines else "- None"}
+
+Customer message: "{user_message}"
+
+Return ONLY valid JSON with this schema:
+{{
+  "action": string,
+  "group_name": string or null,
+  "selections": [string],
+  "reply_hint": string or null
+}}
+
+Valid action values:
+- "finalize": customer is done customizing
+- "select": customer named one or more options to add
+- "change": customer wants to replace a selection
+- "query_options": customer is asking what options exist for a group
+- "query_max": customer is asking how many they can pick
+- "unclear": none of the above
+
+Rules:
+- Only use exact option names from the available list in "selections".
+- Never invent option names.
+- If the customer names multiple matching options, include all of them.
+- "done", "add it", "add to cart", "that's it", "nothing else", "looks good", "perfect", "yes", "no", "nope" alone mean "finalize".
+"""
+    raw_text = _generate_gemini_content(prompt)
+    parsed = _extract_json_object(raw_text or "")
+    if not isinstance(parsed, dict):
+        return {
+            "action": "unclear",
+            "group_name": None,
+            "selections": [],
+            "reply_hint": None,
+        }
+
+    parsed.setdefault("group_name", None)
+    parsed.setdefault("selections", [])
+    parsed.setdefault("reply_hint", None)
+    if not isinstance(parsed.get("selections"), list):
+        parsed["selections"] = []
+    if parsed.get("action") not in {"finalize", "select", "change", "query_options", "query_max", "unclear"}:
+        parsed["action"] = "unclear"
+    return parsed
+
+
 async def process_chat_message(
     session_id: str,
     message: str,
@@ -900,128 +1227,20 @@ async def process_chat_message(
         cart_id = session["cart_id"]
 
     normalized_message = normalize_user_message(message)
-    special_command = detect_special_command(normalized_message)
-    fallback_intent = detect_intent(normalized_message)
+    normalized_phrase = _normalize_whitespace(normalized_message)
+    # Default so exception handlers always have a defined intent variable.
+    intent = "unknown"
+    current_stage = get_session_stage(session_id)
+    resolved = None
+    _skip_resolve = False
 
-    if special_command is not None:
-        logger.info(
-            {
-                "stage": "special_command_detected",
-                "normalized_message": normalized_message,
-                "intent": special_command,
-            }
-        )
-        interpretation = {
-            "intent": special_command,
-            "items": [],
-            "confidence": 1.0,
-            "fallback_needed": False,
-        }
-        intent = special_command
-    else:
-        llm_result = try_interpret_message(normalized_message)
-
-        if llm_result:
-            interpretation = llm_result
-            intent = interpretation.get("intent", fallback_intent or "unknown")
-
-            if fallback_intent in {"remove_item", "update_quantity"} and intent == "add_items":
-                interpretation["intent"] = fallback_intent
-                intent = fallback_intent
-        else:
-            intent = fallback_intent
-            
-            if fallback_intent == "add_items":
-                fallback_items = _extract_add_items_from_message(normalized_message)
-            else:
-                default_quantity = 1 if fallback_intent == "add_items" else None
-                item_query, quantity = extract_item_query(
-                    normalized_message,
-                    default_quantity=default_quantity,
-                )
-                fallback_items = []
-                if item_query:
-                    fallback_items.append(
-                        {
-                            "item_name": item_query,
-                            "quantity": quantity,
-                            "size": None,
-                            "options": {
-                                "milk": None,
-                                "sugar": None,
-                            },
-                            "addons": [],
-                            "instructions": "",
-                        }
-                    )
-
-            interpretation = {
-                "intent": fallback_intent,
-                "items": fallback_items,
-                "confidence": 0.0,
-                "fallback_needed": True,
-            }
-            intent = interpretation["intent"]
-
-    if (
-        interpretation.get("intent") == "unknown"
-        and interpretation.get("fallback_needed", False)
-        and any(char.isdigit() for char in normalized_message)
-        and any(word in normalized_message for word in ["make", "change", "set", "update"])
-    ):
-        interpretation["intent"] = "update_quantity"
-        intent = "update_quantity"
-
-    if (
-        interpretation.get("intent") == "unknown"
-        and interpretation.get("fallback_needed", False)
-        and session is not None
-        and isinstance(session.get("last_items"), list)
-        and session.get("last_items")
-        and any(phrase in normalized_message.lower() for phrase in ["another one", "same one", "one more", "more", "another"])
-    ):
-        interpretation["intent"] = "add_items"
-        intent = "add_items"
-
-    if (
-        interpretation.get("intent") == "unknown"
-        and interpretation.get("fallback_needed", False)
-        and any(
-            phrase in normalized_message
-            for phrase in [
-                "recommend",
-                "suggest",
-                "suggestions",
-                "recommendations",
-                "what's good",
-                "whats good",
-                "popular",
-                "surprise me",
-                "what should i get",
-            ]
-        )
-    ):
-        interpretation["intent"] = "recommendation_query"
-        intent = "recommendation_query"
-
-    last_stage = get_session_stage(session_id)
-    bare_affirmations = {"yes", "yep", "ok", "okay", "sure", "sounds good", "do it", "go ahead"}
-    explicit_confirm = {"confirm", "confirm order", "proceed", "place it", "let's go"}
-    stripped_message = normalized_message.strip()
-    if stripped_message in explicit_confirm or (
-        stripped_message in bare_affirmations and last_stage == "checkout_summary"
-    ):
-        interpretation["intent"] = "confirm_checkout"
-        interpretation["items"] = []
-        interpretation["fallback_needed"] = False
-        intent = "confirm_checkout"
-
-    try:
-        if intent in {"add_item", "add_items", "update_quantity", "remove_item"} and has_mixed_intent(normalized_message):
+    if current_stage not in {"guided_ordering", "checkout_summary"}:
+        static_reply = STATIC_REPLY_TABLE.get(normalized_phrase)
+        if static_reply:
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
-                reply="I didn't understand that. Can you clarify?",
+                reply=static_reply,
                 intent="unknown",
                 cart_updated=False,
                 cart_id=cart_id,
@@ -1029,8 +1248,545 @@ async def process_chat_message(
                 suggestions=[],
                 metadata={
                     "normalized_message": normalized_message,
-                    "pipeline_stage": "mixed_intent_detected",
+                    "pipeline_stage": "static_reply",
                 },
+            )
+
+    if current_stage == "guided_ordering" and normalized_phrase in GUIDED_DIRECT_WORDS:
+        resolved = _make_guided_passthrough_resolved()
+        intent = "guided_order_response"
+        _skip_resolve = True
+
+    if not _skip_resolve and current_stage == "guided_ordering" and normalized_phrase in GUIDED_ABORT_WORDS:
+        item_name = get_guided_order_item_name(session_id)
+        clear_guided_order_session(session_id)
+        set_session_stage(session_id, None)
+        return ChatMessageResponse(
+            session_id=session_id,
+            status="ok",
+            reply=f"No problem! I won't add the {item_name or 'item'}. What else can I get you?",
+            intent="unknown",
+            cart_updated=False,
+            cart_id=cart_id,
+            defaults_used=[],
+            suggestions=[],
+            metadata={
+                "normalized_message": normalized_message,
+                "pipeline_stage": "guided_ordering_aborted",
+            },
+        )
+
+    if not _skip_resolve and current_stage == "guided_ordering" and normalized_phrase in GUIDED_DEFAULT_ALL_WORDS:
+        return await _finalize_guided_order(
+            session_id,
+            cart_id,
+            normalized_message,
+            add_item_to_cart=add_item_to_cart,
+            instructions_text="",
+            pipeline_stage="guided_ordering_default_all",
+        )
+
+    if not _skip_resolve:
+        resolved = await resolve_intent(
+            message=normalized_message,
+            session=session or {},
+            cart={},
+            menu=[],
+        )
+        intent = resolved["intent"]
+
+    try:
+        if get_session_stage(session_id) == "guided_ordering" and intent != "guided_order_response":
+            clear_guided_order_session(session_id)
+            set_session_stage(session_id, None)
+            logger.info(
+                {
+                    "stage": "guided_ordering_interrupted",
+                    "session_id": session_id,
+                    "new_intent": intent,
+                    "normalized_message": normalized_message,
+                }
+            )
+        # ── Route to fallback assistant for low-confidence / unknown intent ──
+        if resolved["route_to_fallback"]:
+            fallback_reason = resolved.get("reason", "unknown_intent")
+            static_fallback = STATIC_FALLBACK_MESSAGES.get(fallback_reason)
+            if static_fallback:
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply=static_fallback,
+                    intent=intent,
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "fallback_response",
+                        "fallback_reason": fallback_reason,
+                        "fallback_source": "static",
+                    },
+                )
+
+            fallback_reply = await generate_fallback_reply(
+                normalized_message,
+                reason=fallback_reason,
+            )
+            return ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply=fallback_reply or "I'm not sure how to help with that. Could you rephrase?",
+                intent=intent,
+                cart_updated=False,
+                cart_id=cart_id,
+                defaults_used=[],
+                suggestions=[],
+                metadata={
+                    "normalized_message": normalized_message,
+                    "pipeline_stage": "fallback_response",
+                    "fallback_reason": fallback_reason,
+                    "fallback_source": "llm" if fallback_reply else "static",
+                },
+            )
+
+        if intent == "guided_order_response":
+            item_id = get_guided_order_item_id(session_id)
+            item_name = get_guided_order_item_name(session_id)
+            selections = get_guided_order_selections(session_id)
+            quantity = get_guided_order_quantity(session_id)
+            phase = get_guided_order_phase(session_id)
+            step = get_guided_order_step(session_id)
+            required_groups = get_guided_order_required_groups(session_id)
+            optional_groups = get_guided_order_optional_groups(session_id)
+
+            if item_id is None or not item_name or quantity is None:
+                clear_guided_order_session(session_id)
+                set_session_stage(session_id, None)
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply="Something went wrong. What would you like to order?",
+                    intent=intent,
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "guided_ordering_missing_state",
+                    },
+                )
+
+            current_response = normalized_message
+            if phase == 1:
+                if not required_groups:
+                    phase = 3 if len(optional_groups) == 1 else (2 if optional_groups else 4)
+                    set_guided_order_phase(session_id, phase)
+                    set_guided_order_step(session_id, 0)
+                    set_guided_order_groups(session_id, optional_groups if optional_groups else [])
+                elif step >= len(required_groups):
+                    if optional_groups:
+                        set_guided_order_phase(session_id, 2)
+                        set_guided_order_groups(session_id, optional_groups)
+                        set_guided_order_step(session_id, 0)
+                        return ChatMessageResponse(
+                            session_id=session_id,
+                            status="ok",
+                            reply=build_optional_review_prompt(item_name, selections, optional_groups),
+                            intent=intent,
+                            cart_updated=False,
+                            cart_id=cart_id,
+                            defaults_used=[],
+                            suggestions=[],
+                            metadata={
+                                "normalized_message": normalized_message,
+                                "pipeline_stage": "guided_ordering_review",
+                            },
+                        )
+
+                    set_guided_order_phase(session_id, 4)
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="ok",
+                        reply=build_guided_instructions_prompt(item_name),
+                        intent=intent,
+                        cart_updated=False,
+                        cart_id=cart_id,
+                        defaults_used=[],
+                        suggestions=[],
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "pipeline_stage": "guided_ordering_instructions",
+                        },
+                    )
+                else:
+                    current_group = required_groups[step]
+                    if current_response in GUIDED_SKIP_WORDS or current_response == "no thanks":
+                        return ChatMessageResponse(
+                            session_id=session_id,
+                            status="ok",
+                            reply=(
+                                f"This one is required - please choose from: "
+                                f"{_build_group_options_text(current_group)}."
+                            ),
+                            intent=intent,
+                            cart_updated=False,
+                            cart_id=cart_id,
+                            defaults_used=[],
+                            suggestions=[],
+                            metadata={
+                                "normalized_message": normalized_message,
+                                "current_group": current_group.get("name"),
+                                "pipeline_stage": "guided_ordering_required_clarify",
+                            },
+                        )
+
+                    matched_names = _match_option_names_for_group(current_group, current_response)
+                    if not matched_names:
+                        return ChatMessageResponse(
+                            session_id=session_id,
+                            status="ok",
+                            reply=(
+                                f"I didn't catch that. For {(current_group.get('name') or 'this option').lower()}, "
+                                f"you can choose: {_build_group_options_text(current_group)}."
+                            ),
+                            intent=intent,
+                            cart_updated=False,
+                            cart_id=cart_id,
+                            defaults_used=[],
+                            suggestions=[],
+                            metadata={
+                                "normalized_message": normalized_message,
+                                "current_group": current_group.get("name"),
+                                "pipeline_stage": "guided_ordering_clarify",
+                            },
+                        )
+
+                    _set_group_selection(selections, current_group, matched_names, replace=True)
+                    set_guided_order_selections(session_id, selections)
+                    next_step = step + 1
+
+                    if next_step >= len(required_groups):
+                        if optional_groups:
+                            set_guided_order_phase(session_id, 2)
+                            set_guided_order_groups(session_id, optional_groups)
+                            set_guided_order_step(session_id, 0)
+                            return ChatMessageResponse(
+                                session_id=session_id,
+                                status="ok",
+                                reply=build_optional_review_prompt(item_name, selections, optional_groups),
+                                intent=intent,
+                                cart_updated=False,
+                                cart_id=cart_id,
+                                defaults_used=[],
+                                suggestions=[],
+                                metadata={
+                                    "normalized_message": normalized_message,
+                                    "pipeline_stage": "guided_ordering_review",
+                                },
+                            )
+
+                        set_guided_order_phase(session_id, 4)
+                        return ChatMessageResponse(
+                            session_id=session_id,
+                            status="ok",
+                            reply=build_guided_instructions_prompt(item_name),
+                            intent=intent,
+                            cart_updated=False,
+                            cart_id=cart_id,
+                            defaults_used=[],
+                            suggestions=[],
+                            metadata={
+                                "normalized_message": normalized_message,
+                                "pipeline_stage": "guided_ordering_instructions",
+                            },
+                        )
+
+                    set_guided_order_step(session_id, next_step)
+                    set_guided_order_groups(session_id, required_groups)
+                    next_group = required_groups[next_step]
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="ok",
+                        reply=build_guided_order_prompt(
+                            item_name,
+                            next_group,
+                            include_item_name=False,
+                            allow_skip=False,
+                        ),
+                        intent=intent,
+                        cart_updated=False,
+                        cart_id=cart_id,
+                        defaults_used=[],
+                        suggestions=[],
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "guided_order_item_id": item_id,
+                            "guided_order_item_name": item_name,
+                            "current_group": next_group.get("name"),
+                            "pipeline_stage": "guided_ordering_continue",
+                        },
+                    )
+
+            if phase == 2:
+                if current_response in GUIDED_DONE_WORDS:
+                    set_guided_order_phase(session_id, 4)
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="ok",
+                        reply=build_guided_instructions_prompt(item_name),
+                        intent=intent,
+                        cart_updated=False,
+                        cart_id=cart_id,
+                        defaults_used=[],
+                        suggestions=[],
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "pipeline_stage": "guided_ordering_instructions",
+                        },
+                    )
+
+                phase = 3
+                set_guided_order_phase(session_id, 3)
+                set_guided_order_groups(session_id, optional_groups)
+
+            if phase == 3:
+                if not optional_groups:
+                    set_guided_order_phase(session_id, 4)
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="ok",
+                        reply=build_guided_instructions_prompt(item_name),
+                        intent=intent,
+                        cart_updated=False,
+                        cart_id=cart_id,
+                        defaults_used=[],
+                        suggestions=[],
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "pipeline_stage": "guided_ordering_instructions",
+                        },
+                    )
+
+                heuristic_result = _phase3_heuristic(
+                    normalized_message,
+                    optional_groups,
+                    selections,
+                )
+                if heuristic_result is not None:
+                    interpretation = heuristic_result
+                else:
+                    interpretation = await _interpret_phase3_response(
+                        user_message=normalized_message,
+                        item_name=item_name,
+                        optional_groups=optional_groups,
+                        current_selections=selections,
+                    )
+                action = interpretation.get("action")
+
+                if action == "finalize":
+                    set_guided_order_phase(session_id, 4)
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="ok",
+                        reply=build_guided_instructions_prompt(item_name),
+                        intent=intent,
+                        cart_updated=False,
+                        cart_id=cart_id,
+                        defaults_used=[],
+                        suggestions=[],
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "pipeline_stage": "guided_ordering_instructions",
+                        },
+                    )
+
+                if action == "query_options":
+                    target_group = _find_guided_group(optional_groups, interpretation.get("group_name"))
+                    if target_group:
+                        return ChatMessageResponse(
+                            session_id=session_id,
+                            status="ok",
+                            reply=f"For {target_group.get('name', 'that option').lower()}: {_build_group_options_text(target_group)}.",
+                            intent=intent,
+                            cart_updated=False,
+                            cart_id=cart_id,
+                            defaults_used=[],
+                            suggestions=[],
+                            metadata={
+                                "normalized_message": normalized_message,
+                                "pipeline_stage": "guided_ordering_phase3_query",
+                            },
+                        )
+                    if interpretation.get("reply_hint"):
+                        return ChatMessageResponse(
+                            session_id=session_id,
+                            status="ok",
+                            reply=str(interpretation.get("reply_hint")),
+                            intent=intent,
+                            cart_updated=False,
+                            cart_id=cart_id,
+                            defaults_used=[],
+                            suggestions=[],
+                            metadata={
+                                "normalized_message": normalized_message,
+                                "pipeline_stage": "guided_ordering_phase3_query",
+                            },
+                        )
+
+                if action == "query_max":
+                    target_group = _find_guided_group(optional_groups, interpretation.get("group_name"))
+                    if target_group:
+                        max_selections = _group_max_selections(target_group)
+                        if max_selections and max_selections > 1:
+                            reply_text = f"You can add up to {max_selections} {target_group.get('name', 'items').lower()}."
+                        elif max_selections == 1:
+                            reply_text = f"You can choose 1 {target_group.get('name', 'item').lower()}."
+                        else:
+                            reply_text = f"You can add multiple {target_group.get('name', 'items').lower()}."
+
+                        return ChatMessageResponse(
+                            session_id=session_id,
+                            status="ok",
+                            reply=reply_text,
+                            intent=intent,
+                            cart_updated=False,
+                            cart_id=cart_id,
+                            defaults_used=[],
+                            suggestions=[],
+                            metadata={
+                                "normalized_message": normalized_message,
+                                "pipeline_stage": "guided_ordering_phase3_query",
+                            },
+                        )
+                    if interpretation.get("reply_hint"):
+                        return ChatMessageResponse(
+                            session_id=session_id,
+                            status="ok",
+                            reply=str(interpretation.get("reply_hint")),
+                            intent=intent,
+                            cart_updated=False,
+                            cart_id=cart_id,
+                            defaults_used=[],
+                            suggestions=[],
+                            metadata={
+                                "normalized_message": normalized_message,
+                                "pipeline_stage": "guided_ordering_phase3_query",
+                            },
+                        )
+
+                if action in {"select", "change"}:
+                    raw_selections = [
+                        str(selection).strip()
+                        for selection in (interpretation.get("selections") or [])
+                        if str(selection).strip()
+                    ]
+                    matched_display: list[str] = []
+                    target_group = _find_guided_group(optional_groups, interpretation.get("group_name"))
+
+                    if target_group:
+                        valid_names = []
+                        for selection_name in raw_selections:
+                            group_match, canonical_name = _find_group_for_option_name([target_group], selection_name)
+                            if group_match and canonical_name:
+                                valid_names.append(canonical_name)
+
+                        if valid_names:
+                            matched_display.extend(
+                                _set_group_selection(
+                                    selections,
+                                    target_group,
+                                    valid_names,
+                                    replace=(action == "change"),
+                                )
+                            )
+                    else:
+                        for selection_name in raw_selections:
+                            group_match, canonical_name = _find_group_for_option_name(optional_groups, selection_name)
+                            if group_match and canonical_name:
+                                matched_display.extend(
+                                    _set_group_selection(
+                                        selections,
+                                        group_match,
+                                        [canonical_name],
+                                        replace=(action == "change"),
+                                    )
+                                )
+
+                    if matched_display:
+                        set_guided_order_selections(session_id, selections)
+                        matched_text = ", ".join(matched_display)
+                        if not required_groups and len(optional_groups) == 1:
+                            set_guided_order_phase(session_id, 4)
+                            return ChatMessageResponse(
+                                session_id=session_id,
+                                status="ok",
+                                reply=build_guided_instructions_prompt(item_name),
+                                intent=intent,
+                                cart_updated=False,
+                                cart_id=cart_id,
+                                defaults_used=[],
+                                suggestions=[],
+                                metadata={
+                                    "normalized_message": normalized_message,
+                                    "pipeline_stage": "guided_ordering_instructions",
+                                    "selections_added": matched_display,
+                                },
+                            )
+                        reply_text = (
+                            f"Updated {matched_text}. Anything else to customize, or say 'done' to add to cart."
+                            if action == "change"
+                            else f"Added {matched_text}! Anything else to customize, or say 'done' to add to cart."
+                        )
+                        return ChatMessageResponse(
+                            session_id=session_id,
+                            status="ok",
+                            reply=reply_text,
+                            intent=intent,
+                            cart_updated=False,
+                            cart_id=cart_id,
+                            defaults_used=[],
+                            suggestions=[],
+                            metadata={
+                                "normalized_message": normalized_message,
+                                "pipeline_stage": "guided_ordering_phase3_select",
+                                "selections_added": matched_display,
+                            },
+                        )
+
+                optional_group_names = ", ".join(
+                    group.get("name", "")
+                    for group in optional_groups
+                    if group.get("name")
+                )
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply=(
+                        f"I can help you customize: {optional_group_names}. "
+                        f"Say 'done' when you're ready to add to cart."
+                    ),
+                    intent=intent,
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "guided_ordering_phase3_unclear",
+                    },
+                )
+
+            instructions_text = "" if current_response in GUIDED_SKIP_WORDS or current_response == "no thanks" else normalized_message
+            return await _finalize_guided_order(
+                session_id,
+                cart_id,
+                normalized_message,
+                add_item_to_cart=add_item_to_cart,
+                instructions_text=instructions_text,
+                pipeline_stage="guided_ordering_done",
+                intent=intent,
             )
 
         if intent == "clear_cart":
@@ -1106,11 +1862,10 @@ async def process_chat_message(
             )
 
         if intent == "describe_item":
-            describe_query = extract_describe_query(normalized_message)
-            if not describe_query:
-                requested_items = extract_requested_items(interpretation)
-                if requested_items:
-                    describe_query = (requested_items[0].get("item_name") or "").strip()
+            # The LLM extracts the item name into items[0].item_name
+            describe_query = ""
+            if resolved["items"]:
+                describe_query = (resolved["items"][0].get("item_name") or "").strip()
 
             if not describe_query:
                 return ChatMessageResponse(
@@ -1308,34 +2063,9 @@ async def process_chat_message(
 
         if intent == "update_quantity":
             cart_result = await get_cart(cart_id=cart_id)
-            requested_items = extract_requested_items(interpretation)
-            requested_items = resolve_requested_items_from_session(
-                intent,
-                requested_items,
-                interpretation,
-                session,
-            )
-            if not validate_requested_items(
-                normalized_message,
-                intent,
-                requested_items,
-                interpretation.get("fallback_needed", False),
-            ):
-                return ChatMessageResponse(
-                    session_id=session_id,
-                    status="ok",
-                    reply="I didn't understand that. Can you clarify?",
-                    intent="unknown",
-                    cart_updated=False,
-                    cart_id=cart_result["cart_id"],
-                    defaults_used=[],
-                    suggestions=[],
-                    metadata={
-                        "normalized_message": normalized_message,
-                        "requested_items": requested_items,
-                        "pipeline_stage": "update_validation_failed",
-                    },
-                )
+            # Items are already resolved by the pipeline (follow-up refs expanded,
+            # quantities normalised). No further extraction or session resolution needed.
+            requested_items = resolved["items"]
 
             target_item = requested_items[0] if requested_items else {}
             item_query = target_item.get("item_name")
@@ -1442,34 +2172,7 @@ async def process_chat_message(
 
         if intent == "remove_item":
             cart_result = await get_cart(cart_id=cart_id)
-            requested_items = extract_requested_items(interpretation)
-            requested_items = resolve_requested_items_from_session(
-                intent,
-                requested_items,
-                interpretation,
-                session,
-            )
-            if not validate_requested_items(
-                normalized_message,
-                intent,
-                requested_items,
-                interpretation.get("fallback_needed", False),
-            ):
-                return ChatMessageResponse(
-                    session_id=session_id,
-                    status="ok",
-                    reply="I didn't understand that. Can you clarify?",
-                    intent="unknown",
-                    cart_updated=False,
-                    cart_id=cart_result["cart_id"],
-                    defaults_used=[],
-                    suggestions=[],
-                    metadata={
-                        "normalized_message": normalized_message,
-                        "requested_items": requested_items,
-                        "pipeline_stage": "remove_validation_failed",
-                    },
-                )
+            requested_items = resolved["items"]
 
             target_item = requested_items[0] if requested_items else {}
             item_query = target_item.get("item_name")
@@ -1573,33 +2276,9 @@ async def process_chat_message(
 
         if intent in {"add_item", "add_items"}:
             menu_items = await fetch_menu_items()
-            requested_items = extract_requested_items(interpretation)
-            requested_items = resolve_add_items_from_session(
-                requested_items,
-                interpretation,
-                session,
-            )
-            if not validate_requested_items(
-                normalized_message,
-                intent,
-                requested_items,
-                interpretation.get("fallback_needed", False),
-            ):
-                return ChatMessageResponse(
-                    session_id=session_id,
-                    status="ok",
-                    reply="I didn't understand that. Can you clarify?",
-                    intent="unknown",
-                    cart_updated=False,
-                    cart_id=cart_id,
-                    defaults_used=[],
-                    suggestions=[],
-                    metadata={
-                        "normalized_message": normalized_message,
-                        "requested_items": requested_items,
-                        "pipeline_stage": "add_validation_failed",
-                    },
-                )
+            # Items are fully resolved by the pipeline: follow-up refs expanded,
+            # quantities defaulted, mixed-intent filtered out before we reach here.
+            requested_items = resolved["items"]
 
             if not requested_items:
                 return ChatMessageResponse(
@@ -1617,26 +2296,6 @@ async def process_chat_message(
                     },
                 )
 
-            if interpretation.get("fallback_needed") and any(
-                is_invalid_fallback_query(item.get("item_name", ""))
-                for item in requested_items
-            ):
-                return ChatMessageResponse(
-                    session_id=session_id,
-                    status="ok",
-                    reply="I didn't understand that. Can you clarify?",
-                    intent="unknown",
-                    cart_updated=False,
-                    cart_id=cart_id,
-                    defaults_used=[],
-                    suggestions=[],
-                    metadata={
-                        "normalized_message": normalized_message,
-                        "requested_items": requested_items,
-                        "pipeline_stage": "fallback_query_invalid",
-                    },
-                )
-
             successful_items = []
             failed_items = []
             last_matched_item = None
@@ -1651,6 +2310,14 @@ async def process_chat_message(
                 if not matched_item:
                     failed_items.append(_build_failed_item(item_query, "not found on the menu"))
                     continue
+                if not is_menu_item_available(matched_item):
+                    failed_items.append(
+                        _build_failed_item(
+                            matched_item.get("name") or item_query,
+                            "out of stock right now",
+                        )
+                    )
+                    continue
 
                 menu_item_id = matched_item.get("id") or matched_item.get("_id")
                 if menu_item_id is None:
@@ -1662,11 +2329,77 @@ async def process_chat_message(
                     )
                     continue
 
-                menu_detail = None
-                if requested_item_has_customization(requested_item):
-                    menu_detail = await fetch_menu_item_detail(menu_item_id)
+                menu_detail = await fetch_menu_item_detail(menu_item_id)
+                has_customization = requested_item_has_customization(requested_item)
+                required_groups, optional_groups = build_guided_order_groups(menu_detail)
+                has_guided_groups = bool(required_groups or optional_groups)
+                should_start_guided_order = (
+                    len(requested_items) == 1
+                    and not has_customization
+                    and has_guided_groups
+                )
 
-                selected_options, instructions = map_requested_item_to_selected_options(
+                if should_start_guided_order:
+                    set_guided_order_item_id(session_id, menu_item_id)
+                    set_guided_order_item_name(session_id, matched_item.get("name"))
+                    set_guided_order_quantity(session_id, quantity)
+                    set_guided_order_required_groups(session_id, required_groups)
+                    set_guided_order_optional_groups(session_id, optional_groups)
+                    set_guided_order_selections(session_id, {})
+                    set_session_stage(session_id, "guided_ordering")
+                    set_guided_order_step(session_id, 0)
+
+                    if required_groups:
+                        set_guided_order_phase(session_id, 1)
+                        set_guided_order_groups(session_id, required_groups)
+                        first_group = required_groups[0]
+                        reply_text = build_guided_order_prompt(
+                            matched_item.get("name", "your item"),
+                            first_group,
+                            include_item_name=True,
+                            allow_skip=False,
+                        )
+                        current_group = first_group.get("name")
+                    elif len(optional_groups) == 1:
+                        set_guided_order_phase(session_id, 3)
+                        set_guided_order_groups(session_id, optional_groups)
+                        first_group = optional_groups[0]
+                        reply_text = build_guided_order_prompt(
+                            matched_item.get("name", "your item"),
+                            first_group,
+                            include_item_name=True,
+                            allow_skip=True,
+                        )
+                        current_group = first_group.get("name")
+                    else:
+                        set_guided_order_phase(session_id, 2)
+                        set_guided_order_groups(session_id, optional_groups)
+                        reply_text = build_optional_review_prompt(
+                            matched_item.get("name", "your item"),
+                            {},
+                            optional_groups,
+                        )
+                        current_group = None
+
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="ok",
+                        reply=reply_text,
+                        intent="add_items",
+                        cart_updated=False,
+                        cart_id=current_cart_id,
+                        defaults_used=[],
+                        suggestions=[],
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "pipeline_stage": "guided_ordering_start",
+                            "current_group": current_group,
+                            "guided_order_item_id": menu_item_id,
+                            "guided_order_item_name": matched_item.get("name"),
+                        },
+                    )
+
+                selected_options, instructions, unmatched_modifier_suggestions = map_requested_item_to_selected_options(
                     requested_item,
                     menu_detail,
                 )
@@ -1680,10 +2413,9 @@ async def process_chat_message(
                         cart_id=current_cart_id,
                     )
                 except ExpressAPIError as add_err:
-                    err_lower = str(add_err).lower()
-                    is_unavailable = "unavailable" in err_lower or "not available" in err_lower
+                    is_unavailable = is_out_of_stock_error(add_err)
                     failed_message = (
-                        "currently unavailable"
+                        "out of stock right now"
                         if is_unavailable
                         else "could not add right now"
                     )
@@ -1712,32 +2444,15 @@ async def process_chat_message(
                         "matched_item": matched_item,
                         "selected_options": selected_options,
                         "instructions": instructions,
+                        "unmatched_modifier_suggestions": unmatched_modifier_suggestions,
                     }
                 )
 
             if not successful_items:
-                if interpretation.get("fallback_needed") and failed_items and all(
-                    item.get("message") == "not found on the menu" for item in failed_items
-                ):
-                    return ChatMessageResponse(
-                        session_id=session_id,
-                        status="ok",
-                        reply="I didn't understand that. Can you clarify?",
-                        intent="unknown",
-                        cart_updated=False,
-                        cart_id=current_cart_id,
-                        defaults_used=[],
-                        suggestions=[],
-                        metadata={
-                            "normalized_message": normalized_message,
-                            "requested_items": requested_items,
-                            "failed_items": failed_items,
-                            "pipeline_stage": "fallback_query_unmatched",
-                        },
-                    )
-
                 if len(failed_items) == 1 and failed_items[0].get("message") == "not found on the menu":
                     reply_text = f"I could not find '{failed_items[0]['item_name']}' on the menu."
+                elif len(failed_items) == 1 and failed_items[0].get("message") == "out of stock right now":
+                    reply_text = build_out_of_stock_message(failed_items[0]["item_name"])
                 else:
                     failed_lines = [_format_failed_item_line(item) for item in failed_items if item]
                     reply_text = "I couldn't add these items."
@@ -1761,21 +2476,43 @@ async def process_chat_message(
                     },
                 )
 
-            featured_items = await fetch_featured_items()
-            popular = suggest_popular_items(featured_items)
-            complementary = suggest_complementary_items(menu_items, last_matched_item)
-
-            suggestions = popular + complementary
-            added_item_names = {item["matched_name"].lower() for item in successful_items}
-
-            filtered_suggestions = [
-                s for s in suggestions
-                if s.get("item_name", "").lower() not in added_item_names
-            ]
-
             cart_summary = build_cart_summary(cart_result["cart"])
+            filtered_suggestions = []
+            try:
+                featured_items = await fetch_featured_items()
+                popular = suggest_popular_items(featured_items)
+                complementary = suggest_complementary_items(menu_items, last_matched_item)
+
+                suggestions = popular + complementary
+                added_item_names = {item["matched_name"].lower() for item in successful_items}
+
+                filtered_suggestions = [
+                    s for s in suggestions
+                    if (s.get("item_name") or "").lower() not in added_item_names
+                ]
+            except Exception as suggestion_err:
+                logger.warning(
+                    {
+                        "stage": "post_add_suggestions_failed",
+                        "normalized_message": normalized_message,
+                        "cart_id": current_cart_id,
+                        "error": str(suggestion_err),
+                    }
+                )
+
             suggestion_lines = [f"- {s['item_name']}" for s in filtered_suggestions]
             suggestion_text = "\n".join(suggestion_lines)
+
+            all_unmatched_modifier_suggestions = [
+                suggestion
+                for item in successful_items
+                for suggestion in item.get("unmatched_modifier_suggestions", [])
+            ]
+            informational_suggestions = [
+                suggestion
+                for suggestion in all_unmatched_modifier_suggestions
+                if suggestion.get("suggestion")
+            ]
 
             if len(successful_items) == 1 and not failed_items:
                 added_item = successful_items[0]
@@ -1808,6 +2545,23 @@ async def process_chat_message(
             if suggestion_lines:
                 reply_text += f"\n\nYou might also like:\n{suggestion_text}"
 
+            if informational_suggestions:
+                if len(informational_suggestions) == 1:
+                    suggestion = informational_suggestions[0]
+                    reply_text += (
+                        f"\n\nBy the way - did you mean {suggestion['suggestion']}"
+                        f" instead of '{suggestion['fragment']}'?"
+                    )
+                else:
+                    clarification_lines = [
+                        f"- '{suggestion['fragment']}' -> {suggestion['suggestion']}?"
+                        for suggestion in informational_suggestions
+                    ]
+                    reply_text += (
+                        "\n\nJust checking - did you mean:\n"
+                        + "\n".join(clarification_lines)
+                    )
+
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
@@ -1822,12 +2576,133 @@ async def process_chat_message(
                     "requested_items": requested_items,
                     "added_items": successful_items,
                     "failed_items": failed_items,
+                    "unmatched_modifier_suggestions": all_unmatched_modifier_suggestions,
                     "cart": cart_result["cart"],
                     "pipeline_stage": "add_items_done",
                 },
             )
 
-        fallback_reply = await generate_fallback_reply(normalized_message)
+        if intent == "repeat_order":
+            # Repeat the most recently ordered items from this session if available.
+            session_items: list = (session or {}).get("last_items") or []
+            if not session_items:
+                fallback_reply = await generate_fallback_reply(
+                    normalized_message,
+                    reason="repeat_order_no_history",
+                )
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply=(
+                        fallback_reply
+                        or "I don't have a record of a previous order in this session. "
+                           "What would you like to add?"
+                    ),
+                    intent=intent,
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "repeat_order_no_history",
+                    },
+                )
+            # Re-use the add flow with the session items
+            resolved["items"] = list(session_items)
+            intent = "add_items"
+            # Fall through to the add flow below by re-entering via a recursive tail
+            # would be complex — instead forward directly to the add path.
+            menu_items = await fetch_menu_items()
+            requested_items = resolved["items"]
+            successful_items = []
+            failed_items = []
+            last_matched_item = None
+            cart_result = None
+            current_cart_id = cart_id
+
+            for requested_item in requested_items:
+                item_query = requested_item.get("item_name")
+                quantity = requested_item.get("quantity") or 1
+                matched_item = await find_menu_item_by_name(menu_items, item_query or "")
+                if not matched_item:
+                    failed_items.append(_build_failed_item(item_query, "not found on the menu"))
+                    continue
+                if not is_menu_item_available(matched_item):
+                    failed_items.append(
+                        _build_failed_item(
+                            matched_item.get("name") or item_query,
+                            "out of stock right now",
+                        )
+                    )
+                    continue
+                menu_item_id = matched_item.get("id") or matched_item.get("_id")
+                if menu_item_id is None:
+                    failed_items.append(_build_failed_item(item_query or matched_item.get("name", "item"), "missing menu item id"))
+                    continue
+                menu_detail = None
+                if requested_item_has_customization(requested_item):
+                    menu_detail = await fetch_menu_item_detail(menu_item_id)
+                selected_options, instructions, _ = map_requested_item_to_selected_options(requested_item, menu_detail)
+                try:
+                    cart_result = await add_item_to_cart(
+                        menu_item_id=menu_item_id,
+                        qty=quantity,
+                        selected_options=selected_options,
+                        instructions=instructions,
+                        cart_id=current_cart_id,
+                    )
+                except ExpressAPIError as add_err:
+                    failed_message = "out of stock right now" if is_out_of_stock_error(add_err) else "could not add right now"
+                    failed_items.append(_build_failed_item(matched_item.get("name") or item_query, failed_message))
+                    continue
+                current_cart_id = cart_result["cart_id"]
+                last_matched_item = matched_item
+                successful_items.append({
+                    "requested_name": item_query,
+                    "matched_name": matched_item.get("name", "item"),
+                    "quantity": quantity,
+                    "matched_item": matched_item,
+                    "selected_options": selected_options,
+                    "instructions": instructions,
+                })
+
+            if not successful_items:
+                if len(failed_items) == 1 and failed_items[0].get("message") == "out of stock right now":
+                    reply_text = build_out_of_stock_message(failed_items[0]["item_name"])
+                else:
+                    reply_text = "I couldn't re-add your previous items."
+                return ChatMessageResponse(
+                    session_id=session_id, status="ok", reply=reply_text,
+                    intent="repeat_order", cart_updated=False, cart_id=current_cart_id,
+                    defaults_used=[], suggestions=[],
+                    metadata={"normalized_message": normalized_message, "failed_items": failed_items, "pipeline_stage": "repeat_order_failed"},
+                )
+
+            cart_summary = build_cart_summary(cart_result["cart"])
+            added_lines = [f"- {i['quantity']}x {i['matched_name']}" for i in successful_items]
+            reply_text = "Re-added your previous items:\n" + "\n".join(added_lines)
+            if cart_summary:
+                reply_text += f"\n\nYour cart now contains:\n{cart_summary}"
+            return ChatMessageResponse(
+                session_id=session_id, status="ok", reply=reply_text,
+                intent="repeat_order", cart_updated=True, cart_id=current_cart_id,
+                defaults_used=[], suggestions=[],
+                metadata={
+                    "normalized_message": normalized_message,
+                    "requested_items": requested_items,
+                    "added_items": successful_items,
+                    "cart": cart_result["cart"],
+                    "pipeline_stage": "repeat_order_done",
+                },
+            )
+
+        # Safety net — should not be reached after the pipeline routes properly.
+        logger.warning({"stage": "unhandled_intent", "intent": intent, "normalized_message": normalized_message})
+        fallback_reply = await generate_fallback_reply(
+            normalized_message,
+            reason="unknown_intent",
+        )
         return ChatMessageResponse(
             session_id=session_id,
             status="ok",

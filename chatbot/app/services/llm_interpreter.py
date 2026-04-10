@@ -100,6 +100,10 @@ INSTRUCTION_CANONICAL = {
     "extra foam": "extra foam",
     "no foam": "no foam",
     "no whip": "no whip",
+    "no warming": "no warming",
+    "not warmed": "no warming",
+    "not warmed up": "no warming",
+    "unwarmed": "no warming",
     "on the side": "on the side",
 }
 
@@ -287,7 +291,7 @@ def _normalize_add_message(message: str) -> str:
     message = (message or "").lower().strip()
     message = re.sub(r"[.!?]+", "", message)
     message = re.sub(
-        r"^(i would like to order|i would like to add|i would like to|get me|i want to order|i want to add|i want|please)\s+",
+        r"^(i would like to order|i would like to add|i would like to|i d like to order|i d like to add|i d like to|get me|i want to order|i want to add|i want|could i get|could i have|can i get|can i have|please)\s+",
         "",
         message,
     )
@@ -472,11 +476,14 @@ def _should_use_heuristic_items(parsed_items: list[Dict[str, Any]], heuristic_it
         )
     )
 
-    # Preserve richer Gemini structure when it already extracted usable
-    # customizations. The heuristic parser is intentionally simpler and can
-    # flatten modifiers back into item_name.
-    if parsed_items_are_usable and any(_has_customization_data(item) for item in parsed_items):
+    parsed_has_customization = any(_has_customization_data(item) for item in parsed_items)
+    heuristic_has_customization = any(_has_customization_data(item) for item in heuristic_items)
+
+    if parsed_items_are_usable and parsed_has_customization and not heuristic_has_customization:
         return False
+
+    if parsed_items_are_usable and heuristic_has_customization and not parsed_has_customization:
+        return True
 
     if not parsed_items or len(parsed_items) != len(heuristic_items):
         return True
@@ -546,25 +553,18 @@ def _generate_gemini_content(prompt: str) -> str | None:
     return None
 
 
-def try_interpret_message(message: str, context=None) -> Optional[Dict[str, Any]]:
-    try:
-        prompt = f"""
-You are an ordering-intent parser for a cafe chatbot.
+def _build_intent_prompt(context_block: str, message: str) -> str:
+    return f"""
+Classify the user's intent for a cafe ordering chatbot. Return ONLY valid JSON matching this schema.
 
-Your job is to extract structured data from the user's message with high accuracy.
-
-Return ONLY valid JSON.
-Do not add markdown.
-Do not add explanations.
-Do not wrap the JSON in triple backticks.
-
-Use exactly this schema:
+Output schema:
 {{
-  "intent": "add_items" | "update_quantity" | "remove_item" | "view_cart" | "checkout" | "unknown",
+  "intent": string,
+  "confidence": number between 0.0 and 1.0,
   "items": [
     {{
       "item_name": string,
-      "quantity": number,
+      "quantity": number or null,
       "size": string or null,
       "options": {{
         "milk": string or null,
@@ -574,108 +574,271 @@ Use exactly this schema:
       "instructions": string or null
     }}
   ],
-  "confidence": number,
-  "fallback_needed": boolean
+  "follow_up_ref": string or null,
+  "needs_clarification": boolean,
+  "reason": string
 }}
 
-Critical Rules for Multi-Item Orders:
-- For messages with "and" or commas: extract EVERY item separately. Do not merge items.
-- When parsing "X item and Y item2": extract item with quantity X, then item2 with quantity Y.
-- When parsing "item and Z item2": extract item with quantity 1, then item2 with quantity Z.
-- Each "and" or comma signals a new item. Keep them as separate array entries.
-- Examples:
-  * "latte and 2 water" → [{{item_name: "latte", quantity: 1}}, {{item_name: "water", quantity: 2}}]
-  * "2 espresso and caramel frap" → [{{item_name: "espresso", quantity: 2}}, {{item_name: "caramel frap", quantity: 1}}]
-  * "1 latte and 2 water and 3 croissant" → 3 separate items with quantities 1, 2, 3
+Valid intents (use only these 12):
+  "add_items"             - add to cart
+  "remove_item"           - remove from cart
+  "update_quantity"       - change quantity
+  "clear_cart"            - clear cart
+  "view_cart"             - view cart
+  "recommendation_query"  - ask for suggestions
+  "describe_item"         - describe an item
+  "checkout"              - start checkout
+  "confirm_checkout"      - confirm checkout
+  "repeat_order"          - repeat prior order
+  "guided_order_response" - guided-order follow-up
+  "unknown"               - unclear or conversational
 
-General Rules:
-- Use "add_items" if the user is ordering, adding, or requesting one or more menu items.
-- Use "update_quantity" if the user wants to change the quantity of an item already in the cart.
-- Use "remove_item" if the user wants to remove or delete an item from the cart.
-- Use "view_cart" if the user asks to see the cart.
-- Use "unknown" if the request is unclear.
-- Put every requested item in the "items" array as a separate object.
-- For "update_quantity", include the target item in "items" and set its quantity to the requested new quantity.
-- For "remove_item", include the target item in "items" and set its quantity to null.
-- If the user does not mention quantity for an add_items item, use 1.
-- If quantity is missing or unclear for update_quantity, set quantity to null.
-- item_name should be only the menu item phrase (no quantity, no size, no options).
-- If the user says a size (small, medium, large), put it in each item's "size", not in item_name.
-- If the user mentions milk type, put it in each item's options.milk, not in item_name.
-- If the user mentions sugar preferences, put them in each item's options.sugar when possible.
-- Put selectable add-ons such as syrup flavors, extra shot, whipped cream, drizzle, or decaf into each item's addons array.
-- Put free-form prep requests such as extra hot, less ice, no whip, light foam, or on the side into each item's instructions field.
-- Set fallback_needed to false if you are confident in the interpretation. Set to true otherwise.
+Rules:
+1. BARE AFFIRMATIONS ("yes", "ok", "okay", "sure", "yep", "sounds good", "do it", "go ahead" - the message is ONLY this word or phrase): intent "unknown", reason "bare_affirmation_needs_context". NEVER classify a bare affirmation as "confirm_checkout". Context is resolved by a separate layer that checks the session state.
+2. When session_stage is "guided_ordering":
+   - Phase 1 (required variants): replies naming a size, milk, flavor, or other variant option should be "guided_order_response" with confidence 0.9 or higher.
+   - Phase 2 (review prompt): short replies like "done", "add it", "yes", or "i want toppings" should be "guided_order_response" with confidence 0.9 or higher.
+   - Phase 3 (open customization): replies asking about options, asking how many can be chosen, naming add-ons, or changing a previous selection should be "guided_order_response" with confidence 0.9 or higher.
+   - Phase 4 (instructions): short instruction replies or skip words like "none" should be "guided_order_response" with confidence 0.9 or higher.
+   In all guided phases, item_name should be null and the reply is a follow-up to guided_current_group / guided_order_item_name.
+   Exception: if the user is clearly asking for a different action like clearing the cart or checking out, classify that action normally instead.
+3. Natural language patterns:
+   - "repeat my last order", "same as before", "order again", "same thing again" -> "repeat_order"
+   - "what's good", "surprise me", "any suggestions", "what do you recommend" -> "recommendation_query"
+   - "what is X", "tell me about X", "describe X", "what's in X" -> "describe_item"
+   - quantity changes like "make it 3", "change that to 2", "set the latte to 2" -> "update_quantity" (first such pattern note; do not treat as add_items)
+   - removals like "take out X", "remove X", "cancel X", "delete X", "i don't want X anymore" -> "remove_item"
+   - follow-up references like "same one", "that last one", "it", "that one", "another one of those" -> set follow_up_ref to the exact phrase and leave item_name null/empty
+4. Confidence: use >=0.8 when clear, 0.6-0.79 when plausible but uncertain, <0.6 for ambiguity, mixed operations, or unclear references; never force high confidence when unsure.
+5. Quantity defaults: "a couple" -> 2, "a few" -> 3, "some" -> 2; if add_items has no quantity, use 1; put prep or serving requests in "instructions".
+6. Multi-item rules: "A and B" or "A, B" means separate item entries; each item gets its own item_name, quantity, size, options, addons, and instructions.
+7. Use "unknown" for purely conversational, off-topic, or genuinely unclear messages. Do not guess.
+
+{context_block}
 
 User message:
 "{message}"
 """
 
+
+def try_interpret_message(message: str, context=None) -> Optional[Dict[str, Any]]:
+    """
+    Layer 3 — Structured LLM Intent Parser.
+
+    Calls the LLM with a structured prompt covering all 12 valid intents,
+    parses the JSON response, and returns the raw schema dict.
+
+    No post-parse reclassification or intent overrides happen here.
+    All enrichment and routing decisions live in Layer 4 (intent_pipeline.py).
+
+    Args:
+        message: Normalised user message (already lowercased/trimmed).
+        context: Optional execution context for session-aware prompting.
+
+    Returns:
+        Parsed dict matching the Layer 3 schema, or None if the LLM call or
+        JSON parsing fails.
+    """
+    try:
+        session_stage = None
+        guided_order_phase = None
+        guided_current_group = None
+        guided_order_item_name = None
+        if isinstance(context, dict):
+            session_stage = context.get("session_stage")
+            guided_order_phase = context.get("guided_order_phase")
+            guided_current_group = context.get("guided_current_group")
+            guided_order_item_name = context.get("guided_order_item_name")
+
+        context_block = ""
+        if session_stage or guided_order_phase is not None or guided_current_group or guided_order_item_name:
+            context_block = f"""
+Session context:
+- session_stage: {json.dumps(session_stage or "")}
+- guided_order_phase: {json.dumps(guided_order_phase)}
+- guided_current_group: {json.dumps(guided_current_group or "")}
+- guided_order_item_name: {json.dumps(guided_order_item_name or "")}
+"""
+
+        prompt = f"""
+You are an intent classifier for a café ordering chatbot.
+
+Return ONLY valid JSON — no markdown, no preamble, no explanations.
+Do not wrap the JSON in triple backticks.
+
+Output schema (use these exact field names):
+{{
+  "intent": string,
+  "confidence": number between 0.0 and 1.0,
+  "items": [
+    {{
+      "item_name": string,
+      "quantity": number or null,
+      "size": string or null,
+      "options": {{
+        "milk": string or null,
+        "sugar": string or null
+      }},
+      "addons": [string],
+      "instructions": string or null
+    }}
+  ],
+  "follow_up_ref": string or null,
+  "needs_clarification": boolean,
+  "reason": string
+}}
+
+Valid intent values — use ONLY one of these twelve strings:
+  "add_items"             — user wants to add one or more items to their cart
+  "remove_item"           — user wants to remove a specific item from their cart
+  "update_quantity"       — user wants to change the quantity of a cart item
+  "clear_cart"            — user wants to empty their entire cart
+  "view_cart"             — user wants to see their cart contents
+  "recommendation_query"  — user wants suggestions or recommendations
+  "describe_item"         — user wants details about a specific menu item
+  "checkout"              — user wants to proceed to checkout
+  "confirm_checkout"      — user explicitly confirms a checkout already in progress
+  "repeat_order"          — user wants to reorder a previous order
+  "guided_order_response" — user is answering a guided ordering question about variants or instructions
+  "unknown"               — anything conversational, off-topic, or genuinely unclear
+
+Classification rules (follow these exactly):
+
+1. BARE AFFIRMATIONS ("yes", "ok", "okay", "sure", "yep", "sounds good",
+   "do it", "go ahead" — the message is ONLY this word or phrase):
+   → intent "unknown", reason "bare_affirmation_needs_context"
+   NEVER classify a bare affirmation as "confirm_checkout". Context is resolved
+   by a separate layer that checks the session state.
+
+2. When session_stage is "guided_ordering":
+   - Phase 1 (required variants): any reply naming a size, milk, flavor, or
+     other variant option should be "guided_order_response" with confidence
+     0.9 or higher.
+   - Phase 2 (review prompt): short replies like "done", "add it", "yes",
+     "i want toppings", or similar follow-ups should be
+     "guided_order_response" with confidence 0.9 or higher.
+   - Phase 3 (open customization): replies asking about options, asking how
+     many can be chosen, naming add-ons, or changing a previous selection
+     should be "guided_order_response" with confidence 0.9 or higher.
+   - Phase 4 (instructions): short instruction replies or skip words like
+     "none" should be "guided_order_response" with confidence 0.9 or higher.
+   In all guided phases, item_name should be null and the reply should be
+   treated as a follow-up to the guided step shown in guided_current_group /
+   guided_order_item_name.
+   Exception: if the user is clearly asking for a different action like
+   clearing the cart or checking out, classify that action normally instead.
+
+3. "repeat my last order", "same as before", "order again", "order the same thing",
+   "same thing again" → "repeat_order" (NOT "add_items")
+
+4. "what's good", "what's good today", "surprise me", "any suggestions",
+   "what do you recommend", "what should I get", "recommend me something",
+   "what do you have that's good" → "recommendation_query"
+
+5. "what is X", "tell me about X", "describe X", "what's in X",
+   "can you describe X", "what does X taste like" → "describe_item"
+
+6. Changing the quantity of an item already in the cart
+   ("make it 3", "change that to 2", "I want 2 of those instead",
+   "actually make that 3", "set the latte to 2") → "update_quantity" (NOT "add_items")
+
+7. Removing items ("take out X", "remove X", "cancel X", "delete X",
+   "no X please", "I don't want X anymore") → "remove_item" (NOT "add_items")
+
+8. Follow-up references: if the user refers to a previously mentioned item
+   without naming it ("same one", "that last one", "the one I just ordered",
+   "it", "that one", "another one of those"):
+   → set follow_up_ref to the exact reference phrase used
+   → leave item_name as null or empty string in the items array
+
+8b. Prep or serving requests like "no warming", "not warmed", "extra hot",
+    "on the side", "light ice", "no foam" that could be variant options
+    should go in the item's "instructions" field as a fallback. The
+    execution layer will attempt to match them against variant options
+    first before treating them as free text.
+
+9. Confidence guidelines:
+   - Use confidence ≥ 0.8 when intent and items are clear and unambiguous
+   - Use confidence 0.6–0.79 for reasonable but not certain interpretations
+   - Use confidence < 0.6 for: ambiguous messages, mixed operations
+     (add + remove in same message), unclear references without context
+   - Never force a high-confidence label when you are not sure
+
+10. Return "unknown" for purely conversational, off-topic, or genuinely
+   unclear messages. Do not guess.
+
+11. Quantity defaults: "a couple" → 2, "a few" → 3, "some" → 2.
+    If quantity is not specified for add_items, use 1.
+    Never invent items the user did not mention.
+
+Multi-item rules:
+- "A and B" or "A, B" → two separate entries in the items array
+- Each item gets its own item_name, quantity, size, options, addons
+
+{context_block}
+
+User message:
+"{message}"
+"""
+
+        prompt = _build_intent_prompt(context_block, message)
         raw_text = _generate_gemini_content(prompt)
         if not raw_text:
             return None
 
-        logger.info(
-            {
-                "stage": "llm_raw_response",
-                "message": message,
-                "raw_text": raw_text,
-            }
-        )
+        logger.info({
+            "stage": "llm_raw_response",
+            "message": message,
+            "raw_text": raw_text,
+        })
 
         parsed = _extract_json_object(raw_text)
         if not parsed:
-            logger.warning(
-                {
-                    "stage": "llm_parse_failed",
-                    "message": message,
-                    "raw_text": raw_text,
-                }
-            )
+            logger.warning({
+                "stage": "llm_parse_failed",
+                "message": message,
+                "raw_text": raw_text,
+            })
             return None
 
+        # Build result — keep only recognised top-level fields
         result = _base_result()
-        result.update(parsed)
+        for key in ("intent", "confidence", "fallback_needed",
+                    "follow_up_ref", "needs_clarification", "reason"):
+            if key in parsed:
+                result[key] = parsed[key]
+
         result["items"] = _normalize_items(parsed)
+        if result.get("intent") == "add_items" or _looks_like_add_request(message):
+            heuristic_items = _extract_add_items_from_message(message)
+            if _should_use_heuristic_items(result["items"], heuristic_items):
+                result["items"] = heuristic_items
+        result.setdefault("follow_up_ref", None)
+        result.setdefault("needs_clarification", False)
+        result.setdefault("reason", "")
 
         if not result.get("intent"):
             result["intent"] = "unknown"
 
-        if result["items"] and result["intent"] in {"add_items", "unknown"}:
-            result["intent"] = "add_items"
+        # fallback_needed: derive from confidence when not set by LLM
+        if not isinstance(result.get("fallback_needed"), bool):
+            result["fallback_needed"] = float(result.get("confidence") or 0.0) < 0.6
 
-        if _looks_like_add_request(message) and result["intent"] in {"add_item", "add_items", "unknown"}:
-            heuristic_items = _extract_add_items_from_message(message)
-            if heuristic_items and result["intent"] == "unknown":
-                result["intent"] = "add_items"
-            if _should_use_heuristic_items(result["items"], heuristic_items):
-                logger.info(
-                    {
-                        "stage": "llm_heuristic_items_applied",
-                        "message": message,
-                        "heuristic_items": heuristic_items,
-                    }
-                )
-                result["items"] = heuristic_items
-
-        logger.info(
-            {
-                "stage": "llm_interpretation_ready",
-                "message": message,
-                "intent": result["intent"],
-                "items": result["items"],
-                "fallback_needed": result.get("fallback_needed", True),
-            }
-        )
+        logger.info({
+            "stage": "llm_interpretation_ready",
+            "message": message,
+            "intent": result["intent"],
+            "confidence": result.get("confidence"),
+            "follow_up_ref": result.get("follow_up_ref"),
+            "needs_clarification": result.get("needs_clarification"),
+        })
 
         return result
 
     except Exception as e:
-        logger.exception(
-            {
-                "stage": "llm_unexpected_error",
-                "message": message,
-                "error": str(e),
-            }
-        )
+        logger.exception({
+            "stage": "llm_unexpected_error",
+            "message": message,
+            "error": str(e),
+        })
         return None

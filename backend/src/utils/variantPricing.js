@@ -147,3 +147,31 @@ export function sortSelectedOptionsForDisplay(selectedOptions, variantGroups = [
 
   return ordered;
 }
+
+export function enrichSelectedOptionsWithGroupMetadata(selectedOptions, variantGroups = []) {
+  const normalizedSelections = sanitizeSelectedOptions(selectedOptions);
+  const variantGroupsById = createVariantGroupMap(variantGroups);
+
+  return normalizedSelections.map((selection) => {
+    const explicitGroup = selection.groupId
+      ? variantGroupsById.get(String(selection.groupId))
+      : null;
+
+    const inferredGroup = explicitGroup || variantGroups.find((group) => {
+      const options = Array.isArray(group?.options) ? group.options : [];
+      return options.some((option) => option?.name === selection.optionName);
+    }) || null;
+
+    const resolvedGroupId = explicitGroup
+      ? String(selection.groupId)
+      : inferredGroup?.groupId != null
+        ? String(inferredGroup.groupId)
+        : "";
+
+    return {
+      ...selection,
+      ...(resolvedGroupId ? { groupId: resolvedGroupId } : {}),
+      groupName: inferredGroup?.name ?? null,
+    };
+  });
+}

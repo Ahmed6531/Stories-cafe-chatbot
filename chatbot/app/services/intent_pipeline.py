@@ -1,0 +1,410 @@
+"""
+Intent resolution pipeline — Layers 2, 3, and 4.
+
+Layer 2  Deterministic Router  — exact-phrase matching only, frozen set
+Layer 3  LLM Intent Parser     — single LLM call, structured output
+Layer 4  Resolver / Validator  — enrichment, context gates, routing decision
+
+Public API:
+    async def resolve_intent(
+        message: str,
+        session: dict,
+        cart: dict,
+        menu: list,
+    ) -> dict
+
+The returned dict is a fully resolved intent object.  The orchestrator
+consumes it directly and never re-inspects the raw message for intent.
+"""
+
+import logging
+import re
+from typing import Optional
+
+from app.services.llm_interpreter import try_interpret_message
+from app.services.session_store import get_guided_order_phase, get_session_stage
+
+logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Layer 2 — Deterministic Router constants
+# FROZEN: do not add phrases here without explicit justification.
+# Any phrase that requires interpretation belongs in Layer 3 (LLM).
+# ─────────────────────────────────────────────────────────────────────────────
+
+_CLEAR_CART_PHRASES: frozenset[str] = frozenset({
+    "clear cart",
+    "empty cart",
+    "remove all",
+    "start over",
+    "clear everything",
+})
+
+_CONFIRM_CHECKOUT_PHRASES: frozenset[str] = frozenset({
+    "confirm",
+    "confirm order",
+    "proceed",
+    "place it",
+    "let's go",
+})
+
+# Bare affirmations — NEVER routed to confirm_checkout by themselves.
+# Layer 4a resolves them against session stage.
+_CONVERSATIONAL_PASSTHROUGH: frozenset[str] = frozenset({
+    "hi",
+    "hey",
+    "hello",
+    "hiya",
+    "thanks",
+    "thank you",
+    "thx",
+    "cheers",
+    "good morning",
+    "good afternoon",
+    "good evening",
+})
+
+_BARE_AFFIRMATIONS: frozenset[str] = frozenset({
+    "yes",
+    "yep",
+    "ok",
+    "okay",
+    "sure",
+    "sounds good",
+    "do it",
+    "go ahead",
+})
+
+_NUMBER_WORDS: dict[str, int] = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
+
+_VALID_INTENTS: frozenset[str] = frozenset({
+    "add_items",
+    "remove_item",
+    "update_quantity",
+    "clear_cart",
+    "view_cart",
+    "recommendation_query",
+    "describe_item",
+    "checkout",
+    "confirm_checkout",
+    "repeat_order",
+    "guided_order_response",
+    "unknown",
+})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _make_resolved(
+    *,
+    intent: str,
+    confidence: float = 1.0,
+    items: list | None = None,
+    follow_up_ref: str | None = None,
+    needs_clarification: bool = False,
+    reason: str = "",
+    source: str = "llm",
+    route_to_fallback: bool = False,
+) -> dict:
+    return {
+        "intent": intent,
+        "confidence": confidence,
+        "items": items if items is not None else [],
+        "follow_up_ref": follow_up_ref,
+        "needs_clarification": needs_clarification,
+        "reason": reason,
+        "source": source,
+        "route_to_fallback": route_to_fallback,
+        # Kept for backward compatibility with execution-layer checks
+        "fallback_needed": route_to_fallback,
+    }
+
+
+def _extract_explicit_quantity(normalized_message: str) -> int | None:
+    quantity_tokens = re.findall(
+        r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b",
+        normalized_message,
+    )
+    if len(quantity_tokens) != 1:
+        return None
+
+    token = quantity_tokens[0]
+    if token.isdigit():
+        return int(token)
+    return _NUMBER_WORDS.get(token)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Layer 2 — Deterministic Router
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _layer2_deterministic(normalized: str) -> Optional[dict]:
+    """
+    Exact-phrase match only.  No substring scanning, no regex.
+    Returns a resolved intent dict or None (fall through to Layer 3).
+    """
+    if normalized in _CLEAR_CART_PHRASES:
+        return _make_resolved(
+            intent="clear_cart",
+            source="deterministic",
+            reason="deterministic_match:clear_cart",
+        )
+    if normalized in _CONFIRM_CHECKOUT_PHRASES:
+        return _make_resolved(
+            intent="confirm_checkout",
+            source="deterministic",
+            reason="deterministic_match:confirm_checkout",
+        )
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Layer 4 — Resolver / Validator
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _layer4_resolve(
+    raw: dict,
+    normalized_message: str,
+    session: dict,
+    menu: list,
+) -> dict:
+    """
+    Enriches, validates, and makes the final routing decision.
+    Does NOT reclassify intent — only adds context, resolves references,
+    normalises quantities, and sets route_to_fallback.
+    """
+    result = _make_resolved(
+        intent=raw.get("intent") or "unknown",
+        confidence=float(raw.get("confidence") or 0.0),
+        items=list(raw.get("items") or []),
+        follow_up_ref=raw.get("follow_up_ref"),
+        needs_clarification=bool(raw.get("needs_clarification", False)),
+        reason=raw.get("reason") or "",
+        source="llm",
+        route_to_fallback=False,
+    )
+
+    if result["intent"] not in _VALID_INTENTS:
+        result["intent"] = "unknown"
+        result["confidence"] = 0.0
+        result["reason"] = "invalid_intent_from_llm"
+
+    # ── 4a: Bare-affirmation context gate ─────────────────────────────────────
+    # Deterministic intercept: if the entire message is a bare affirmation we
+    # override whatever the LLM returned — including any spurious
+    # "confirm_checkout" — and route purely on session stage.  This makes the
+    # gate immune to LLM variance.
+    if normalized_message in _BARE_AFFIRMATIONS:
+        session_id = session.get("session_id") or ""
+        stage = get_session_stage(session_id)
+        if stage == "checkout_summary":
+            result["intent"] = "confirm_checkout"
+            result["confidence"] = 1.0
+            result["source"] = "resolver"
+            result["route_to_fallback"] = False
+            result["fallback_needed"] = False
+        else:
+            result["intent"] = "unknown"
+            result["reason"] = "bare_affirmation_needs_context"
+            result["route_to_fallback"] = True
+            result["fallback_needed"] = True
+        return result  # short-circuit — skip all remaining resolver steps
+
+    # ── 4b: Follow-up reference resolution ───────────────────────────────────
+    # When the LLM detects a reference to a previous item ("same one", "that last
+    # one", "it") it sets follow_up_ref and leaves item_name blank.
+    # We resolve it here against session["last_items"].
+    if result["follow_up_ref"] is not None:
+        session_items: list = session.get("last_items") or []
+        if isinstance(session_items, list) and session_items:
+            session_item = session_items[0]
+            if isinstance(session_item, dict) and (session_item.get("item_name") or "").strip():
+                items = result["items"]
+                has_named_item = any(
+                    (i.get("item_name") or "").strip() for i in items
+                )
+                if not has_named_item:
+                    # Carry the session item forward; keep quantity if the LLM
+                    # specified one (e.g. "actually make that 3").
+                    llm_quantity: int | None = (
+                        items[0].get("quantity") if items else None
+                    )
+                    resolved_item = dict(session_item)
+                    if result["intent"] in {"add_items", "repeat_order"}:
+                        resolved_item["quantity"] = llm_quantity if llm_quantity is not None else 1
+                    elif result["intent"] == "update_quantity":
+                        resolved_item["quantity"] = llm_quantity
+                    elif llm_quantity is not None:
+                        resolved_item["quantity"] = llm_quantity
+                    if (
+                        result["intent"] in {"add_items", "repeat_order"}
+                        and resolved_item.get("quantity") is None
+                    ):
+                        resolved_item["quantity"] = 1
+                    result["items"] = [resolved_item]
+        else:
+            # Reference present but no session context to resolve against
+            result["needs_clarification"] = True
+
+    # ── 4c: update_quantity / remove_item should target exactly one item ─────
+    if result["intent"] in {"update_quantity", "remove_item"} and len(result["items"]) > 1:
+        result["confidence"] = min(result["confidence"], 0.4)
+        result["needs_clarification"] = True
+
+    if result["intent"] == "update_quantity":
+        explicit_quantity = _extract_explicit_quantity(normalized_message)
+        if explicit_quantity is not None:
+            for item in result["items"]:
+                if isinstance(item, dict) and item.get("quantity") is None:
+                    item["quantity"] = explicit_quantity
+
+    # ── 4d: Menu entity matching (deferred) ───────────────────────────────────
+    # Execution-layer already fuzzy-matches item names against the menu catalog.
+    # Full pre-flight matching here would require an async call and is deferred
+    # to the execution layer to avoid an extra network round-trip on every turn.
+    # If the caller passes a non-empty menu list this could be wired up later.
+
+    # ── 4e: Quantity normalization ────────────────────────────────────────────
+    for item in result["items"]:
+        if not isinstance(item, dict):
+            continue
+        qty = item.get("quantity")
+        if qty is None:
+            # Default quantity for ordering intents
+            if result["intent"] in {"add_items", "repeat_order"}:
+                item["quantity"] = 1
+        elif isinstance(qty, (int, float)) and int(qty) > 20:
+            # Suspiciously large quantity — ask for clarification
+            result["needs_clarification"] = True
+
+    # ── 4f: Final routing decision ────────────────────────────────────────────
+    # Route to the fallback assistant for low-confidence or unresolvable intents.
+    # needs_clarification alone does NOT force fallback — the execution layer can
+    # return a targeted clarification prompt instead of a generic fallback reply.
+    if (
+        (result["confidence"] < 0.6 and result["intent"] != "guided_order_response")
+        or result["intent"] == "unknown"
+    ):
+        result["route_to_fallback"] = True
+        result["fallback_needed"] = True
+
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public API
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def resolve_intent(
+    message: str,
+    session: dict,
+    cart: dict,
+    menu: list,
+) -> dict:
+    """
+    Run the full 3-layer intent pipeline and return a resolved intent object.
+
+    Args:
+        message:  The already-normalised user message (lowercase, trimmed).
+        session:  The current session dict (must contain "session_id").
+        cart:     Current cart contents (reserved for future use in Layer 4d).
+        menu:     Menu catalog (reserved for future entity-matching in Layer 4d).
+
+    Returns:
+        A dict with keys: intent, confidence, items, follow_up_ref,
+        needs_clarification, reason, source, route_to_fallback, fallback_needed.
+    """
+    # Belt-and-suspenders normalisation in case the caller skips it
+    normalized = " ".join(message.strip().lower().split())
+
+    # ── Layer 2: Deterministic Router ────────────────────────────────────────
+    deterministic = _layer2_deterministic(normalized)
+    if deterministic is not None:
+        logger.info({
+            "stage": "pipeline_layer2_match",
+            "normalized": normalized,
+            "intent": deterministic["intent"],
+        })
+        return deterministic
+
+    # ── Layer 3: LLM Intent Parser ────────────────────────────────────────────
+    session_stage = session.get("stage")
+    session_id = session.get("session_id") or ""
+    if session_id:
+        session_stage = get_session_stage(session_id)
+
+    guided_current_group = None
+    guided_order_phase = 1
+    guided_groups = session.get("guided_order_groups") or []
+    guided_step = int(session.get("guided_order_step") or 0)
+    guided_item_name = session.get("guided_order_item_name")
+    if (
+        session_stage == "guided_ordering"
+        and isinstance(guided_groups, list)
+        and 0 <= guided_step < len(guided_groups)
+        and isinstance(guided_groups[guided_step], dict)
+    ):
+        guided_current_group = guided_groups[guided_step].get("name")
+    elif session_stage == "guided_ordering":
+        guided_current_group = "Special Instructions"
+
+    if session_id:
+        guided_order_phase = get_guided_order_phase(session_id)
+
+    raw = try_interpret_message(
+        normalized,
+        context={
+            "session_stage": session_stage,
+            "guided_order_phase": guided_order_phase,
+            "guided_current_group": guided_current_group,
+            "guided_order_item_name": guided_item_name,
+        },
+    )
+    if raw is None:
+        logger.warning({
+            "stage": "pipeline_layer3_failed",
+            "normalized": normalized,
+        })
+        return _make_resolved(
+            intent="unknown",
+            confidence=0.0,
+            reason="llm_parse_failed",
+            source="llm",
+            route_to_fallback=True,
+        )
+
+    logger.info({
+        "stage": "pipeline_layer3_result",
+        "normalized": normalized,
+        "intent": raw.get("intent"),
+        "confidence": raw.get("confidence"),
+        "follow_up_ref": raw.get("follow_up_ref"),
+    })
+
+    # ── Layer 4: Resolver / Validator ─────────────────────────────────────────
+    resolved = _layer4_resolve(raw, normalized, session, menu)
+
+    logger.info({
+        "stage": "pipeline_layer4_result",
+        "normalized": normalized,
+        "intent": resolved["intent"],
+        "confidence": resolved["confidence"],
+        "route_to_fallback": resolved["route_to_fallback"],
+        "reason": resolved["reason"],
+        "source": resolved["source"],
+    })
+
+    return resolved

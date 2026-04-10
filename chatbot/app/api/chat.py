@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from app.schemas.chat import ChatMessageRequest, ChatMessageResponse
 from app.services.orchestrator import process_chat_message
-from app.services.session_store import get_session
+from app.services.session_store import clear_guided_order_session, get_session
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -27,6 +27,7 @@ async def send_message(payload: ChatMessageRequest) -> ChatMessageResponse:
         session["cart_id"] = None
         session["stage"] = None
         session["checkout_initiated"] = False
+        clear_guided_order_session(session["session_id"])
     else:
         if response.cart_id is not None:
             session["cart_id"] = response.cart_id

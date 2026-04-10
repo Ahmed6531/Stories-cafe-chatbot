@@ -249,6 +249,7 @@ export default function Navbar() {
   const handleLogout = async () => {
     await logout()
     localStorage.removeItem('cartId')
+    sessionStorage.removeItem('chatSessionId')
     localStorage.removeItem('chatSessionId')
     localStorage.removeItem(CHAT_STORAGE_KEY)
     localStorage.removeItem(CHAT_STORAGE_TS_KEY)
