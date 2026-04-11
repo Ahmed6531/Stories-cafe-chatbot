@@ -54,6 +54,13 @@ const variantGroupSchema = new mongoose.Schema(
       ref: "Category",
       required: false,
     },
+    refId: {
+      type: String,
+      required: false,
+      unique: true,
+      sparse: true,
+      trim: true,
+    },
     // Unique identifier for referencing (e.g., "coffee-size-standard")
     groupId: {
       type: String,

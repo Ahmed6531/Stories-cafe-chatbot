@@ -7,7 +7,7 @@ function extractVariantGroupId(groupRef) {
     return ""
   }
 
-  const candidates = [groupRef.groupId, groupRef.id]
+  const candidates = [groupRef.refId, groupRef.groupId, groupRef.id]
 
   for (const candidate of candidates) {
     if (typeof candidate === "string" && candidate.trim()) {

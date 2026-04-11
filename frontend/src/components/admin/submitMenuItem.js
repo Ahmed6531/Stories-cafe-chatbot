@@ -16,7 +16,7 @@
 export async function submitMenuItem({
   editingId,
   form,
-  variantGroups,        // string[] — ordered groupId array from AdminItems
+  variantGroups,        // string[] — ordered variant-group refs from AdminItems
   imageFile,            // File | null — set by the file picker in AdminItems
   createMenuItem,
   updateMenuItem,
@@ -35,7 +35,7 @@ export async function submitMenuItem({
           typeof groupRef === "string"
             ? groupRef
             : groupRef && typeof groupRef === "object"
-              ? groupRef.groupId || groupRef.id
+              ? groupRef.refId || groupRef.groupId || groupRef.id
               : ""
         const groupId = typeof rawId === "string" ? rawId.trim() : ""
         if (!groupId || groupIds.includes(groupId)) {
@@ -57,7 +57,7 @@ export async function submitMenuItem({
   console.debug("[AdminItems] submit payload", {
     editingId,
     categoryId: form.categoryId,
-    variantGroupIds: sanitizedVariantGroups,
+    variantGroupRefs: sanitizedVariantGroups,
     payload,
   })
 

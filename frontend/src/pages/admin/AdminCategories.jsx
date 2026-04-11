@@ -168,6 +168,15 @@ function serializeOptionDrafts(options) {
   }))
 }
 
+function getVariantGroupRef(group) {
+  if (!group || typeof group !== "object") {
+    return ""
+  }
+
+  const candidate = group.refId || group.groupId || group.id
+  return typeof candidate === "string" ? candidate.trim() : ""
+}
+
 function VariantOptionsEditor({ options, setOptions, disabled = false }) {
   function updateOption(index, updater) {
     setOptions((prev) => prev.map((option, i) => (i === index ? updater(option) : option)))
@@ -448,7 +457,7 @@ function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }
     setSaving(true)
     setError("")
     try {
-      await updateVariantGroupForCategory(categoryId, group.groupId, {
+      await updateVariantGroupForCategory(categoryId, getVariantGroupRef(group), {
         customerLabel: customerLabel.trim(),
         isRequired,
         maxSelections,
@@ -496,13 +505,13 @@ function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }
           </Typography>
           <Typography sx={{ fontSize: 11, color: "#9ca3af" }}>
             {group.options?.length || 0} options · {group.isRequired ? "required" : "optional"} ·
-            {" "}max {group.maxSelections ?? "∞"} · id: {group.groupId}
+            {" "}max {group.maxSelections ?? "∞"} · ref: {getVariantGroupRef(group)}
           </Typography>
         </Box>
         <GhostBtn type="button" onClick={() => (editing ? handleCancel() : setEditing(true))}>
           {editing ? "Cancel" : "Manage options"}
         </GhostBtn>
-        <DangerBtn type="button" onClick={() => onDeactivate(group.groupId)}>
+        <DangerBtn type="button" onClick={() => onDeactivate(getVariantGroupRef(group))}>
           Deactivate
         </DangerBtn>
       </Box>
@@ -645,7 +654,7 @@ function CategoryDetail({ category, onRefresh }) {
       )}
       {groups.map((group) => (
         <ExistingVariantGroupEditor
-          key={group.groupId}
+          key={getVariantGroupRef(group) || group.adminName}
           categoryId={category._id}
           group={group}
           onSaved={loadGroups}

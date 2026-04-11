@@ -77,7 +77,7 @@ const menuItemSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    // Ordered list of variant group IDs attached to this item
+    // Ordered list of canonical variant group refs attached to this item
     variantGroups: [
       {
         type: String,

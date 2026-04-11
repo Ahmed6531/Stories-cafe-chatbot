@@ -62,7 +62,10 @@ export async function createOrder(req, res) {
     let optionsDelta = 0;
     if (Array.isArray(menuItem.variantGroups) && menuItem.variantGroups.length > 0) {
       const variantGroups = await VariantGroup.find({
-        groupId: { $in: menuItem.variantGroups },
+        $or: [
+          { groupId: { $in: menuItem.variantGroups } },
+          { refId: { $in: menuItem.variantGroups } },
+        ],
       });
       const variantGroupsById = createVariantGroupMap(variantGroups);
       const resolvedVariantGroups = resolveVariantGroupsForMenuItem(menuItem, variantGroupsById);

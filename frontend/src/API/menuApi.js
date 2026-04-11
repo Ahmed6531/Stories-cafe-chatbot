@@ -40,7 +40,7 @@ function transformMenuItem(item) {
     variantGroups: normalizeVariantGroupIds(item.variantGroups),
     variants: (item.variants || []).map(v => ({
       ...v,
-      id: v.groupId || v.id
+      id: v.refId || v.groupId || v.id
     })).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)),
   }
 }

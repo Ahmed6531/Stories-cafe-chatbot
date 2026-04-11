@@ -6,6 +6,7 @@ import { connectDB } from "../config/db.js";
 import { Category } from "../models/Category.js";
 import { MenuItem } from "../models/MenuItem.js";
 import { VariantGroup } from "../models/VariantGroup.js";
+import { generateVariantGroupRefId } from "../utils/variantGroupRefs.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -94,6 +95,7 @@ async function seed() {
 
   const variantGroupsArray = Object.entries(templates.variantGroups).map(
     ([groupId, group]) => {
+      const refId = generateVariantGroupRefId();
       const inferredCategoryName = inferCategoryForGroup(groupId);
       const categoryId = inferredCategoryName
         ? categoryByName.get(inferredCategoryName.toLowerCase()) ?? null
@@ -111,10 +113,15 @@ async function seed() {
         adminName: group.adminName || group.name,
         customerLabel: group.customerLabel || "",
         name: group.name,
+        refId,
         categoryId,
         ctagId: categoryId,
       };
     },
+  );
+
+  const variantGroupRefByLegacyId = new Map(
+    variantGroupsArray.map((group) => [group.groupId, group.refId || group.groupId]),
   );
 
   await VariantGroup.insertMany(variantGroupsArray);
@@ -147,7 +154,9 @@ async function seed() {
       image: item.image || "",
       isAvailable: item.isAvailable !== false,
       isFeatured: item.isFeatured || false,
-      variantGroups: item.variantGroups || [],
+      variantGroups: (item.variantGroups || []).map(
+        (groupRef) => variantGroupRefByLegacyId.get(groupRef) || groupRef,
+      ),
     };
   });
 

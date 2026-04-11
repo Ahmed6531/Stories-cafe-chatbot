@@ -3,6 +3,11 @@ import { VariantGroup } from "../models/VariantGroup.js";
 import { Category } from "../models/Category.js";
 import { Counter } from "../models/Counter.js";
 import { deleteGCSImage } from "../middleware/upload.js";
+import {
+  createVariantGroupRefMap,
+  getCanonicalVariantGroupRef,
+  normalizeVariantGroupRefs,
+} from "../utils/variantGroupRefs.js";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -67,31 +72,15 @@ async function generateSlug(name, excludeId = null) {
   }
 }
 
-function normalizeVariantGroupIds(variantGroups = []) {
-  if (!Array.isArray(variantGroups)) {
-    return [];
-  }
+function serializeInvalidVariantGroups(invalidGroups = []) {
+  return invalidGroups.map((entry) => ({
+    ...entry,
+    groupId: entry.groupId || entry.groupRef || null,
+  }));
+}
 
-  const seen = new Set();
-  const normalized = [];
-
-  variantGroups.forEach((groupRef) => {
-    const rawId =
-      typeof groupRef === "string"
-        ? groupRef
-        : groupRef && typeof groupRef === "object"
-          ? groupRef.groupId || groupRef.id
-          : "";
-    const trimmed = typeof rawId === "string" ? rawId.trim() : "";
-    if (!trimmed || seen.has(trimmed)) {
-      return;
-    }
-
-    seen.add(trimmed);
-    normalized.push(trimmed);
-  });
-
-  return normalized;
+function findVariantGroupByRef(groupRef, groupsByRef) {
+  return groupsByRef.get(String(groupRef)) || null;
 }
 
 function getVariantGroupCategoryId(group) {
@@ -99,44 +88,45 @@ function getVariantGroupCategoryId(group) {
 }
 
 async function validateVariantGroupsForCategory({ categoryId, variantGroups, context }) {
-  const normalizedIds = normalizeVariantGroupIds(variantGroups);
+  const normalizedRefs = normalizeVariantGroupRefs(variantGroups);
 
-  if (normalizedIds.length === 0) {
+  if (normalizedRefs.length === 0) {
     console.log("[menu/variant-groups/validate]", {
       context,
       categoryId: String(categoryId),
-      requestedGroupIds: [],
-      matchedGroupIds: [],
+      requestedGroupRefs: [],
+      matchedGroups: [],
       invalidGroups: [],
     });
-    return { validGroupIds: [], invalidGroups: [] };
+    return { validGroupRefs: [], invalidGroups: [] };
   }
 
   const matchedGroups = await VariantGroup.find({
-    groupId: { $in: normalizedIds },
+    $or: [
+      { groupId: { $in: normalizedRefs } },
+      { refId: { $in: normalizedRefs } },
+    ],
   })
-    .select("groupId adminName name categoryId ctagId isActive")
+    .select("refId groupId adminName name categoryId ctagId isActive")
     .lean();
 
-  const groupsById = new Map(
-    matchedGroups.map((group) => [String(group.groupId), group]),
-  );
+  const groupsByRef = createVariantGroupRefMap(matchedGroups);
 
-  const invalidGroups = normalizedIds
-    .map((groupId) => {
-      const group = groupsById.get(groupId);
+  const invalidGroups = normalizedRefs
+    .map((groupRef) => {
+      const group = groupsByRef.get(groupRef);
       if (!group) {
-        return { groupId, reason: "unknown" };
+        return { groupRef, reason: "unknown" };
       }
 
       if (group.isActive === false) {
-        return { groupId, reason: "deleted" };
+        return { groupRef, reason: "deleted" };
       }
 
       const resolvedCategoryId = getVariantGroupCategoryId(group);
       if (!resolvedCategoryId || String(resolvedCategoryId) !== String(categoryId)) {
         return {
-          groupId,
+          groupRef,
           reason: "wrong-category",
           groupCategoryId: resolvedCategoryId ? String(resolvedCategoryId) : null,
         };
@@ -149,9 +139,13 @@ async function validateVariantGroupsForCategory({ categoryId, variantGroups, con
   console.log("[menu/variant-groups/validate]", {
     context,
     categoryId: String(categoryId),
-    requestedGroupIds: normalizedIds,
-    matchedGroupIds: matchedGroups.map((group) => group.groupId),
+    requestedGroupRefs: normalizedRefs,
+    matchedGroups: matchedGroups.map((group) => ({
+      refId: group.refId || null,
+      groupId: group.groupId,
+    })),
     matchedCategoryRefs: matchedGroups.map((group) => ({
+      refId: group.refId ? String(group.refId) : null,
       groupId: group.groupId,
       categoryId: group.categoryId ? String(group.categoryId) : null,
       ctagId: group.ctagId ? String(group.ctagId) : null,
@@ -161,9 +155,12 @@ async function validateVariantGroupsForCategory({ categoryId, variantGroups, con
   });
 
   return {
-    validGroupIds: normalizedIds.filter(
-      (groupId) => !invalidGroups.some((entry) => entry.groupId === groupId),
-    ),
+    validGroupRefs: normalizedRefs
+      .filter((groupRef) => !invalidGroups.some((entry) => entry.groupRef === groupRef))
+      .map((groupRef) => {
+        const group = groupsByRef.get(groupRef);
+        return getCanonicalVariantGroupRef(group) || groupRef;
+      }),
     invalidGroups,
   };
 }
@@ -214,12 +211,16 @@ export async function getMenuItem(req, res) {
     let itemResponse = menuItem.toObject();
     if (menuItem.variantGroups?.length > 0) {
       const variantGroups = await VariantGroup.find({
-        groupId: { $in: menuItem.variantGroups },
+        $or: [
+          { groupId: { $in: menuItem.variantGroups } },
+          { refId: { $in: menuItem.variantGroups } },
+        ],
         isActive: { $ne: false },
       });
+      const groupsByRef = createVariantGroupRefMap(variantGroups);
       itemResponse.variants = menuItem.variantGroups
-        .map((groupId) => {
-          const group = variantGroups.find((g) => g.groupId === groupId);
+        .map((groupRef) => {
+          const group = findVariantGroupByRef(groupRef, groupsByRef);
           return group ? group.toObject() : null;
         })
         .filter(Boolean);
@@ -292,7 +293,7 @@ export async function createMenuItem(req, res) {
 
     console.log("[menu/create] payload", {
       categoryId,
-      variantGroupIds: normalizeVariantGroupIds(variantGroups),
+      variantGroupRefs: normalizeVariantGroupRefs(variantGroups),
     });
 
     const missingFields = [];
@@ -314,7 +315,7 @@ export async function createMenuItem(req, res) {
     }
 
     const {
-      validGroupIds,
+      validGroupRefs,
       invalidGroups,
     } = await validateVariantGroupsForCategory({
       categoryId: categoryDoc._id,
@@ -326,7 +327,7 @@ export async function createMenuItem(req, res) {
       return res.status(400).json({
         success: false,
         error: "One or more variant groups are invalid for the selected category.",
-        invalidVariantGroups: invalidGroups,
+        invalidVariantGroups: serializeInvalidVariantGroups(invalidGroups),
       });
     }
 
@@ -346,7 +347,7 @@ export async function createMenuItem(req, res) {
       image: image.trim(),
       isAvailable: isAvailable !== false,
       isFeatured: isFeatured === true || isFeatured === "true",
-      variantGroups: validGroupIds,
+      variantGroups: normalizeVariantGroupRefs(validGroupRefs),
     });
 
     await newItem.save();
@@ -465,11 +466,11 @@ export async function updateMenuItem(req, res) {
       console.log("[menu/update] payload", {
         itemId: numericId,
         categoryId: resolvedCategoryId ? String(resolvedCategoryId) : null,
-        variantGroupIds: normalizeVariantGroupIds(req.body.variantGroups),
+        variantGroupRefs: normalizeVariantGroupRefs(req.body.variantGroups),
       });
 
       const {
-        validGroupIds,
+        validGroupRefs,
         invalidGroups,
       } = await validateVariantGroupsForCategory({
         categoryId: resolvedCategoryId,
@@ -481,11 +482,11 @@ export async function updateMenuItem(req, res) {
         return res.status(400).json({
           success: false,
           error: "One or more variant groups are invalid for the selected category.",
-          invalidVariantGroups: invalidGroups,
+          invalidVariantGroups: serializeInvalidVariantGroups(invalidGroups),
         });
       }
 
-      updateData.variantGroups = validGroupIds;
+      updateData.variantGroups = normalizeVariantGroupRefs(validGroupRefs);
     }
 
     if (updateData.name) {

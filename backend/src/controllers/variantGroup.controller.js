@@ -1,27 +1,32 @@
 import { VariantGroup } from "../models/VariantGroup.js";
 import { Category } from "../models/Category.js";
+import { generateVariantGroupRefId } from "../utils/variantGroupRefs.js";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-function toSlug(name) {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .slice(0, 80);
-}
+function buildScopedGroupFilter(groupRef, categoryId) {
+  const refFilter = {
+    $or: [
+      { groupId: groupRef },
+      { refId: groupRef },
+    ],
+  };
 
-function buildScopedGroupFilter(groupId, categoryId) {
-  const filter = { groupId };
-  if (categoryId) {
-    filter.$or = [
-      { categoryId },
-      { ctagId: categoryId },
-    ];
+  if (!categoryId) {
+    return refFilter;
   }
-  return filter;
+
+  return {
+    $and: [
+      refFilter,
+      {
+        $or: [
+          { categoryId },
+          { ctagId: categoryId },
+        ],
+      },
+    ],
+  };
 }
 
 // ─── GET /variant-groups ──────────────────────────────────────────────────────
@@ -68,11 +73,14 @@ export async function createVariantGroup(req, res) {
       return res.status(400).json({ success: false, error: "Category not found." });
     }
 
-    const groupId = toSlug(adminName);
+    const refId = generateVariantGroupRefId();
+    const groupId = refId;
 
-    const collision = await VariantGroup.findOne({ groupId }).lean();
+    const collision = await VariantGroup.findOne({
+      $or: [{ groupId }, { refId }],
+    }).lean();
     if (collision) {
-      return res.status(409).json({ success: false, error: "A group with that name already exists." });
+      return res.status(409).json({ success: false, error: "A group with that reference already exists." });
     }
 
     const parsedOptions = options.map((opt, i) => ({
@@ -84,6 +92,7 @@ export async function createVariantGroup(req, res) {
     }));
 
     const group = new VariantGroup({
+      refId,
       groupId,
       categoryId: categoryDoc._id,
       ctagId: categoryDoc._id,

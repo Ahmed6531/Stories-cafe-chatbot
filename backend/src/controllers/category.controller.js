@@ -189,8 +189,9 @@ export async function getVariantGroupsByCategory(req, res) {
 
     console.log("[variant-groups/by-category]", {
       categoryId: String(category._id),
-      groupIds: groups.map((group) => group.groupId),
+      groupRefs: groups.map((group) => group.refId || group.groupId),
       categoryRefs: groups.map((group) => ({
+        refId: group.refId || null,
         groupId: group.groupId,
         categoryId: group.categoryId ? String(group.categoryId) : null,
         ctagId: group.ctagId ? String(group.ctagId) : null,

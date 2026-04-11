@@ -66,7 +66,10 @@ async function buildCartResponse(cart) {
   });
 
   const variantGroups = await VariantGroup.find({
-    groupId: { $in: Array.from(allVariantGroupIds) }
+    $or: [
+      { groupId: { $in: Array.from(allVariantGroupIds) } },
+      { refId: { $in: Array.from(allVariantGroupIds) } },
+    ],
   });
   const variantGroupsById = createVariantGroupMap(variantGroups);
 

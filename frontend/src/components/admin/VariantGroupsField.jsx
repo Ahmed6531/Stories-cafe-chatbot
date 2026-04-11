@@ -12,7 +12,7 @@ function getVariantGroupId(groupRef) {
     return ""
   }
 
-  const rawId = groupRef.groupId || groupRef.id
+  const rawId = groupRef.refId || groupRef.groupId || groupRef.id
   return typeof rawId === "string" ? rawId.trim() : ""
 }
 
