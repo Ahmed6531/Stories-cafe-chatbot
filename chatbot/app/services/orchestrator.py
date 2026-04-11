@@ -1010,7 +1010,6 @@ async def process_chat_message(
         resolve_menu_choice,
     )
     from app.services.upsell import get_upsell_suggestions
-    from app.services.upsell_llm import generate_casual_suggestion_copy
     from app.services.upsell import record_turn
 
     if session is not None and cart_id is None:
@@ -2524,14 +2523,7 @@ async def process_chat_message(
                     or last_matched_item.get("name")
                     or successful_items[0]["matched_name"]
                 )
-                casual_copy = await generate_casual_suggestion_copy(
-                    context_item_name=context_name,
-                    suggestion_names=[upsell_pick.get("item_name")],
-                )
-                if casual_copy:
-                    reply_text += f"\n\n{casual_copy}"
-                else:
-                    reply_text += f"\n\nWould you like to add {upsell_pick.get('item_name')}?"
+                reply_text += f"\n\nWould you like to add {upsell_pick.get('item_name')}?"
                 if upsell_pick.get("fun_fact"):
                     reply_text += f"\n{upsell_pick.get('fun_fact')}"
             upsell_response_suggestions = [upsell_pick] if upsell_pick else []
