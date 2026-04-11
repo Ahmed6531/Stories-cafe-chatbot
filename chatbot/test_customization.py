@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from app.services.fallback_assistant import _build_fallback_system_prompt
+from app.services.fallback_assistant import _build_fallback_system_prompt, _finalize_reply
 from app.services.orchestrator import map_requested_item_to_selected_options, process_chat_message
 from app.services.session_store import (
     get_guided_order_phase,
@@ -798,11 +798,17 @@ class FallbackPromptTests(unittest.TestCase):
         self.assertIn("Do not say 'Welcome'", prompt)
         self.assertIn("already in a conversation", prompt)
         self.assertIn("what they'd like to order", prompt)
+        self.assertIn("Do not flirt", prompt)
+        self.assertIn("transactional", prompt)
 
     def test_bare_affirmation_prompt_uses_confirmation_language(self) -> None:
         prompt = _build_fallback_system_prompt("bare_affirmation_needs_context")
         self.assertIn("Just to confirm", prompt)
         self.assertIn("did you want to checkout", prompt)
+
+    def test_finalize_reply_rejects_flirty_output(self) -> None:
+        reply = _finalize_reply("hello", "Hey beautiful, I'd love to chat more with you.")
+        self.assertEqual(reply, "Hello! What would you like to order?")
 
 
 if __name__ == "__main__":

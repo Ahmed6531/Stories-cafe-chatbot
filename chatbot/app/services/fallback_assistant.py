@@ -13,6 +13,8 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+_FALLBACK_TEMPERATURE = 0.2
+
 _FALLBACK_BASE_PROMPT = (
     "You are the friendly barista and assistant at Stories Cafe. "
     "You can help with menu questions, café info, opening hours, and general help. "
@@ -52,12 +54,16 @@ _FALLBACK_REASON_HINTS: dict[str, str] = {
 }
 
 _FALLBACK_BASE_PROMPT = (
-    "You are the friendly barista and assistant at Stories Cafe. "
+    "You are the transactional ordering assistant for Stories Cafe. "
     "You help customers order food and drinks, answer menu questions, "
     "and assist with their cart. "
-    "Keep replies short, warm, and conversational - like a real barista. "
-    "Never fabricate cart actions or invent menu items. "
-    "Always end with a question or clear invitation to continue."
+    "Keep replies short, neutral, and professional. "
+    "Do not flirt, make romantic jokes, compliment the user's appearance or personality, "
+    "use pet names, tease, roleplay, or ask personal questions unrelated to the order. "
+    "Do not sound intimate, playful, or emotionally suggestive. "
+    "Never fabricate cart actions, menu items, prices, or order status. "
+    "Redirect unclear or off-topic messages back to ordering help in one or two sentences. "
+    "Prefer transactional language about menu details, cart updates, and checkout."
 )
 
 _FALLBACK_REASON_HINTS["unknown_intent"] = (
@@ -81,6 +87,21 @@ def _build_fallback_system_prompt(reason: str) -> str:
 
 # Legacy constant kept for any external code that references it directly.
 FALLBACK_SYSTEM_PROMPT = _FALLBACK_BASE_PROMPT
+
+_OFF_SCRIPT_REPLY_PATTERNS = (
+    r"\bbabe\b",
+    r"\bbaby\b",
+    r"\bcutie\b",
+    r"\bsweetheart\b",
+    r"\bhandsome\b",
+    r"\bbeautiful\b",
+    r"\bgorgeous\b",
+    r"\bmy love\b",
+    r"\blove\b.*\byou\b",
+    r"\bdate\b",
+    r"\bflirt\b",
+    r"\bkiss\b",
+)
 
 _SAFE_STATIC_REPLY_TABLE: dict[str, str] = {
     "hi": "Hi! What can I get for you today?",
@@ -156,10 +177,20 @@ def _is_incomplete_reply(text: str) -> bool:
     return False
 
 
+def _looks_off_script_reply(text: str) -> bool:
+    cleaned = (text or "").strip().lower()
+    if not cleaned:
+        return False
+    return any(re.search(pattern, cleaned) for pattern in _OFF_SCRIPT_REPLY_PATTERNS)
+
+
 def _finalize_reply(user_message: str, reply: str | None) -> str | None:
     if not reply:
         return None
     cleaned = reply.strip()
+    if _looks_off_script_reply(cleaned):
+        logger.warning("Fallback assistant reply rejected as off-script: %s", cleaned)
+        return _safe_static_reply(user_message)
     if _is_incomplete_reply(cleaned):
         return _safe_static_reply(user_message)
     return cleaned
@@ -190,7 +221,7 @@ async def _generate_with_azure_openai(user_message: str, system_prompt: str) -> 
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
-        "temperature": 0.6,
+        "temperature": _FALLBACK_TEMPERATURE,
         "max_tokens": 220,
     }
 
@@ -221,7 +252,7 @@ async def _generate_with_openai(user_message: str, system_prompt: str) -> str | 
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
-        "temperature": 0.6,
+        "temperature": _FALLBACK_TEMPERATURE,
         "max_tokens": 220,
     }
 
@@ -254,7 +285,7 @@ async def _generate_with_gemini(user_message: str, system_prompt: str) -> str | 
         )
         response = await model.generate_content_async(
             user_message,
-            generation_config={"temperature": 0.6, "max_output_tokens": 220},
+            generation_config={"temperature": _FALLBACK_TEMPERATURE, "max_output_tokens": 220},
         )
         content = response.text.strip() if response.text else None
         return content if content else None
