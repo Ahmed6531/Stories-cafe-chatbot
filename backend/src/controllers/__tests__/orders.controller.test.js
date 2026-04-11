@@ -148,7 +148,7 @@ describe('createOrder', () => {
         _id: 'orderId1',
         orderNumber: 'SC-20231201-12345',
         status: 'pending',
-        total: 10
+        total: 11
       };
 
       req.body = {

@@ -16,13 +16,14 @@ function normalizeSelectedOption(selection) {
 
   const suboptionSource = selection.suboptionName ?? selection.sub;
   const suboptionName = suboptionSource == null ? "" : String(suboptionSource).trim();
+  const groupSource = selection.groupId;
+  const groupId = groupSource == null ? "" : String(groupSource).trim();
 
-  // Preserve groupId so it flows through to cart and order storage.
-  const groupId = selection.groupId ? String(selection.groupId).trim() : undefined;
-
-  const result = suboptionName ? { optionName, suboptionName } : { optionName };
-  if (groupId) result.groupId = groupId;
-  return result;
+  return {
+    optionName,
+    ...(suboptionName ? { suboptionName } : {}),
+    ...(groupId ? { groupId } : {}),
+  };
 }
 
 function selectedOptionKey(selection) {
@@ -31,7 +32,7 @@ function selectedOptionKey(selection) {
     return "";
   }
 
-  return `${normalized.optionName}::${normalized.suboptionName || ""}`;
+  return [normalized.groupId || "", normalized.optionName, normalized.suboptionName || ""].join("|");
 }
 
 export function sanitizeSelectedOptions(selectedOptions) {
@@ -79,6 +80,7 @@ export function resolveVariantGroupsForMenuItem(menuItem, variantGroupsById) {
 
 export function calculateSelectedOptionsDelta(selectedOptions, variantGroups = []) {
   const remainingSelections = sanitizeSelectedOptions(selectedOptions);
+  const variantGroupsById = createVariantGroupMap(variantGroups);
 
   let delta = 0;
 
@@ -89,7 +91,20 @@ export function calculateSelectedOptionsDelta(selectedOptions, variantGroups = [
 
     options.forEach((option) => {
       const matchIndex = remainingSelections.findIndex(
-        (selection) => selection.optionName === option.name,
+        (selection) => {
+          const selectionGroup = selection.groupId
+            ? variantGroupsById.get(String(selection.groupId))
+            : null;
+
+          if (selectionGroup) {
+            return (
+              String(selectionGroup.groupId) === String(group.groupId) &&
+              selection.optionName === option.name
+            );
+          }
+
+          return selection.optionName === option.name;
+        },
       );
 
       if (matchIndex < 0) {

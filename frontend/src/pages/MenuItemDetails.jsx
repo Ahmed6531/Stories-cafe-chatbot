@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { fetchMenuItemById } from '../API/menuApi'
 import { formatLL } from '../utils/currency'
 import { useCart } from '../state/useCart'
@@ -21,7 +21,6 @@ import {
   ListItemText,
   MenuItem as MuiMenuItem,
   Select,
-  Snackbar,
   Stack,
   TextField,
   ToggleButton,
@@ -52,7 +51,32 @@ const MenuProps = {
     horizontal: 'left',
   },
 }
-
+function seedSelectionsFromCartItem(groups, selectedOptions) {
+  const selections = {}
+  for (const g of groups) {
+    const groupOptionNames = new Set((g.options || []).map((o) => o.name))
+    const matching = (selectedOptions || []).filter((s) => {
+      const selectionGroupId = s?.groupId
+      if (selectionGroupId != null && String(selectionGroupId).trim() !== '') {
+        return String(selectionGroupId) === String(g.id)
+      }
+      return groupOptionNames.has(s.optionName)
+    })
+    if (g.maxSelections === 1) {
+      const match = matching[0]
+      selections[g.id] = {
+        type: 'single',
+        value: match ? createSelectionEntry(match.optionName, match.suboptionName, g.id) : '',
+      }
+    } else {
+      selections[g.id] = {
+        type: 'multi',
+        values: matching.map((m) => createSelectionEntry(m.optionName, m.suboptionName, g.id)),
+      }
+    }
+  }
+  return selections
+}
 function initSelections(groups) {
   const next = {}
   for (const g of groups) {
@@ -77,14 +101,18 @@ function getRenderableOptions(group) {
   return active.length > 0 ? active : all
 }
 
-function createSelectionEntry(optionName, suboptionName = '') {
+function createSelectionEntry(optionName, suboptionName = '', groupId = undefined) {
   const trimmedOptionName = String(optionName || '').trim()
   if (!trimmedOptionName) return null
 
   const trimmedSuboptionName = String(suboptionName || '').trim()
-  return trimmedSuboptionName
-    ? { optionName: trimmedOptionName, suboptionName: trimmedSuboptionName }
-    : { optionName: trimmedOptionName }
+  const trimmedGroupId = groupId == null ? '' : String(groupId).trim()
+
+  return {
+    optionName: trimmedOptionName,
+    ...(trimmedSuboptionName ? { suboptionName: trimmedSuboptionName } : {}),
+    ...(trimmedGroupId ? { groupId: trimmedGroupId } : {}),
+  }
 }
 
 function normalizeSelectionEntry(selected) {
@@ -95,6 +123,7 @@ function normalizeSelectionEntry(selected) {
   return createSelectionEntry(
     selected.optionName || selected.name,
     selected.suboptionName || selected.sub,
+    selected.groupId,
   )
 }
 
@@ -121,20 +150,20 @@ function getSuboptionLabel(option) {
 
 function createSelectionForOption(group, optionName, existingSelection = null) {
   const option = findOptionByName(group, optionName)
-  if (!option) return createSelectionEntry(optionName)
+  if (!option) return createSelectionEntry(optionName, '', group.id)
 
   const existing = normalizeSelectionEntry(existingSelection)
   const suboptions = Array.isArray(option.suboptions) ? option.suboptions : []
 
   if (suboptions.length === 0) {
-    return createSelectionEntry(optionName)
+    return createSelectionEntry(optionName, '', group.id)
   }
 
   const preservedSuboption = suboptions.some((suboption) => suboption.name === existing?.suboptionName)
     ? existing?.suboptionName
     : getDefaultSuboptionName(option)
 
-  return createSelectionEntry(optionName, preservedSuboption)
+  return createSelectionEntry(optionName, preservedSuboption, group.id)
 }
 
 function optionPriceOf(group, selected) {
@@ -201,21 +230,34 @@ function formatSecondaryOptionPrice(additionalPrice) {
   return Number(additionalPrice || 0) > 0 ? `+ ${formatLL(additionalPrice)}` : ''
 }
 
-function serializeSelectedOptions(selections) {
+function serializeSelectedOptions(selections, groups) {
   const selectedOptionsArray = []
 
-  for (const gid in selections) {
-    const selection = selections[gid]
+  for (const group of groups || []) {
+    const groupId = group?.id == null ? '' : String(group.id).trim()
+    const selection = selections[group?.id]
+    if (!selection) continue
+
     if (selection.type === 'single') {
       const normalized = normalizeSelectionEntry(selection.value)
-      if (normalized) selectedOptionsArray.push(normalized)
+      if (normalized) {
+        selectedOptionsArray.push({
+          ...normalized,
+          ...(groupId ? { groupId } : {}),
+        })
+      }
       continue
     }
 
     if (selection.type === 'multi' && Array.isArray(selection.values)) {
       selection.values.forEach((value) => {
         const normalized = normalizeSelectionEntry(value)
-        if (normalized) selectedOptionsArray.push(normalized)
+        if (normalized) {
+          selectedOptionsArray.push({
+            ...normalized,
+            ...(groupId ? { groupId } : {}),
+          })
+        }
       })
     }
   }
@@ -561,8 +603,10 @@ function MenuItemHero({
 
 export default function MenuItemDetails() {
   const { id } = useParams()
+  const [searchParams] = useSearchParams()
+const editLineId = searchParams.get('edit') || null
   const navigate = useNavigate()
-  const { addToCart } = useCart()
+  const { addToCart, editCartItem, state } = useCart()
   const theme = useTheme()
 
   const [item, setItem] = useState(null)
@@ -571,7 +615,6 @@ export default function MenuItemDetails() {
 
   const [qty, setQty] = useState(1)
   const [instructions, setInstructions] = useState('')
-  const [snackOpen, setSnackOpen] = useState(false)
   const [showErrors, setShowErrors] = useState(false)
 
   useEffect(() => {
@@ -603,13 +646,39 @@ export default function MenuItemDetails() {
     }))
   }, [item])
 
+  const cartItemToEdit = useMemo(() => {
+  if (!editLineId || !state?.items) return null
+  return state.items.find((i) => String(i.lineId) === String(editLineId)) || null
+}, [editLineId, state?.items])
+
+const isEditMode = Boolean(cartItemToEdit)
+  
   const [selections, setSelections] = useState(() => initSelections([]))
+  const groupsReady = groups.length > 0
+
+  // Effect 1 — seeds all three fields once on edit entry.
+  // Depends on editLineId and groupsReady (not cartItemToEdit) so that
+  // subsequent CART_LOADED dispatches replacing state.items never re-run
+  // this and reset qty while the user is adjusting it.
   useEffect(() => {
-    setSelections(initSelections(groups))
-    setQty(1)
-    setInstructions('')
-    setShowErrors(false)
-  }, [id, groups])
+    if (cartItemToEdit && groupsReady) {
+      setSelections(seedSelectionsFromCartItem(groups, cartItemToEdit.selectedOptions))
+      setQty(cartItemToEdit.qty)
+      setInstructions(cartItemToEdit.instructions || '')
+      setShowErrors(false)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editLineId, groupsReady])
+
+  // Effect 2 — resets to defaults in add mode whenever the item or groups change.
+  useEffect(() => {
+    if (!editLineId) {
+      setSelections(initSelections(groups))
+      setQty(1)
+      setInstructions('')
+      setShowErrors(false)
+    }
+  }, [id, groups, editLineId])
 
   const errors = useMemo(() => validate(groups, selections), [groups, selections])
 
@@ -714,7 +783,7 @@ export default function MenuItemDetails() {
           {renderSuboptionSelect(group, currentSelection, (suboptionName) =>
             setGroupSelection(group.id, {
               type: 'single',
-              value: createSelectionEntry(value, suboptionName),
+              value: createSelectionEntry(value, suboptionName, group.id),
             }),
           )}
         </Stack>
@@ -757,7 +826,7 @@ export default function MenuItemDetails() {
           {renderSuboptionSelect(group, currentSelection, (suboptionName) =>
             setGroupSelection(group.id, {
               type: 'single',
-              value: createSelectionEntry(value, suboptionName),
+              value: createSelectionEntry(value, suboptionName, group.id),
             }),
           )}
         </Stack>
@@ -844,7 +913,7 @@ export default function MenuItemDetails() {
     const handleSuboptionChange = (optName, suboptionName) => {
       const next = values.map((value) =>
         getSelectionOptionName(value) === optName
-          ? createSelectionEntry(optName, suboptionName)
+          ? createSelectionEntry(optName, suboptionName, group.id)
           : normalizeSelectionEntry(value),
       )
       setGroupSelection(group.id, { type: 'multi', values: next })
@@ -887,29 +956,28 @@ export default function MenuItemDetails() {
   }
 
   const handleSubmit = async () => {
-    const hasErrors = Object.keys(errors).length > 0
-    if (hasErrors) {
-      setShowErrors(true)
-      return
-    }
-
-    const payload = {
-      menuItemId: item.id,
-      qty,
-      selectedOptions: serializeSelectedOptions(selections),
-      instructions: instructions.trim(),
-    }
-
-    try {
-      console.log('Adding to cart:', payload)
-      await addToCart(payload)
-      setSnackOpen(true)
-      setTimeout(() => navigate('/cart'), 500)
-    } catch (err) {
-      console.error('Failed to add to cart:', err)
-      alert('Failed to add to cart. Please try again.')
-    }
+  const hasErrors = Object.keys(errors).length > 0
+  if (hasErrors) {
+    setShowErrors(true)
+    return
   }
+
+  const selectedOptions = serializeSelectedOptions(selections, groups)
+  const inst = instructions.trim()
+
+  try {
+    if (isEditMode) {
+      await editCartItem(editLineId, { qty, selectedOptions, instructions: inst })
+      navigate('/cart')
+    } else {
+      await addToCart({ menuItemId: item.id, image: item.image, qty, selectedOptions, instructions: inst })
+      navigate('/menu')
+    }
+  } catch (err) {
+    console.error('Failed to update cart:', err)
+    alert('Failed to add to cart. Please try again.')
+  }
+}
 
   if (loading) return <MenuItemDetailsSkeleton />
 
@@ -1031,19 +1099,12 @@ export default function MenuItemDetails() {
                   fontSize: { xs: '0.88rem', md: '1rem' },
                 }}
               >
-                ADD TO CART
+                {isEditMode ? 'UPDATE CART' : 'ADD TO CART'}
               </Button>
             </Stack>
           </Stack>
         </CardContent>
       </Card>
-
-      <Snackbar
-        open={snackOpen}
-        autoHideDuration={2000}
-        onClose={() => setSnackOpen(false)}
-        message="Item added to cart"
-      />
     </Container>
   )
 }

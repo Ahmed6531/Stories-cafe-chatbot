@@ -6,27 +6,36 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_U
 const http = axios.create({
   baseURL: BASE_URL,
   timeout: 10000,
-  headers: { "Content-Type": "application/json" }
+  headers: { "Content-Type": "application/json" },
+  withCredentials: true,
 });
 
 function isCartRequest(url) {
   return typeof url === "string" && url.includes("/cart");
 }
 
+/**
+ * Call after a successful order with the completed cart's ID.
+ * The response interceptor will block that specific ID from being
+ * re-saved, while allowing any new cartId through freely.
+ */
+export function lockDeadCart(cartId) {
+  if (cartId) sessionStorage.setItem("deadCartId", cartId);
+}
+
+export function isDeadCart(cartId) {
+  return cartId && cartId === sessionStorage.getItem("deadCartId");
+}
+
 // Request interceptor for cart session management
 http.interceptors.request.use((config) => {
-  const cartId = localStorage.getItem("cartId");
-  if (cartId) config.headers["x-cart-id"] = cartId;
+  const url = config.url || "";
+  if (url.startsWith("/cart") || url.startsWith("/orders")) {
+    const cartId = localStorage.getItem("cartId");
+    if (cartId) config.headers["x-cart-id"] = cartId;
+  }
   return config;
 });
-http.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token') || localStorage.getItem('adminToken')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-
-  return config
-})
 
 // Response interceptor for cart ID capturing and error handling
 http.interceptors.response.use(
@@ -36,7 +45,11 @@ http.interceptors.response.use(
       ? res.data.cartId
       : undefined;
 
-    if (cartIdFromHeader) {
+    const incomingCartId = cartIdFromHeader || cartIdFromBody;
+
+    if (isDeadCart(incomingCartId)) {
+      // This is the old completed-order cart — don't resurrect it
+    } else if (cartIdFromHeader) {
       localStorage.setItem("cartId", cartIdFromHeader);
     } else if (isCartRequest(res.config?.url) && cartIdFromBody === null) {
       localStorage.removeItem("cartId");
@@ -51,7 +64,26 @@ http.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    console.error('API Error:', error.response?.data || error.message);
+    const requestUrl = error.config?.url || "";
+    const isSessionBootstrap = requestUrl.includes("/auth/me");
+    if (!isSessionBootstrap) {
+      console.error('API Error:', error.response?.data || error.message);
+    }
+
+    if (error.response?.status === 401) {
+      const pathname = window.location.pathname;
+      const isAuthPage =
+        pathname === "/login" ||
+        pathname === "/register" ||
+        pathname === "/admin/login" ||
+        pathname === "/unauthorized";
+
+      if (!isSessionBootstrap && !isAuthPage) {
+        const isAdmin = pathname.startsWith("/admin");
+        window.location.replace(isAdmin ? "/admin/login" : "/login");
+      }
+    }
+
     return Promise.reject(error);
   }
 );

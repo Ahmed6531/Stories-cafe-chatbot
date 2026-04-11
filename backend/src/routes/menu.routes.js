@@ -1,6 +1,5 @@
 import { Router } from "express";
-import { protect } from "../middleware/protect.js";
-import { authorize } from "../middleware/auth.js";
+import { requireRole } from "../middleware/auth.js";
 import { uploadImage } from "../middleware/upload.js";
 import {
   getMenu,
@@ -27,34 +26,16 @@ router.get("/",            getMenu);
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
-router.post(
-  "/",
-  protect,
-  authorize("admin"),
-  createMenuItem
-);
+router.post("/", requireRole("admin"), createMenuItem);
+router.patch("/:id", requireRole("admin"), updateMenuItem);
+router.delete("/:id", requireRole("admin"), deleteMenuItem);
 
 // Image upload — multer runs before the controller
 router.post(
   "/:id/image",
-  protect,
-  authorize("admin"),
+  requireRole("admin"),
   uploadImage,          // multer: parses multipart, saves file, populates req.file
   uploadMenuItemImage   // controller: patches MenuItem.image, returns URL
-);
-
-router.patch(
-  "/:id",
-  protect,
-  authorize("admin"),
-  updateMenuItem
-);
-
-router.delete(
-  "/:id",
-  protect,
-  authorize("admin"),
-  deleteMenuItem
 );
 
 export default router;

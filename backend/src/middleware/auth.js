@@ -1,40 +1,53 @@
-import jwt from "jsonwebtoken";
+import { verifyToken } from "../utils/jwt.js";
 
-export function authenticate(req, res, next) {
-  const authHeader = req.headers.authorization; // "Bearer <token>"
-  if (!authHeader) return res.status(401).json({ message: "No token provided" });
+function extractToken(req) {
+  return req.cookies?.admin_token || req.cookies?.user_token || null;
+}
 
-  const token = authHeader.split(" ")[1];
+export function requireAuth(req, res, next) {
+  const token = extractToken(req);
+
+  if (!token) {
+    return res.status(401).json({
+      error: { code: "UNAUTHORIZED", message: "Authentication required" },
+    });
+  }
+
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; // attach user info to request
+    req.user = verifyToken(token);
     next();
   } catch {
-    return res.status(401).json({ message: "Token invalid or expired" });
+    return res.status(401).json({
+      error: { code: "UNAUTHORIZED", message: "Authentication required" },
+    });
   }
 }
 
 export function authenticateOptional(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+  const token = extractToken(req);
+
+  if (!token) {
     return next();
   }
 
-  const token = authHeader.split(" ")[1];
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
+    req.user = verifyToken(token);
   } catch {
     // Ignore invalid optional auth so anonymous checkout continues to work.
   }
 
   next();
 }
-export function authorize(...roles) {
+
+export function requireRole(...roles) {
   return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-    next();
+    requireAuth(req, res, () => {
+      if (!roles.includes(req.user.role)) {
+        return res.status(403).json({
+          error: { code: "FORBIDDEN", message: "Insufficient permissions" },
+        });
+      }
+      next();
+    });
   };
 }

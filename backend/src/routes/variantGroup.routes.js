@@ -5,7 +5,7 @@ import {
   updateVariantGroup,
   deleteVariantGroup,
 } from "../controllers/variantGroup.controller.js";
-import { authenticate, authorize } from "../middleware/auth.js";
+import { requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -13,8 +13,8 @@ const router = express.Router();
 router.get("/", getVariantGroups);
 
 // Admin-only mutations
-router.post("/", authenticate, authorize("admin"), createVariantGroup);
-router.patch("/:groupId", authenticate, authorize("admin"), updateVariantGroup);
-router.delete("/:groupId", authenticate, authorize("admin"), deleteVariantGroup);
+router.post("/", requireRole("admin"), createVariantGroup);
+router.patch("/:groupId", requireRole("admin"), updateVariantGroup);
+router.delete("/:groupId", requireRole("admin"), deleteVariantGroup);
 
 export default router;

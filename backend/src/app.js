@@ -1,38 +1,61 @@
-﻿import express from "express";
+import express from "express";
 import cors from "cors";
 import { fileURLToPath } from "url";
 import path from "path";
+import cookieParser from "cookie-parser";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import "dotenv/config";
 import { ENV } from "./config/env.js";
-import { authenticate } from "./middleware/auth.js";
 import healthRoutes from "./routes/health.routes.js";
 import menuRoutes from "./routes/menu.routes.js";
 import ordersRoutes from "./routes/orders.routes.js";
 import cartRoutes from "./routes/cart.routes.js";
 import authRoutes from "./routes/auth.routes.js";
-import { sendEmail } from "./utils/mailer.js";
-import { welcomeTemplate } from "./utils/EmailTemplates.js";
-import { setUploadedImageHeaders } from "./utils/imageHeaders.js";
-import 'dotenv/config';
 import adminRoutes from "./routes/adminRoutes.js";
 import variantGroupRoutes from "./routes/variantGroup.routes.js";
 import categoryRoutes from "./routes/category.routes.js";
+import { setUploadedImageHeaders } from "./utils/imageHeaders.js";
+import { errorHandler } from "./utils/error.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+function validateEnv() {
+  const required = ["JWT_SECRET", "TOKEN_SECRET", "COOKIE_SECRET", "CORS_ORIGIN", "NODE_ENV"];
+  const missing = required.filter((key) => !process.env[key]);
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
+  }
+}
 
 export function createApp() {
+  validateEnv();
+
   const app = express();
- 
 
-  console.log("CORS_ORIGIN =", ENV.CORS_ORIGIN)
+  // Security headers: must be first
+  app.use(helmet());
 
-
-
-
-  // Allows the frontend (5173) to call the backend (5000) in the browser
-  app.use(cors({ origin: ENV.CORS_ORIGIN, exposedHeaders: ["x-cart-id"] }));
+  // CORS
+  app.use(cors({
+    origin: ENV.CORS_ORIGIN,
+    credentials: true,
+    exposedHeaders: ["x-cart-id"],
+    allowedHeaders: ["Content-Type", "x-cart-id", "Cache-Control"],
+  }));
 
   app.use(express.json());
+  app.use(cookieParser(process.env.COOKIE_SECRET));
+
+  // General rate limiter
+  const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: { code: "RATE_LIMITED", message: "Too many requests, please try again later" } },
+  });
+  app.use(apiLimiter);
 
   // Uploaded images are served from the backend origin. The frontend dev server
   // sets COEP=require-corp, so these responses must opt into cross-origin
@@ -44,7 +67,7 @@ export function createApp() {
     })
   );
 
-  //routes
+  // Routes
   app.use("/health", healthRoutes);
   app.use("/menu", menuRoutes);
   app.use("/orders", ordersRoutes);
@@ -54,15 +77,10 @@ export function createApp() {
   app.use("/variant-groups", variantGroupRoutes);
   app.use("/categories", categoryRoutes);
 
+  app.use((_req, res) => res.status(404).json({ error: "Not Found" }));
 
-  app.get("/api/protected", authenticate, (req, res) => {
-    res.json({
-      message: "This is protected!",
-      userId: req.user.id
-    });
-  });
-  app.use((req, res) => res.status(404).json({ error: "Not Found" }));
-
+  // Error handler: must be last
+  app.use(errorHandler);
 
   return app;
 }

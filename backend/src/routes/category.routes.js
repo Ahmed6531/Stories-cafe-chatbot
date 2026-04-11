@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate, authorize } from "../middleware/auth.js";
+import { requireRole } from "../middleware/auth.js";
 import { uploadCategoryImage } from "../middleware/upload.js";
 import {
   getCategories,
@@ -24,10 +24,10 @@ const router = Router();
 router.get("/",          getCategories);
 router.get("/slug/:slug", getCategoryBySlug);
 
-router.post(   "/",    authenticate, authorize("admin"), createCategory);
-router.post("/:id/image", authenticate, authorize("admin"), uploadCategoryImage, uploadCategoryImageController);
-router.patch(  "/:id", authenticate, authorize("admin"), updateCategory);
-router.delete( "/:id", authenticate, authorize("admin"), deleteCategory);
+router.post(   "/",    requireRole("admin"), createCategory);
+router.post("/:id/image", requireRole("admin"), uploadCategoryImage, uploadCategoryImageController);
+router.patch(  "/:id", requireRole("admin"), updateCategory);
+router.delete( "/:id", requireRole("admin"), deleteCategory);
 
 // ── Nested variant-group routes ───────────────────────────────────────────────
 
@@ -37,24 +37,21 @@ router.get("/:categoryId/variant-groups", getVariantGroupsByCategory);
 // POST /categories/:categoryId/variant-groups — admin
 router.post(
   "/:categoryId/variant-groups",
-  authenticate,
-  authorize("admin"),
+  requireRole("admin"),
   createVariantGroup,
 );
 
 // PATCH /categories/:categoryId/variant-groups/:groupId — admin
 router.patch(
   "/:categoryId/variant-groups/:groupId",
-  authenticate,
-  authorize("admin"),
+  requireRole("admin"),
   updateVariantGroup,
 );
 
 // DELETE /categories/:categoryId/variant-groups/:groupId — admin (soft)
 router.delete(
   "/:categoryId/variant-groups/:groupId",
-  authenticate,
-  authorize("admin"),
+  requireRole("admin"),
   deleteVariantGroup,
 );
 

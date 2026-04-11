@@ -13,6 +13,7 @@ import {
 } from '@mui/material'
 import { useCart } from '../state/useCart'
 import { submitOrder } from '../API/ordersApi'
+import { lockDeadCart } from '../API/http'
 import CartSummary from '../components/CartSummary'
 
 const formGroupSx = {
@@ -122,9 +123,17 @@ export default function Checkout() {
       const response = await submitOrder(payload)
       if (response.data.orderNumber) {
         setSubmitted(true)
-        navigate('/success', { state: { orderNumber: response.data.orderNumber } })
+        localStorage.setItem('activeOrder', JSON.stringify({
+          orderNumber: response.data.orderNumber,
+          placedAt: Date.now(),
+        }))
+        lockDeadCart(localStorage.getItem('cartId'))
         localStorage.removeItem('cartId')
+        localStorage.removeItem('chatSessionId')
+        localStorage.removeItem('chatMessages')
+        localStorage.removeItem('chatMessagesSavedAt')
         resetCart()
+        navigate('/success', { state: { orderNumber: response.data.orderNumber } })
       }
     } catch (err) {
       console.error(err)

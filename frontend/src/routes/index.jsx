@@ -18,6 +18,9 @@ import AdminCategories from "../pages/admin/AdminCategories"
 import AdminLogin from "../pages/admin/AdminLogin"
 import AdminGuard from "../components/admin/AdminGuard";
 import AuthGuard from "../components/auth/AuthGuard";
+import Unauthorized from "../pages/Unauthorized";
+import VerifyEmail from "../pages/VerifyEmail";
+
 
 export default function AppRoutes() {
   return (
@@ -52,6 +55,10 @@ export default function AppRoutes() {
         <Route path="/dashboard" element={<AuthGuard><Dashboard /></AuthGuard>} />
         <Route path="/item/:id" element={<MenuItemDetails />} />
       </Route>
+
+      <Route path="/verify-email" element={<VerifyEmail />} />
+
+      <Route path="/unauthorized" element={<Unauthorized />} />
 
       {/* Catch-all: top-level so it never competes with /admin */}
       <Route path="*" element={<Navigate to="/" replace />} />

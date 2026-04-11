@@ -19,3 +19,4 @@ class ChatMessageResponse(BaseModel):
     defaults_used: list[dict[str, Any]] = Field(default_factory=list)
     suggestions: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    audio_base64: str | None = None

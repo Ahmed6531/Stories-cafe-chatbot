@@ -5,6 +5,7 @@ import {
   updateMenuItem,
   deleteMenuItem,
   uploadMenuItemImage,
+  invalidateCategoriesCache,
 } from "../../API/menuApi"
 import { submitMenuItem } from "../../components/admin/submitMenuItem"
 import CategoryPicker from "../../components/admin/CategoryPicker"
@@ -349,6 +350,9 @@ export default function AdminItems() {
     if (!confirm("Delete this item?")) return
     try {
       await deleteMenuItem(id)
+
+      invalidateCategoriesCache()
+
       const data = await fetchMenu()
       setItems(data.items)
     } catch (err) {

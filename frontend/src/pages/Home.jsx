@@ -1,15 +1,20 @@
 // migrated from menu.css
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import Box from '@mui/material/Box'
+import { useTheme } from '@mui/material/styles'
 import CategoryRail from '../components/menu/CategoryRail'
 import { PageWrap, SectionHeading, SectionLabel, StatusText } from '../components/menu/MenuPageChrome'
 import CategoryChipsSkeleton from '../components/CategoryChipsSkeleton'
 import MenuSkeleton from '../components/MenuSkeleton'
 import MenuList from '../components/MenuList'
 import { fetchFeaturedMenu, fetchMenuCategories } from '../API/menuApi'
+import { getActiveOrder } from '../utils/activeOrder'
 
 export default function Home() {
   const navigate = useNavigate()
+  const theme = useTheme()
+  const activeOrder = getActiveOrder()
   const [categories, setCategories] = useState([])
   const [featuredItems, setFeaturedItems] = useState([])
   const [categoriesLoading, setCategoriesLoading] = useState(true)
@@ -72,6 +77,35 @@ export default function Home() {
 
   return (
     <PageWrap>
+      {activeOrder && (
+        <Box
+          component="button"
+          type="button"
+          onClick={() => navigate('/success')}
+          sx={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 16px',
+            marginBottom: '16px',
+            backgroundColor: '#f0fdf4',
+            border: `1px solid ${theme.brand.primary}33`,
+            borderRadius: '10px',
+            cursor: 'pointer',
+            fontFamily: theme.brand.fontBase,
+            fontSize: '14px',
+            fontWeight: 600,
+            color: theme.brand.primary,
+            transition: 'background-color 0.2s',
+            '&:hover': { backgroundColor: '#dcfce7' },
+          }}
+        >
+          <span>You have an active order — tap to track</span>
+          <span style={{ fontSize: '18px' }}>&rsaquo;</span>
+        </Box>
+      )}
+
       <SectionHeading>
         <SectionLabel component="h2">Categories</SectionLabel>
       </SectionHeading>

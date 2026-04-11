@@ -3,7 +3,6 @@ import { normalizeVariantGroupIds } from "../utils/variantGroups"
 
 let categoriesCache = null
 let categoriesRequest = null
-
 /**
  * Transform backend menu item to frontend format
  */

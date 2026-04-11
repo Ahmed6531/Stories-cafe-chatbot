@@ -23,14 +23,11 @@ export async function createOrder(req, res) {
     cartId,
   });
 
-  if (!orderType || !["pickup", "dine_in", "delivery"].includes(orderType)) {
+  if (!orderType || !["pickup", "dine_in"].includes(orderType)) {
     return res.status(400).json({ error: "Invalid orderType" });
   }
   if (!customer?.name || !customer?.phone) {
     return res.status(400).json({ error: "Customer name and phone are required" });
-  }
-  if (orderType === "delivery" && !customer?.address) {
-    return res.status(400).json({ error: "Address is required for delivery" });
   }
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "Order items are required" });
@@ -108,8 +105,8 @@ export async function createOrder(req, res) {
   }
 
   const order = await Order.create({
-    orderNumber,
     userId,
+    orderNumber,
     orderType,
     customer: {
       name: customer.name,
@@ -130,6 +127,7 @@ export async function createOrder(req, res) {
     });
   }
 
+  res.set("Cache-Control", "no-store");
   res.status(201).json({
     orderId: order._id,
     orderNumber: order.orderNumber,
@@ -139,6 +137,101 @@ export async function createOrder(req, res) {
 }
 
 export async function listOrders(req, res) {
-  const orders = await Order.find().sort({ createdAt: -1 }).limit(50);
+  const { status, orderType } = req.query;
+
+  const filter = {};
+
+  const validStatuses = ["received", "in_progress", "completed", "cancelled"];
+  const validTypes = ["pickup", "dine_in"];
+
+  if (status && validStatuses.includes(status)) {
+    filter.status = status;
+  }
+
+  if (orderType && validTypes.includes(orderType)) {
+    filter.orderType = orderType;
+  }
+
+  const orders = await Order.find(filter)
+    .sort({ createdAt: -1 })
+    .limit(50);
+
+  res.set("Cache-Control", "no-store");
   res.json({ orders });
+}
+
+export async function getMyOrders(req, res) {
+  const orders = await Order.find({ userId: req.user.id })
+    .sort({ createdAt: -1 })
+    .limit(20);
+
+  res.set("Cache-Control", "no-store");
+  res.json({ orders });
+}
+
+const ALLOWED_TRANSITIONS = {
+  received:    ["in_progress", "cancelled"],
+  in_progress: ["completed", "cancelled"],
+  completed:   [],
+  cancelled:   [],
+};
+
+export async function getOrderStatus(req, res) {
+  const { orderNumber } = req.params;
+
+  try {
+    const order = await Order.findOne({ orderNumber }).select("orderNumber status updatedAt");
+
+    if (!order) {
+      return res.status(404).json({ error: { code: "NOT_FOUND", message: "Order not found" } });
+    }
+
+    res.set("Cache-Control", "no-store");
+    res.json({ orderNumber: order.orderNumber, status: order.status, updatedAt: order.updatedAt });
+  } catch (err) {
+    res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Failed to fetch order status" } });
+  }
+}
+
+export async function updateOrderStatus(req, res) {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const validStatuses = ["received", "in_progress", "completed", "cancelled"];
+
+  if (!validStatuses.includes(status)) {
+    return res.status(400).json({ error: { code: "VALIDATION_ERROR", message: "Invalid status" } });
+  }
+
+  try {
+    const order = await Order.findById(id);
+
+    if (!order) {
+      return res.status(404).json({ error: { code: "NOT_FOUND", message: "Order not found" } });
+    }
+
+    const allowed = ALLOWED_TRANSITIONS[order.status] || [];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_TRANSITION",
+          message: `Cannot transition from '${order.status}' to '${status}'. Allowed: ${allowed.length ? allowed.join(", ") : "none (terminal state)"}.`,
+        },
+      });
+    }
+
+    order.status = status;
+    await order.save();
+
+    res.set("Cache-Control", "no-store");
+    res.json({
+      order: {
+        _id: order._id,
+        orderNumber: order.orderNumber,
+        status: order.status
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Failed to update order status" } });
+  }
 }

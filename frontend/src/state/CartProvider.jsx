@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useReducer, useCallback, useRef } from 'react'
 import { CartContext } from './CartContext'
 import { cartReducer, initialCartState } from './cartReducer'
-import { fetchCart, addToCartApi, updateCartItemApi, removeFromCartApi, clearCartApi } from '../API/cartApi'
+import { fetchCart, addToCartApi, updateCartItemApi, updateCartItemFull, removeFromCartApi, clearCartApi } from '../API/cartApi'
 
 function normalizeCartPayload(data) {
   return {
@@ -11,18 +11,33 @@ function normalizeCartPayload(data) {
   }
 }
 
+function snapshotCartState(state) {
+  return {
+    cartId: state.cartId ?? null,
+    count: state.count ?? 0,
+    items: Array.isArray(state.items) ? state.items : [],
+  }
+}
+
 export function CartProvider({ children }) {
   const [state, dispatch] = useReducer(cartReducer, initialCartState)
   const abortRef = useRef(null)
+  const seqRef = useRef(0)
+  const stateRef = useRef(state)
+
+  useEffect(() => {
+    stateRef.current = state
+  })
 
   const loadCart = useCallback(async () => {
     if (abortRef.current) abortRef.current.abort()
     abortRef.current = new AbortController()
 
     dispatch({ type: 'CART_LOADING' })
+    const seq = seqRef.current
     try {
       const data = await fetchCart({ signal: abortRef.current.signal })
-      dispatch({ type: 'CART_LOADED', payload: normalizeCartPayload(data) })
+      if (seq >= seqRef.current) dispatch({ type: 'CART_LOADED', payload: normalizeCartPayload(data) })
     } catch (err) {
       if (err.name === 'CanceledError' || err.name === 'AbortError') return
       dispatch({ type: 'CART_ERROR', payload: err.message })
@@ -36,7 +51,13 @@ export function CartProvider({ children }) {
   const addToCart = useCallback(async (item) => {
     try {
       const data = await addToCartApi(item)
-      dispatch({ type: 'CART_LOADED', payload: normalizeCartPayload(data) })
+      dispatch({
+        type: 'CART_ITEM_ADDED',
+        payload: {
+          cart: normalizeCartPayload(data),
+          lastAddedItem: item.image ? { image: item.image } : null,
+        },
+      })
       return data
     } catch (err) {
       dispatch({ type: 'CART_ERROR', payload: err.message })
@@ -55,19 +76,34 @@ export function CartProvider({ children }) {
     }
   }, [])
 
+  const editCartItem = useCallback(async (lineId, payload) => {
+  abortRef.current?.abort()
+  try {
+    const data = await updateCartItemFull(lineId, payload)
+    dispatch({ type: 'CART_LOADED', payload: normalizeCartPayload(data) })
+  } catch (err) {
+    dispatch({ type: 'CART_ERROR', payload: err.message })
+    throw err
+  }
+}, [])
+
   const removeFromCart = useCallback(async (lineId) => {
     abortRef.current?.abort()
+    const snapshot = snapshotCartState(stateRef.current)
 
     // Optimistic update: remove from state immediately
     dispatch({ type: 'REMOVE_ITEM', payload: lineId })
+    seqRef.current += 1
+    const seq = seqRef.current
 
     try {
       const data = await removeFromCartApi(lineId)
-      dispatch({ type: 'CART_LOADED', payload: normalizeCartPayload(data) })
+      if (seq >= seqRef.current) dispatch({ type: 'CART_LOADED', payload: normalizeCartPayload(data) })
     } catch (err) {
+      dispatch({ type: 'RESTORE_CART', payload: snapshot })
       dispatch({ type: 'CART_ERROR', payload: err.message })
-      // On error, reload full cart to restore state
-      await loadCart()
+      // After restoring the last known-good state, try to re-sync with the server.
+      void loadCart()
     }
   }, [loadCart])
 
@@ -81,21 +117,30 @@ export function CartProvider({ children }) {
   }, [])
 
   const resetCart = useCallback(() => {
+    abortRef.current?.abort()
+    seqRef.current += 1
     dispatch({ type: 'CART_RESET' })
+  }, [])
+
+  const clearLastAddedItem = useCallback(() => {
+    dispatch({ type: 'CLEAR_LAST_ADDED' })
   }, [])
 
   const value = useMemo(
     () => ({
       state,
       cartCount: state.count,
+      lastAddedItem: state.lastAddedItem,
       addToCart,
       updateQty,
+      editCartItem,
       removeFromCart,
       clearCart,
       resetCart,
-      refreshCart: loadCart
+      clearLastAddedItem,
+      refreshCart: loadCart,
     }),
-    [state, addToCart, updateQty, removeFromCart, clearCart, resetCart, loadCart]
+    [state, addToCart, updateQty, editCartItem, removeFromCart, clearCart, resetCart, clearLastAddedItem, loadCart]
   )
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>
