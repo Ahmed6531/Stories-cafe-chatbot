@@ -88,6 +88,7 @@ export async function createVariantGroup(req, res) {
       additionalPrice: opt.additionalPrice ?? 0,
       isActive: opt.isActive !== false,
       order: opt.order ?? i + 1,
+      suboptionLabel: typeof opt.suboptionLabel === "string" ? opt.suboptionLabel.trim() : "",
       suboptions: opt.suboptions || [],
     }));
 
@@ -156,6 +157,7 @@ export async function updateVariantGroup(req, res) {
         additionalPrice: opt.additionalPrice ?? 0,
         isActive: opt.isActive !== false,
         order: opt.order ?? i + 1,
+        suboptionLabel: typeof opt.suboptionLabel === "string" ? opt.suboptionLabel.trim() : "",
         suboptions: opt.suboptions || [],
       }));
     }

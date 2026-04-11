@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticate, authorize } from "../middleware/auth.js";
+import { uploadCategoryImage } from "../middleware/upload.js";
 import {
   getCategories,
   getCategoryBySlug,
@@ -7,6 +8,7 @@ import {
   updateCategory,
   deleteCategory,
   getVariantGroupsByCategory,
+  uploadCategoryImage as uploadCategoryImageController,
 } from "../controllers/category.controller.js";
 import {
   createVariantGroup,
@@ -23,6 +25,7 @@ router.get("/",          getCategories);
 router.get("/slug/:slug", getCategoryBySlug);
 
 router.post(   "/",    authenticate, authorize("admin"), createCategory);
+router.post("/:id/image", authenticate, authorize("admin"), uploadCategoryImage, uploadCategoryImageController);
 router.patch(  "/:id", authenticate, authorize("admin"), updateCategory);
 router.delete( "/:id", authenticate, authorize("admin"), deleteCategory);
 

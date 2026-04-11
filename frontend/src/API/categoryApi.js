@@ -50,3 +50,17 @@ export async function deleteCategory(id) {
     throw new Error(error.response?.data?.error || 'Failed to delete category')
   }
 }
+
+export async function uploadCategoryImage(id, file) {
+  try {
+    const formData = new FormData()
+    formData.append("image", file)
+    const response = await http.post(`/categories/${id}/image`, formData, {
+      headers: { "Content-Type": null },
+    })
+    return response.data
+  } catch (error) {
+    console.error(`Failed to upload image for category ${id}:`, error)
+    throw new Error(error.response?.data?.error || "Failed to upload category image")
+  }
+}

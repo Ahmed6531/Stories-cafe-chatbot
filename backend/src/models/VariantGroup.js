@@ -30,6 +30,12 @@ const variantOptionSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  suboptionLabel: {
+    type: String,
+    required: false,
+    trim: true,
+    default: "",
+  },
   suboptions: {
     type: [suboptionSchema],
     default: [],

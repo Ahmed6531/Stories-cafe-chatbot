@@ -1,5 +1,6 @@
 import { Category } from "../models/Category.js";
 import { VariantGroup } from "../models/VariantGroup.js";
+import { deleteGCSImage } from "../middleware/upload.js";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -144,6 +145,45 @@ export async function updateCategory(req, res) {
   } catch (error) {
     console.error("Failed to update category:", error.message);
     res.status(400).json({ success: false, error: error.message || "Failed to update category." });
+  }
+}
+
+// --- POST /categories/:id/image ------------------------------------------------
+// Admin only. Mirrors menu image uploads, but stores files under categories/.
+
+export async function uploadCategoryImage(req, res) {
+  try {
+    const { id } = req.params;
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: "No image file provided" });
+    }
+
+    const existing = await Category.findById(id).lean();
+    if (!existing) {
+      return res.status(404).json({ success: false, error: "Category not found." });
+    }
+
+    if (existing.image) {
+      await deleteGCSImage(existing.image);
+    }
+
+    const imageUrl = req.file.path;
+    const updated = await Category.findByIdAndUpdate(
+      id,
+      { $set: { image: imageUrl } },
+      { new: true, runValidators: false },
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Category image uploaded successfully",
+      imageUrl,
+      category: updated,
+    });
+  } catch (error) {
+    console.error(`Failed to upload image for category ${req.params.id}:`, error.message);
+    res.status(500).json({ success: false, error: "Failed to upload category image." });
   }
 }
 

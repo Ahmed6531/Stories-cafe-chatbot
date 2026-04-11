@@ -40,34 +40,39 @@ const multerInstance = multer({
   Usage in menu.routes.js (unchanged):
     router.post("/:id/image", protect, authorize("admin"), uploadImage, uploadMenuItemImage)
  */
-export function uploadImage(req, res, next) {
-  multerInstance(req, res, async (err) => {
-    if (err) return next(err);
-    if (!req.file) return next(); // controller returns 400 "No image file provided"
+export function createImageUploadMiddleware(prefix = "menu") {
+  return function uploadImageForPrefix(req, res, next) {
+    multerInstance(req, res, async (err) => {
+      if (err) return next(err);
+      if (!req.file) return next(); // controller returns 400 "No image file provided"
 
-    try {
-      const ext      = path.extname(req.file.originalname).toLowerCase() || ".jpg";
-      const filename = `menu/${uuidv4()}${ext}`;   // stored under menu/ prefix in the bucket
-      const blob     = bucket.file(filename);
+      try {
+        const ext = path.extname(req.file.originalname).toLowerCase() || ".jpg";
+        const filename = `${prefix}/${uuidv4()}${ext}`;
+        const blob = bucket.file(filename);
 
-      await blob.save(req.file.buffer, {
-        contentType: req.file.mimetype,
-        metadata: {
-          cacheControl: "public, max-age=31536000",
-        },
-      });
+        await blob.save(req.file.buffer, {
+          contentType: req.file.mimetype,
+          metadata: {
+            cacheControl: "public, max-age=31536000",
+          },
+        });
 
-      // Public URL — works immediately because allUsers has Storage Object Viewer
-      const publicUrl = `https://storage.googleapis.com/${process.env.GCS_BUCKET_NAME}/${filename}`;
-      req.file.path = publicUrl;
+        // Public URL — works immediately because allUsers has Storage Object Viewer
+        const publicUrl = `https://storage.googleapis.com/${process.env.GCS_BUCKET_NAME}/${filename}`;
+        req.file.path = publicUrl;
 
-      next();
-    } catch (uploadErr) {
-      console.error("GCS upload failed:", uploadErr.message);
-      next(new Error("Image upload to Google Cloud Storage failed: " + uploadErr.message));
-    }
-  });
+        next();
+      } catch (uploadErr) {
+        console.error("GCS upload failed:", uploadErr.message);
+        next(new Error("Image upload to Google Cloud Storage failed: " + uploadErr.message));
+      }
+    });
+  };
 }
+
+export const uploadImage = createImageUploadMiddleware("menu");
+export const uploadCategoryImage = createImageUploadMiddleware("categories");
 
 /*
   deleteGCSImage
@@ -83,8 +88,11 @@ export async function deleteGCSImage(imageUrl) {
   if (!imageUrl) return;
 
   try {
+    if (!/^https?:\/\//i.test(imageUrl)) return;
+
     // URL format: https://storage.googleapis.com/<bucket>/<filename>
     const url      = new URL(imageUrl);
+    if (url.hostname !== "storage.googleapis.com") return;
     // pathname: /<bucket>/menu/<uuid>.jpg
     const segments = url.pathname.split("/").filter(Boolean);
     // segments[0] = bucket name, rest = object path

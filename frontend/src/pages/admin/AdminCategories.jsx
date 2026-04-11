@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Box from "@mui/material/Box"
 import Typography from "@mui/material/Typography"
 import { styled } from "@mui/material/styles"
@@ -6,6 +6,7 @@ import {
   fetchCategories,
   createCategory,
   updateCategory,
+  uploadCategoryImage,
 } from "../../API/categoryApi"
 import {
   fetchVariantGroupsByCategory,
@@ -110,6 +111,65 @@ const SectionLabel = styled(Typography)(() => ({
   marginTop: 4,
 }))
 
+const UploadZone = styled("label")(({ theme, $hasFile }) => ({
+  display: "flex",
+  alignItems: "center",
+  gap: 12,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: `1.5px dashed ${$hasFile ? theme.brand.primary : theme.brand.border}`,
+  background: $hasFile ? "rgba(0,112,74,0.04)" : "#fff",
+  cursor: "pointer",
+  transition: "border-color 0.2s, background 0.2s",
+  "&:hover": {
+    borderColor: theme.brand.primary,
+    background: "rgba(0,112,74,0.04)",
+  },
+}))
+
+const UploadLabel = styled(Typography)(({ theme }) => ({
+  fontFamily: theme.brand.fontBase,
+  fontSize: 13,
+  fontWeight: 500,
+  color: theme.brand.textSecondary,
+  flex: 1,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+}))
+
+const ImagePreview = styled("img")(() => ({
+  width: 48,
+  height: 48,
+  objectFit: "cover",
+  borderRadius: 8,
+  flexShrink: 0,
+  border: "1px solid #e5e7eb",
+}))
+
+function useObjectPreview(initialValue = "") {
+  const [preview, setPreview] = useState(initialValue)
+
+  useEffect(() => {
+    return () => {
+      if (preview?.startsWith("blob:")) {
+        URL.revokeObjectURL(preview)
+      }
+    }
+  }, [preview])
+
+  function replacePreview(nextPreview) {
+    setPreview((current) => {
+      if (current?.startsWith("blob:")) {
+        URL.revokeObjectURL(current)
+      }
+      return nextPreview
+    })
+  }
+
+  return [preview, replacePreview]
+}
+
 function createSuboptionDraft(suboption = {}) {
   return {
     name: suboption.name || "",
@@ -122,6 +182,7 @@ function createOptionDraft(option = {}) {
     name: option.name || "",
     additionalPrice: String(option.additionalPrice ?? 0),
     isActive: option.isActive !== false,
+    suboptionLabel: option.suboptionLabel || "",
     suboptions: Array.isArray(option.suboptions)
       ? option.suboptions.map(createSuboptionDraft)
       : [],
@@ -161,6 +222,7 @@ function serializeOptionDrafts(options) {
     additionalPrice: parsePrice(option.additionalPrice),
     isActive: option.isActive !== false,
     order: index + 1,
+    suboptionLabel: option.suboptionLabel.trim(),
     suboptions: option.suboptions.map((suboption) => ({
       name: suboption.name.trim(),
       additionalPrice: parsePrice(suboption.additionalPrice),
@@ -259,6 +321,13 @@ function VariantOptionsEditor({ options, setOptions, disabled = false }) {
               value={option.additionalPrice}
               onChange={(e) => updateOption(optionIndex, (current) => ({ ...current, additionalPrice: e.target.value }))}
               style={{ width: 150, flex: "none" }}
+              disabled={disabled}
+            />
+            <FieldInput
+              placeholder="Suboption label"
+              value={option.suboptionLabel}
+              onChange={(e) => updateOption(optionIndex, (current) => ({ ...current, suboptionLabel: e.target.value }))}
+              style={{ width: 160, flex: "none" }}
               disabled={disabled}
             />
             <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, cursor: disabled ? "default" : "pointer" }}>
@@ -560,8 +629,11 @@ function CategoryDetail({ category, onRefresh }) {
   const [editName, setEditName] = useState(category.name)
   const [editImage, setEditImage] = useState(category.image || "")
   const [editOrder, setEditOrder] = useState(category.order ?? 0)
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreview, setImagePreview] = useObjectPreview(category.image || "")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
+  const fileInputRef = useRef(null)
 
   async function loadGroups() {
     const data = await fetchVariantGroupsByCategory(category._id).catch(() => [])
@@ -582,6 +654,28 @@ function CategoryDetail({ category, onRefresh }) {
     }
   }, [category._id])
 
+  useEffect(() => {
+    setEditName(category.name)
+    setEditImage(category.image || "")
+    setEditOrder(category.order ?? 0)
+    setImageFile(null)
+    setImagePreview(category.image || "")
+    if (fileInputRef.current) fileInputRef.current.value = ""
+  }, [category, setImagePreview])
+
+  function handleFileChange(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImageFile(file)
+    setImagePreview(URL.createObjectURL(file))
+  }
+
+  function clearSelectedFile() {
+    setImageFile(null)
+    setImagePreview(editImage.trim())
+    if (fileInputRef.current) fileInputRef.current.value = ""
+  }
+
   async function handleSaveCategory() {
     setSaving(true)
     setError("")
@@ -591,7 +685,11 @@ function CategoryDetail({ category, onRefresh }) {
         image: editImage.trim(),
         order: Number(editOrder),
       })
+      if (imageFile) {
+        await uploadCategoryImage(category._id, imageFile)
+      }
       invalidateCategoriesCache()
+      clearSelectedFile()
       onRefresh()
     } catch (err) {
       setError(err.message)
@@ -636,6 +734,26 @@ function CategoryDetail({ category, onRefresh }) {
           onChange={(e) => setEditOrder(e.target.value)}
           style={{ width: 80, flex: "none" }}
         />
+      </Box>
+      <Box sx={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <UploadZone $hasFile={!!imageFile || !!imagePreview}>
+          {imagePreview && <ImagePreview src={imagePreview} alt={`${category.name} preview`} />}
+          <UploadLabel>
+            {imageFile ? imageFile.name : imagePreview ? "Click to replace image" : "Click to choose image..."}
+          </UploadLabel>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+            style={{ display: "none" }}
+            onChange={handleFileChange}
+          />
+        </UploadZone>
+        {imageFile && (
+          <GhostBtn type="button" onClick={clearSelectedFile}>
+            Keep current image
+          </GhostBtn>
+        )}
       </Box>
       <Box sx={{ display: "flex", gap: 8, alignItems: "center" }}>
         <PrimaryBtn type="button" onClick={handleSaveCategory} disabled={saving}>
@@ -686,8 +804,11 @@ export default function AdminCategories() {
   const [expandedId, setExpandedId] = useState(null)
   const [newName, setNewName] = useState("")
   const [newImage, setNewImage] = useState("")
+  const [newImageFile, setNewImageFile] = useState(null)
+  const [newImagePreview, setNewImagePreview] = useObjectPreview("")
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState("")
+  const createFileInputRef = useRef(null)
 
   async function load() {
     try {
@@ -705,6 +826,19 @@ export default function AdminCategories() {
     load()
   }, [])
 
+  function handleNewFileChange(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setNewImageFile(file)
+    setNewImagePreview(URL.createObjectURL(file))
+  }
+
+  function resetNewImageSelection() {
+    setNewImageFile(null)
+    setNewImagePreview("")
+    if (createFileInputRef.current) createFileInputRef.current.value = ""
+  }
+
   async function handleCreate() {
     if (!newName.trim()) {
       setCreateError("Name is required.")
@@ -714,10 +848,14 @@ export default function AdminCategories() {
     setCreating(true)
     setCreateError("")
     try {
-      await createCategory({ name: newName.trim(), image: newImage.trim() })
+      const created = await createCategory({ name: newName.trim(), image: newImage.trim() })
+      if (newImageFile) {
+        await uploadCategoryImage(created._id, newImageFile)
+      }
       invalidateCategoriesCache()
       setNewName("")
       setNewImage("")
+      resetNewImageSelection()
       await load()
     } catch (err) {
       setCreateError(err.message)
@@ -754,6 +892,26 @@ export default function AdminCategories() {
             onChange={(e) => setNewImage(e.target.value)}
             style={{ flex: 2, minWidth: 200 }}
           />
+        </Box>
+        <Box sx={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <UploadZone $hasFile={!!newImageFile || !!newImagePreview}>
+            {newImagePreview && <ImagePreview src={newImagePreview} alt="New category preview" />}
+            <UploadLabel>
+              {newImageFile ? newImageFile.name : newImagePreview ? "Click to replace image" : "Click to choose image..."}
+            </UploadLabel>
+            <input
+              ref={createFileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+              style={{ display: "none" }}
+              onChange={handleNewFileChange}
+            />
+          </UploadZone>
+          {newImageFile && (
+            <GhostBtn type="button" onClick={resetNewImageSelection}>
+              Remove file
+            </GhostBtn>
+          )}
         </Box>
         <PrimaryBtn type="button" onClick={handleCreate} disabled={creating} style={{ alignSelf: "flex-start" }}>
           {creating ? "Creating..." : "Create Category"}

@@ -114,6 +114,11 @@ function getDefaultSuboptionName(option) {
   return regular?.name || suboptions[0]?.name || ''
 }
 
+function getSuboptionLabel(option) {
+  const label = String(option?.suboptionLabel || '').trim()
+  return label || 'Amount'
+}
+
 function createSelectionForOption(group, optionName, existingSelection = null) {
   const option = findOptionByName(group, optionName)
   if (!option) return createSelectionEntry(optionName)
@@ -633,10 +638,12 @@ export default function MenuItemDetails() {
 
     return (
       <FormControl fullWidth size="small" sx={sx}>
-        <InputLabel id={`${group.id}-${optionName}-suboption-label`}>Amount</InputLabel>
+        <InputLabel id={`${group.id}-${optionName}-suboption-label`}>
+          {getSuboptionLabel(option)}
+        </InputLabel>
         <Select
           labelId={`${group.id}-${optionName}-suboption-label`}
-          label="Amount"
+          label={getSuboptionLabel(option)}
           value={normalizedSelection?.suboptionName || getDefaultSuboptionName(option)}
           onChange={(event) => onChange(event.target.value)}
         >
