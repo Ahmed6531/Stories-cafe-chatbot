@@ -1,11 +1,21 @@
 # app/services/tools.py
 import logging
+from datetime import datetime
 
 from app.services.http_client import ExpressHttpClient, ExpressAPIError
 
 logger = logging.getLogger(__name__)
 
+_menu_cache = {"data": None, "fetched_at": None}
+MENU_CACHE_TTL_SECONDS = 300  # 5 minutes
+
 async def fetch_menu_items():
+    logger.info("fetch_menu_items() called")
+    if _menu_cache["data"] is not None and _menu_cache["fetched_at"] is not None:
+        if (datetime.now() - _menu_cache["fetched_at"]).total_seconds() < MENU_CACHE_TTL_SECONDS:
+            logger.info("Returning cached menu data")
+            return _menu_cache["data"]
+    
     try:
         client = ExpressHttpClient()
         logger.info({
@@ -15,9 +25,17 @@ async def fetch_menu_items():
             "cart_id": None,
         })
         data, _ = await client.get("/menu")
+        _menu_cache["data"] = data.get("items", [])
+        _menu_cache["fetched_at"] = datetime.now()
+        logger.info("Menu cache refreshed")
         return data.get("items", [])
     except ExpressAPIError:
         return []
+
+def invalidate_menu_cache():
+    _menu_cache["data"] = None
+    _menu_cache["fetched_at"] = None
+    logger.info("Menu cache invalidated")
 
 async def fetch_menu_item_detail(menu_item_id):
     try:
