@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react"
 import Box from "@mui/material/Box"
+import Button from "@mui/material/Button"
+import Checkbox from "@mui/material/Checkbox"
+import Divider from "@mui/material/Divider"
+import FormControlLabel from "@mui/material/FormControlLabel"
 import Typography from "@mui/material/Typography"
-import { styled } from "@mui/material/styles"
+import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined"
+import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined"
 import {
   fetchCategories,
   createCategory,
@@ -17,137 +22,23 @@ import {
   hardDeleteVariantGroupForCategory,
 } from "../../API/variantGroupApi"
 import { invalidateCategoriesCache } from "../../API/menuApi"
-
-const PageWrap = styled(Box)(() => ({ display: "flex", flexDirection: "column", gap: 24 }))
-
-const Card = styled(Box)(({ theme }) => ({
-  padding: "16px 20px",
-  borderRadius: 14,
-  border: `1px solid ${theme.brand.borderCard}`,
-  background: theme.brand.bgLight,
-  display: "flex",
-  flexDirection: "column",
-  gap: 12,
-}))
-
-const FieldInput = styled("input")(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontSize: 13,
-  color: theme.brand.textPrimary,
-  background: "#fff",
-  border: `1px solid ${theme.brand.border}`,
-  borderRadius: 8,
-  padding: "8px 10px",
-  outline: "none",
-  width: "100%",
-  boxSizing: "border-box",
-  "&:focus": { borderColor: theme.brand.primary },
-}))
-
-const PrimaryBtn = styled("button")(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontWeight: 700,
-  fontSize: 13,
-  padding: "8px 16px",
-  borderRadius: 8,
-  border: "none",
-  background: theme.brand.primary,
-  color: "#fff",
-  cursor: "pointer",
-  "&:hover:not(:disabled)": { background: theme.brand.primaryHover },
-  "&:disabled": { opacity: 0.6, cursor: "not-allowed" },
-}))
-
-const GhostBtn = styled("button")(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontWeight: 600,
-  fontSize: 13,
-  padding: "8px 14px",
-  borderRadius: 8,
-  border: `1.5px solid ${theme.brand.border}`,
-  background: "#fff",
-  color: theme.brand.textPrimary,
-  cursor: "pointer",
-}))
-
-const DangerBtn = styled("button")(() => ({
-  fontFamily: "inherit",
-  fontWeight: 600,
-  fontSize: 12,
-  padding: "5px 10px",
-  borderRadius: 7,
-  border: "1.5px solid #fca5a5",
-  background: "#fff",
-  color: "#dc2626",
-  cursor: "pointer",
-  "&:hover": { background: "#fef2f2" },
-}))
-
-const Toggle = styled("button")(({ $active }) => ({
-  fontFamily: "inherit",
-  fontWeight: 600,
-  fontSize: 12,
-  padding: "4px 10px",
-  borderRadius: 20,
-  border: "none",
-  background: $active ? "#dcfce7" : "#f3f4f6",
-  color: $active ? "#166534" : "#6b7280",
-  cursor: "pointer",
-}))
-
-const ErrorMsg = styled(Typography)(({ theme }) => ({
-  fontSize: 12,
-  color: theme.brand.error,
-  padding: "5px 10px",
-  background: "#fff5f5",
-  borderRadius: 6,
-  border: "1px solid #fecaca",
-}))
-
-const SectionLabel = styled(Typography)(() => ({
-  fontSize: 11,
-  fontWeight: 700,
-  textTransform: "uppercase",
-  letterSpacing: 0.5,
-  color: "#6b7280",
-  marginTop: 4,
-}))
-
-const UploadZone = styled("label")(({ theme, $hasFile }) => ({
-  display: "flex",
-  alignItems: "center",
-  gap: 12,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: `1.5px dashed ${$hasFile ? theme.brand.primary : theme.brand.border}`,
-  background: $hasFile ? "rgba(0,112,74,0.04)" : "#fff",
-  cursor: "pointer",
-  transition: "border-color 0.2s, background 0.2s",
-  "&:hover": {
-    borderColor: theme.brand.primary,
-    background: "rgba(0,112,74,0.04)",
-  },
-}))
-
-const UploadLabel = styled(Typography)(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontSize: 13,
-  fontWeight: 500,
-  color: theme.brand.textSecondary,
-  flex: 1,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-}))
-
-const ImagePreview = styled("img")(() => ({
-  width: 48,
-  height: 48,
-  objectFit: "cover",
-  borderRadius: 8,
-  flexShrink: 0,
-  border: "1px solid #e5e7eb",
-}))
+import {
+  adminBadgeOptionalSx,
+  adminBadgeRequiredSx,
+  adminBodySx,
+  adminCardSx,
+  adminDangerGhostButtonSx,
+  adminGhostButtonSx,
+  adminHintSx,
+  adminInnerPanelSx,
+  adminInputSx,
+  adminLabelSx,
+  adminPageTitleSx,
+  adminPalette,
+  adminPrimaryButtonSx,
+  adminSectionLabelSx,
+  adminSmallButtonSx,
+} from "../../components/admin/adminUi"
 
 function useObjectPreview(initialValue = "") {
   const [preview, setPreview] = useState(initialValue)
@@ -246,6 +137,230 @@ function getVariantGroupRef(group) {
   return typeof candidate === "string" ? candidate.trim() : ""
 }
 
+function groupMetaText(group) {
+  const parts = []
+  parts.push(`${group.options?.length || 0} options`)
+  parts.push(group.isRequired ? "required" : "optional")
+  parts.push(`max ${group.maxSelections ?? "any"}`)
+  return parts.join(" · ")
+}
+
+function formatAdditionalPrice(value) {
+  const amount = Number(value)
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return null
+  }
+  return `+${amount}`
+}
+
+function StatusBadge({ children, required = false }) {
+  return <Box sx={required ? adminBadgeRequiredSx : adminBadgeOptionalSx}>{children}</Box>
+}
+
+function ErrorNotice({ children }) {
+  if (!children) return null
+
+  return (
+    <Box
+      sx={{
+        borderRadius: "8px",
+        border: "0.5px solid #f5b7b1",
+        backgroundColor: "#fff8f7",
+        px: 1.25,
+        py: 1,
+      }}
+    >
+      <Typography sx={{ fontSize: 12, fontWeight: 500, color: adminPalette.danger }}>
+        {children}
+      </Typography>
+    </Box>
+  )
+}
+
+function UploadArea({ hasFile, preview, label, inputRef, onChange, alt, onClearLabel }) {
+  return (
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+      <Box
+        component="label"
+        sx={{
+          border: `0.5px dashed ${hasFile ? "rgba(0,0,0,0.24)" : "rgba(0,0,0,0.18)"}`,
+          borderRadius: "12px",
+          backgroundColor: adminPalette.surfaceSoft,
+          p: 2,
+          display: "flex",
+          alignItems: "center",
+          gap: 2,
+          cursor: "pointer",
+        }}
+      >
+        {preview ? (
+          <Box
+            component="img"
+            src={preview}
+            alt={alt}
+            sx={{
+              width: 64,
+              height: 64,
+              borderRadius: "10px",
+              objectFit: "cover",
+              border: "0.5px solid rgba(0,0,0,0.10)",
+              flexShrink: 0,
+            }}
+          />
+        ) : (
+          <Box
+            sx={{
+              width: 64,
+              height: 64,
+              borderRadius: "10px",
+              backgroundColor: adminPalette.surface,
+              border: "0.5px solid rgba(0,0,0,0.10)",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: adminPalette.textTertiary,
+              flexShrink: 0,
+            }}
+          >
+            <ImageOutlinedIcon />
+          </Box>
+        )}
+
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, minWidth: 0 }}>
+          <Typography sx={{ fontSize: 13, fontWeight: 500, color: adminPalette.textPrimary }}>
+            Upload image
+          </Typography>
+          <Typography sx={{ ...adminBodySx, color: adminPalette.textTertiary }}>
+            {label}
+          </Typography>
+          <Typography sx={adminHintSx}>Files are uploaded through the existing image flow.</Typography>
+        </Box>
+
+        <Box
+          sx={{
+            ml: "auto",
+            width: 34,
+            height: 34,
+            borderRadius: "999px",
+            backgroundColor: adminPalette.surface,
+            border: "0.5px solid rgba(0,0,0,0.10)",
+            color: adminPalette.textPrimary,
+            display: { xs: "none", sm: "inline-flex" },
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          <CloudUploadOutlinedIcon sx={{ fontSize: 18 }} />
+        </Box>
+
+        <Box
+          component="input"
+          ref={inputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+          sx={{ display: "none" }}
+          onChange={onChange}
+        />
+      </Box>
+
+      {onClearLabel}
+    </Box>
+  )
+}
+
+function VariantGroupPreview({ adminName, customerLabel, isRequired, maxSelections, options }) {
+  const title = customerLabel.trim() || adminName.trim() || "Variant group"
+  const helper = isRequired
+    ? maxSelections
+      ? `Required · choose up to ${maxSelections}`
+      : "Required"
+    : maxSelections
+      ? `Optional · choose up to ${maxSelections}`
+      : "Optional"
+
+  return (
+    <Box
+      sx={{
+        ...adminCardSx,
+        p: 2,
+        alignSelf: "start",
+        position: { lg: "sticky" },
+        top: { lg: 88 },
+      }}
+    >
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, mb: 2 }}>
+        <Typography sx={adminSectionLabelSx}>Live preview</Typography>
+        <Typography sx={{ fontSize: 14, fontWeight: 500, color: adminPalette.textPrimary }}>
+          {title}
+        </Typography>
+        <Typography sx={adminHintSx}>{helper}</Typography>
+      </Box>
+
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+        {options.length === 0 ? (
+          <Box sx={{ ...adminInnerPanelSx, p: 1.5 }}>
+            <Typography sx={adminBodySx}>Add options on the left to see the customer preview here.</Typography>
+          </Box>
+        ) : (
+          options.map((option, optionIndex) => (
+            <Box
+              key={`preview-option-${optionIndex}`}
+              sx={{
+                ...adminInnerPanelSx,
+                p: 1.5,
+                display: "flex",
+                flexDirection: "column",
+                gap: 0.75,
+              }}
+            >
+              <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}>
+                <Box
+                  sx={{
+                    width: 14,
+                    height: 14,
+                    borderRadius: "999px",
+                    border: "1px solid rgba(0,0,0,0.22)",
+                    mt: "2px",
+                    flexShrink: 0,
+                  }}
+                />
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 500, color: adminPalette.textPrimary }}>
+                    {option.name || `Option ${optionIndex + 1}`}
+                  </Typography>
+                  {formatAdditionalPrice(option.additionalPrice) && (
+                    <Typography sx={adminHintSx}>{formatAdditionalPrice(option.additionalPrice)}</Typography>
+                  )}
+                </Box>
+              </Box>
+
+              {option.suboptions.length > 0 && (
+                <Box sx={{ pl: 3, display: "flex", flexDirection: "column", gap: 0.5 }}>
+                  {option.suboptionLabel && (
+                    <Typography sx={adminHintSx}>{option.suboptionLabel}</Typography>
+                  )}
+                  {option.suboptions.map((suboption, suboptionIndex) => (
+                    <Typography
+                      key={`preview-suboption-${optionIndex}-${suboptionIndex}`}
+                      sx={{ fontSize: 12, color: adminPalette.textSecondary }}
+                    >
+                      {suboption.name || `Suboption ${suboptionIndex + 1}`}
+                      {formatAdditionalPrice(suboption.additionalPrice)
+                        ? ` (${formatAdditionalPrice(suboption.additionalPrice)})`
+                        : ""}
+                    </Typography>
+                  ))}
+                </Box>
+              )}
+            </Box>
+          ))
+        )}
+      </Box>
+    </Box>
+  )
+}
+
 function VariantOptionsEditor({ options, setOptions, disabled = false }) {
   function updateOption(index, updater) {
     setOptions((prev) => prev.map((option, i) => (i === index ? updater(option) : option)))
@@ -283,93 +398,116 @@ function VariantOptionsEditor({ options, setOptions, disabled = false }) {
   }
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <SectionLabel>Options</SectionLabel>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+      <Typography sx={adminSectionLabelSx}>Options</Typography>
+
       {options.length === 0 && (
-        <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-          No options yet. Add one below.
-        </Typography>
+        <Box sx={{ ...adminInnerPanelSx, p: 1.5 }}>
+          <Typography sx={adminBodySx}>No options yet. Add one below.</Typography>
+        </Box>
       )}
 
       {options.map((option, optionIndex) => (
         <Box
           key={`option-${optionIndex}`}
           sx={{
+            ...adminInnerPanelSx,
+            p: 1.5,
             display: "flex",
             flexDirection: "column",
-            gap: 10,
-            p: "10px 12px",
-            border: "1px solid #e5e7eb",
-            borderRadius: 10,
-            background: "#fff",
+            gap: 1.25,
           }}
         >
-          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-            <Typography sx={{ fontSize: 12, fontWeight: 700, color: "#4b5563" }}>
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+            <Typography sx={{ fontSize: 13, fontWeight: 500, color: adminPalette.textPrimary }}>
               Option {optionIndex + 1}
             </Typography>
-            <DangerBtn type="button" onClick={() => removeOption(optionIndex)} disabled={disabled}>
+            <Button
+              type="button"
+              onClick={() => removeOption(optionIndex)}
+              disabled={disabled}
+              sx={{ ...adminDangerGhostButtonSx, ...adminSmallButtonSx }}
+            >
               Remove option
-            </DangerBtn>
+            </Button>
           </Box>
 
-          <Box sx={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <FieldInput
+          <Box
+            sx={{
+              display: "grid",
+              gap: 1,
+              gridTemplateColumns: { xs: "1fr", md: "repeat(3, minmax(0, 1fr)) 120px" },
+            }}
+          >
+            <Box
+              component="input"
               placeholder="Option name *"
               value={option.name}
               onChange={(e) => updateOption(optionIndex, (current) => ({ ...current, name: e.target.value }))}
-              style={{ flex: 1, minWidth: 180 }}
               disabled={disabled}
+              sx={adminInputSx}
             />
-            <FieldInput
+            <Box
+              component="input"
               placeholder="Additional price"
               type="number"
               step="0.01"
               value={option.additionalPrice}
-              onChange={(e) => updateOption(optionIndex, (current) => ({ ...current, additionalPrice: e.target.value }))}
-              style={{ width: 150, flex: "none" }}
+              onChange={(e) =>
+                updateOption(optionIndex, (current) => ({ ...current, additionalPrice: e.target.value }))
+              }
               disabled={disabled}
+              sx={adminInputSx}
             />
-            <FieldInput
+            <Box
+              component="input"
               placeholder="Suboption label"
               value={option.suboptionLabel}
-              onChange={(e) => updateOption(optionIndex, (current) => ({ ...current, suboptionLabel: e.target.value }))}
-              style={{ width: 160, flex: "none" }}
+              onChange={(e) =>
+                updateOption(optionIndex, (current) => ({ ...current, suboptionLabel: e.target.value }))
+              }
               disabled={disabled}
+              sx={adminInputSx}
             />
-            <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, cursor: disabled ? "default" : "pointer" }}>
-              <input
-                type="checkbox"
-                checked={option.isActive}
-                onChange={(e) => updateOption(optionIndex, (current) => ({ ...current, isActive: e.target.checked }))}
-                disabled={disabled}
-              />
-              Active
-            </label>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={option.isActive}
+                  onChange={(e) =>
+                    updateOption(optionIndex, (current) => ({ ...current, isActive: e.target.checked }))
+                  }
+                  disabled={disabled}
+                  sx={{
+                    color: adminPalette.textTertiary,
+                    "&.Mui-checked": { color: adminPalette.textPrimary },
+                  }}
+                />
+              }
+              label={<Typography sx={adminLabelSx}>Active</Typography>}
+              sx={{ m: 0 }}
+            />
           </Box>
 
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 8, pl: { xs: 0, sm: 1 } }}>
-            <SectionLabel>Suboptions</SectionLabel>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <Typography sx={adminSectionLabelSx}>Suboptions</Typography>
+
             {option.suboptions.length === 0 && (
-              <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-                No suboptions for this option yet.
-              </Typography>
+              <Typography sx={adminBodySx}>No suboptions for this option yet.</Typography>
             )}
+
             {option.suboptions.map((suboption, suboptionIndex) => (
               <Box
                 key={`option-${optionIndex}-suboption-${suboptionIndex}`}
                 sx={{
-                  display: "flex",
-                  gap: 8,
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                  p: "8px 10px",
-                  border: "1px dashed #d1d5db",
-                  borderRadius: 8,
-                  background: "#f9fafb",
+                  ...adminInnerPanelSx,
+                  p: 1.25,
+                  display: "grid",
+                  gap: 1,
+                  gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) 160px auto" },
                 }}
               >
-                <FieldInput
+                <Box
+                  component="input"
                   placeholder="Suboption name *"
                   value={suboption.name}
                   onChange={(e) =>
@@ -378,10 +516,11 @@ function VariantOptionsEditor({ options, setOptions, disabled = false }) {
                       name: e.target.value,
                     }))
                   }
-                  style={{ flex: 1, minWidth: 160 }}
                   disabled={disabled}
+                  sx={adminInputSx}
                 />
-                <FieldInput
+                <Box
+                  component="input"
                   placeholder="Additional price"
                   type="number"
                   step="0.01"
@@ -392,29 +531,40 @@ function VariantOptionsEditor({ options, setOptions, disabled = false }) {
                       additionalPrice: e.target.value,
                     }))
                   }
-                  style={{ width: 150, flex: "none" }}
                   disabled={disabled}
+                  sx={adminInputSx}
                 />
-                <DangerBtn
+                <Button
                   type="button"
                   onClick={() => removeSuboption(optionIndex, suboptionIndex)}
                   disabled={disabled}
+                  sx={{ ...adminDangerGhostButtonSx, ...adminSmallButtonSx }}
                 >
                   Remove
-                </DangerBtn>
+                </Button>
               </Box>
             ))}
 
-            <GhostBtn type="button" onClick={() => addSuboption(optionIndex)} disabled={disabled} style={{ alignSelf: "flex-start" }}>
+            <Button
+              type="button"
+              onClick={() => addSuboption(optionIndex)}
+              disabled={disabled}
+              sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx, alignSelf: "flex-start" }}
+            >
               + Add suboption
-            </GhostBtn>
+            </Button>
           </Box>
         </Box>
       ))}
 
-      <GhostBtn type="button" onClick={addOption} disabled={disabled} style={{ alignSelf: "flex-start" }}>
+      <Button
+        type="button"
+        onClick={addOption}
+        disabled={disabled}
+        sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx, alignSelf: "flex-start" }}
+      >
         + Add option
-      </GhostBtn>
+      </Button>
     </Box>
   )
 }
@@ -464,41 +614,89 @@ function VariantGroupForm({ categoryId, onSaved }) {
   }
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 10, p: "10px 12px", border: "1px dashed #d1d5db", borderRadius: 8 }}>
-      <Typography sx={{ fontSize: 12, fontWeight: 700, color: "text.secondary" }}>
-        New Variant Group
-      </Typography>
-      {error && <ErrorMsg component="p">{error}</ErrorMsg>}
-      <Box sx={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <FieldInput
-          placeholder="Admin name *"
-          value={adminName}
-          onChange={(e) => setAdminName(e.target.value)}
-          style={{ flex: 1, minWidth: 120 }}
+    <Box
+      sx={{
+        display: "grid",
+        gap: 2,
+        gridTemplateColumns: { xs: "1fr", xl: "minmax(0, 1.25fr) minmax(280px, 0.75fr)" },
+      }}
+    >
+      <Box sx={{ ...adminCardSx, p: 2, display: "flex", flexDirection: "column", gap: 1.5 }}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+          <Typography sx={adminSectionLabelSx}>Variant groups</Typography>
+          <Typography sx={{ fontSize: 14, fontWeight: 500, color: adminPalette.textPrimary }}>
+            New variant group
+          </Typography>
+        </Box>
+
+        <ErrorNotice>{error}</ErrorNotice>
+
+        <Box
+          sx={{
+            display: "grid",
+            gap: 1,
+            gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr)) 140px" },
+          }}
+        >
+          <Box
+            component="input"
+            placeholder="Admin name *"
+            value={adminName}
+            onChange={(e) => setAdminName(e.target.value)}
+            sx={adminInputSx}
+          />
+          <Box
+            component="input"
+            placeholder="Customer label"
+            value={customerLabel}
+            onChange={(e) => setCustomerLabel(e.target.value)}
+            sx={adminInputSx}
+          />
+          <Box
+            component="input"
+            placeholder="Max selections"
+            type="number"
+            min="1"
+            value={maxSelections}
+            onChange={(e) => setMaxSelections(e.target.value)}
+            sx={adminInputSx}
+          />
+        </Box>
+
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={isRequired}
+              onChange={(e) => setIsRequired(e.target.checked)}
+              sx={{
+                color: adminPalette.textTertiary,
+                "&.Mui-checked": { color: adminPalette.textPrimary },
+              }}
+            />
+          }
+          label={<Typography sx={adminLabelSx}>Required</Typography>}
+          sx={{ m: 0 }}
         />
-        <FieldInput
-          placeholder="Customer label"
-          value={customerLabel}
-          onChange={(e) => setCustomerLabel(e.target.value)}
-          style={{ flex: 1, minWidth: 120 }}
-        />
-        <FieldInput
-          placeholder="Max selections"
-          type="number"
-          min="1"
-          value={maxSelections}
-          onChange={(e) => setMaxSelections(e.target.value)}
-          style={{ width: 120, flex: "none" }}
-        />
+
+        <VariantOptionsEditor options={options} setOptions={setOptions} disabled={saving} />
+
+        <Button
+          type="button"
+          onClick={handleSubmit}
+          disabled={saving}
+          sx={{ ...adminPrimaryButtonSx, alignSelf: "flex-start" }}
+        >
+          {saving ? "Adding..." : "Add group"}
+        </Button>
       </Box>
-      <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-        <input type="checkbox" checked={isRequired} onChange={(e) => setIsRequired(e.target.checked)} />
-        Required
-      </label>
-      <VariantOptionsEditor options={options} setOptions={setOptions} disabled={saving} />
-      <PrimaryBtn type="button" onClick={handleSubmit} disabled={saving} style={{ alignSelf: "flex-start" }}>
-        {saving ? "Adding..." : "Add Group"}
-      </PrimaryBtn>
+
+      <VariantGroupPreview
+        adminName={adminName}
+        customerLabel={customerLabel}
+        isRequired={isRequired}
+        maxSelections={maxSelections}
+        options={options}
+      />
     </Box>
   )
 }
@@ -570,7 +768,7 @@ function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }
       if (err?.status === 409 && err?.data?.requiresCascade) {
         const menuItems = err.data?.usage?.menuItems ?? 0
         const approved = confirmCascadeDelete(
-          `This variant group is used by ${menuItems} menu item${menuItems === 1 ? "" : "s"}.\nDeleting it will remove this option group from those items and may change active cart pricing.`
+          `This variant group is used by ${menuItems} menu item${menuItems === 1 ? "" : "s"}.\nDeleting it will remove this option group from those items and may change active cart pricing.`,
         )
         if (!approved) {
           setSaving(false)
@@ -593,74 +791,163 @@ function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }
   return (
     <Box
       sx={{
+        ...adminCardSx,
+        p: 2,
         display: "flex",
         flexDirection: "column",
-        gap: 10,
-        p: "10px 12px",
-        border: "1px solid #e5e7eb",
-        borderRadius: 8,
-        background: "#fafafa",
+        gap: 1.5,
       }}
     >
-      <Box sx={{ display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
-        <Box sx={{ flex: 1, minWidth: 180 }}>
-          <Typography sx={{ fontSize: 13, fontWeight: 600 }}>
-            {group.adminName}{" "}
-            {group.customerLabel && group.customerLabel !== group.adminName && (
-              <span style={{ fontWeight: 400, color: "#6b7280" }}>
-                {"->"} "{group.customerLabel}"
-              </span>
-            )}
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 1.5, flexWrap: "wrap" }}>
+        <Box sx={{ flex: 1, minWidth: 220 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", mb: 0.5 }}>
+            <Typography sx={{ fontSize: 14, fontWeight: 500, color: adminPalette.textPrimary }}>
+              {group.adminName}
+            </Typography>
+            <StatusBadge required={group.isRequired}>{group.isRequired ? "Required" : "Optional"}</StatusBadge>
+          </Box>
+          <Typography sx={{ fontSize: 12, color: adminPalette.textSecondary, mb: 0.75 }}>
+            Shows as: {group.customerLabel || group.adminName}
           </Typography>
-          <Typography sx={{ fontSize: 11, color: "#9ca3af" }}>
-            {group.options?.length || 0} options · {group.isRequired ? "required" : "optional"} ·
-            {" "}max {group.maxSelections ?? "∞"} · ref: {getVariantGroupRef(group)}
+          <Typography sx={{ fontSize: 11, color: adminPalette.textTertiary }}>
+            {groupMetaText(group)} · ref: {getVariantGroupRef(group)}
           </Typography>
         </Box>
-        <GhostBtn type="button" onClick={() => (editing ? handleCancel() : setEditing(true))}>
-          {editing ? "Cancel" : "Manage options"}
-        </GhostBtn>
-        <DangerBtn type="button" onClick={() => onDeactivate(getVariantGroupRef(group))}>
-          Deactivate
-        </DangerBtn>
-        <DangerBtn type="button" onClick={handleDeletePermanently} disabled={saving}>
-          Delete permanently
-        </DangerBtn>
+
+        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+          <Button
+            type="button"
+            onClick={() => (editing ? handleCancel() : setEditing(true))}
+            sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx }}
+          >
+            {editing ? "Close editor" : "Manage options"}
+          </Button>
+          <Button
+            type="button"
+            onClick={() => onDeactivate(getVariantGroupRef(group))}
+            sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx }}
+          >
+            Deactivate
+          </Button>
+          <Button
+            type="button"
+            onClick={handleDeletePermanently}
+            disabled={saving}
+            sx={{ ...adminDangerGhostButtonSx, ...adminSmallButtonSx }}
+          >
+            Delete
+          </Button>
+        </Box>
+      </Box>
+
+      <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap" }}>
+        {group.options?.map((option, optionIndex) => (
+          <Box
+            key={`${getVariantGroupRef(group)}-option-${optionIndex}`}
+            sx={{
+              borderRadius: "999px",
+              backgroundColor: adminPalette.pageBg,
+              px: 1.25,
+              py: 0.5,
+              fontSize: 11,
+              color: adminPalette.textSecondary,
+            }}
+          >
+            {option.name}
+          </Box>
+        ))}
       </Box>
 
       {editing && (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 10, pt: 2, borderTop: "1px solid #e5e7eb" }}>
-          {error && <ErrorMsg component="p">{error}</ErrorMsg>}
-          <Box sx={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <FieldInput
-              value={group.adminName}
-              disabled
-              style={{ flex: 1, minWidth: 160, background: "#f3f4f6" }}
-            />
-            <FieldInput
-              placeholder="Customer label"
-              value={customerLabel}
-              onChange={(e) => setCustomerLabel(e.target.value)}
-              style={{ flex: 1, minWidth: 160 }}
-            />
-            <FieldInput
-              placeholder="Max selections"
-              type="number"
-              min="1"
-              value={maxSelections}
-              onChange={(e) => setMaxSelections(e.target.value)}
-              style={{ width: 140, flex: "none" }}
+        <>
+          <Divider sx={{ borderColor: "rgba(0,0,0,0.08)" }} />
+          <ErrorNotice>{error}</ErrorNotice>
+
+          <Box
+            sx={{
+              display: "grid",
+              gap: 2,
+              gridTemplateColumns: { xs: "1fr", xl: "minmax(0, 1.25fr) minmax(280px, 0.75fr)" },
+            }}
+          >
+            <Box sx={{ ...adminInnerPanelSx, p: 2, display: "flex", flexDirection: "column", gap: 1.5 }}>
+              <Typography sx={adminSectionLabelSx}>Edit group</Typography>
+
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 1,
+                  gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr)) 140px" },
+                }}
+              >
+                <Box
+                  component="input"
+                  value={group.adminName}
+                  disabled
+                  sx={{
+                    ...adminInputSx,
+                    backgroundColor: adminPalette.surfaceSoft,
+                  }}
+                />
+                <Box
+                  component="input"
+                  placeholder="Customer label"
+                  value={customerLabel}
+                  onChange={(e) => setCustomerLabel(e.target.value)}
+                  sx={adminInputSx}
+                />
+                <Box
+                  component="input"
+                  placeholder="Max selections"
+                  type="number"
+                  min="1"
+                  value={maxSelections}
+                  onChange={(e) => setMaxSelections(e.target.value)}
+                  sx={adminInputSx}
+                />
+              </Box>
+
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={isRequired}
+                    onChange={(e) => setIsRequired(e.target.checked)}
+                    sx={{
+                      color: adminPalette.textTertiary,
+                      "&.Mui-checked": { color: adminPalette.textPrimary },
+                    }}
+                  />
+                }
+                label={<Typography sx={adminLabelSx}>Required</Typography>}
+                sx={{ m: 0 }}
+              />
+
+              <VariantOptionsEditor options={options} setOptions={setOptions} disabled={saving} />
+
+              <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                <Button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  sx={adminPrimaryButtonSx}
+                >
+                  {saving ? "Saving..." : "Save group"}
+                </Button>
+                <Button type="button" onClick={handleCancel} sx={adminGhostButtonSx}>
+                  Cancel
+                </Button>
+              </Box>
+            </Box>
+
+            <VariantGroupPreview
+              adminName={group.adminName}
+              customerLabel={customerLabel}
+              isRequired={isRequired}
+              maxSelections={maxSelections}
+              options={options}
             />
           </Box>
-          <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-            <input type="checkbox" checked={isRequired} onChange={(e) => setIsRequired(e.target.checked)} />
-            Required
-          </label>
-          <VariantOptionsEditor options={options} setOptions={setOptions} disabled={saving} />
-          <PrimaryBtn type="button" onClick={handleSave} disabled={saving} style={{ alignSelf: "flex-start" }}>
-            {saving ? "Saving..." : "Save Group"}
-          </PrimaryBtn>
-        </Box>
+        </>
       )}
     </Box>
   )
@@ -762,7 +1049,7 @@ function CategoryDetail({ category, onRefresh }) {
         const menuItems = err.data?.usage?.menuItems ?? 0
         const variantGroups = err.data?.usage?.variantGroups ?? 0
         const approved = confirmCascadeDelete(
-          `This will delete ${menuItems} menu item${menuItems === 1 ? "" : "s"} and ${variantGroups} variant group${variantGroups === 1 ? "" : "s"} in "${category.name}".\nActive customer carts may lose these items.`
+          `This will delete ${menuItems} menu item${menuItems === 1 ? "" : "s"} and ${variantGroups} variant group${variantGroups === 1 ? "" : "s"} in "${category.name}".\nActive customer carts may lose these items.`,
         )
         if (!approved) {
           setSaving(false)
@@ -789,92 +1076,132 @@ function CategoryDetail({ category, onRefresh }) {
   }
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 12, mt: 2, pt: 2, borderTop: "1px solid #e5e7eb" }}>
-      {error && <ErrorMsg component="p">{error}</ErrorMsg>}
+    <Box
+      sx={{
+        mt: 2,
+        pt: 2,
+        borderTop: "0.5px solid rgba(0,0,0,0.08)",
+        backgroundColor: adminPalette.surfaceSoft,
+        borderRadius: "0 0 12px 12px",
+        px: { xs: 1.5, md: 2 },
+        pb: { xs: 1.5, md: 2 },
+        display: "flex",
+        flexDirection: "column",
+        gap: 2,
+      }}
+    >
+      <ErrorNotice>{error}</ErrorNotice>
 
-      <SectionLabel>Category settings</SectionLabel>
-      <Box sx={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <FieldInput
-          placeholder="Name"
-          value={editName}
-          onChange={(e) => setEditName(e.target.value)}
-          style={{ flex: 1, minWidth: 140 }}
-        />
-        <FieldInput
-          placeholder="Image URL"
-          value={editImage}
-          onChange={(e) => setEditImage(e.target.value)}
-          style={{ flex: 2, minWidth: 200 }}
-        />
-        <FieldInput
-          placeholder="Order"
-          type="number"
-          value={editOrder}
-          onChange={(e) => setEditOrder(e.target.value)}
-          style={{ width: 80, flex: "none" }}
-        />
-      </Box>
-      <Box sx={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <UploadZone $hasFile={!!imageFile || !!imagePreview}>
-          {imagePreview && <ImagePreview src={imagePreview} alt={`${category.name} preview`} />}
-          <UploadLabel>
-            {imageFile ? imageFile.name : imagePreview ? "Click to replace image" : "Click to choose image..."}
-          </UploadLabel>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-            style={{ display: "none" }}
-            onChange={handleFileChange}
-          />
-        </UploadZone>
-        {imageFile && (
-          <GhostBtn type="button" onClick={clearSelectedFile}>
-            Keep current image
-          </GhostBtn>
-        )}
-      </Box>
-      <Box sx={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <PrimaryBtn type="button" onClick={handleSaveCategory} disabled={saving}>
-          {saving ? "Saving..." : "Save"}
-        </PrimaryBtn>
-        <Toggle type="button" $active={category.isActive} onClick={handleToggleActive}>
-          {category.isActive ? "Active" : "Inactive"}
-        </Toggle>
-        <DangerBtn type="button" onClick={handleDeleteCategory} disabled={saving}>
-          Delete
-        </DangerBtn>
-      </Box>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+        <Typography sx={adminSectionLabelSx}>Category settings</Typography>
 
-      <SectionLabel sx={{ mt: 2 }}>Variant groups</SectionLabel>
-      {groups.length === 0 && (
-        <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-          No variant groups yet.
-        </Typography>
-      )}
-      {groups.map((group) => (
-        <ExistingVariantGroupEditor
-          key={getVariantGroupRef(group) || group.adminName}
-          categoryId={category._id}
-          group={group}
-          onSaved={loadGroups}
-          onDeactivate={handleDeactivateGroup}
-        />
-      ))}
-
-      {showGroupForm ? (
-        <VariantGroupForm
-          categoryId={category._id}
-          onSaved={() => {
-            loadGroups()
-            setShowGroupForm(false)
+        <Box
+          sx={{
+            display: "grid",
+            gap: 1,
+            gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) minmax(0, 1fr) 120px" },
           }}
+        >
+          <Box
+            component="input"
+            placeholder="Name"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            sx={adminInputSx}
+          />
+          <Box
+            component="input"
+            placeholder="Image URL"
+            value={editImage}
+            onChange={(e) => setEditImage(e.target.value)}
+            sx={adminInputSx}
+          />
+          <Box
+            component="input"
+            placeholder="Order"
+            type="number"
+            value={editOrder}
+            onChange={(e) => setEditOrder(e.target.value)}
+            sx={adminInputSx}
+          />
+        </Box>
+
+        <UploadArea
+          hasFile={!!imageFile || !!imagePreview}
+          preview={imagePreview}
+          label={imageFile ? imageFile.name : imagePreview ? "Click to replace image" : "Click to choose image..."}
+          inputRef={fileInputRef}
+          onChange={handleFileChange}
+          alt={`${category.name} preview`}
+          onClearLabel={
+            imageFile ? (
+              <Button
+                type="button"
+                onClick={clearSelectedFile}
+                sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx, alignSelf: "flex-start" }}
+              >
+                Keep current image
+              </Button>
+            ) : null
+          }
         />
-      ) : (
-        <GhostBtn type="button" onClick={() => setShowGroupForm(true)} style={{ alignSelf: "flex-start" }}>
-          + Add variant group
-        </GhostBtn>
-      )}
+
+        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+          <Button type="button" onClick={handleSaveCategory} disabled={saving} sx={adminPrimaryButtonSx}>
+            {saving ? "Saving..." : "Save"}
+          </Button>
+          <Button type="button" onClick={handleToggleActive} sx={adminGhostButtonSx}>
+            {category.isActive ? "Active" : "Inactive"}
+          </Button>
+          <Button type="button" onClick={handleDeleteCategory} disabled={saving} sx={adminDangerGhostButtonSx}>
+            Delete
+          </Button>
+        </Box>
+      </Box>
+
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.35 }}>
+            <Typography sx={adminSectionLabelSx}>Variant groups</Typography>
+            <Typography sx={{ fontSize: 13, color: adminPalette.textSecondary }}>
+              Each group defines how customers choose add-ons for this category.
+            </Typography>
+          </Box>
+          <Button
+            type="button"
+            onClick={() => setShowGroupForm((prev) => !prev)}
+            sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx }}
+          >
+            {showGroupForm ? "Close panel" : "+ Add variant group"}
+          </Button>
+        </Box>
+
+        {showGroupForm && (
+          <VariantGroupForm
+            categoryId={category._id}
+            onSaved={() => {
+              loadGroups()
+              setShowGroupForm(false)
+            }}
+          />
+        )}
+
+        {groups.length === 0 && !showGroupForm && (
+          <Box sx={{ ...adminCardSx, p: 2 }}>
+            <Typography sx={adminBodySx}>No variant groups yet.</Typography>
+          </Box>
+        )}
+
+        {groups.map((group) => (
+          <ExistingVariantGroupEditor
+            key={getVariantGroupRef(group) || group.adminName}
+            categoryId={category._id}
+            group={group}
+            onSaved={loadGroups}
+            onDeactivate={handleDeactivateGroup}
+          />
+        ))}
+      </Box>
     </Box>
   )
 }
@@ -946,97 +1273,174 @@ export default function AdminCategories() {
     }
   }
 
-  if (loading) return <Typography sx={{ p: 2 }}>Loading categories...</Typography>
-  if (error) return <Typography sx={{ p: 2, color: "error.main" }}>{error}</Typography>
+  if (loading) {
+    return (
+      <Box sx={adminCardSx}>
+        <Typography sx={adminBodySx}>Loading categories...</Typography>
+      </Box>
+    )
+  }
+
+  if (error) {
+    return (
+      <Box
+        sx={{
+          ...adminCardSx,
+          borderColor: "#f5b7b1",
+          backgroundColor: "#fff8f7",
+        }}
+      >
+        <Typography sx={{ fontSize: 13, fontWeight: 500, color: adminPalette.danger }}>
+          {error}
+        </Typography>
+      </Box>
+    )
+  }
 
   return (
-    <PageWrap>
-      <Typography variant="h5" sx={{ fontWeight: 700 }}>
-        Manage Categories
-      </Typography>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+        <Typography sx={adminPageTitleSx}>Categories</Typography>
+        <Typography sx={{ ...adminBodySx, maxWidth: 760 }}>
+          Create new categories, edit their ordering and imagery, and manage the variant groups
+          attached to each one inline.
+        </Typography>
+      </Box>
 
-      <Card>
-        <Typography sx={{ fontWeight: 700, fontSize: 14 }}>New Category</Typography>
-        {createError && <ErrorMsg component="p">{createError}</ErrorMsg>}
-        <Box sx={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <FieldInput
+      <Box sx={{ ...adminCardSx, display: "flex", flexDirection: "column", gap: 1.5 }}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+          <Typography sx={adminSectionLabelSx}>New category</Typography>
+          <Typography sx={{ fontSize: 14, fontWeight: 500, color: adminPalette.textPrimary }}>
+            Add a category
+          </Typography>
+        </Box>
+
+        <ErrorNotice>{createError}</ErrorNotice>
+
+        <Box
+          sx={{
+            display: "grid",
+            gap: 1,
+            gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) minmax(0, 1fr)" },
+          }}
+        >
+          <Box
+            component="input"
             placeholder="Name *"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") handleCreate()
             }}
-            style={{ flex: 1, minWidth: 140 }}
+            sx={adminInputSx}
           />
-          <FieldInput
+          <Box
+            component="input"
             placeholder="Image URL (optional)"
             value={newImage}
             onChange={(e) => setNewImage(e.target.value)}
-            style={{ flex: 2, minWidth: 200 }}
+            sx={adminInputSx}
           />
         </Box>
-        <Box sx={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <UploadZone $hasFile={!!newImageFile || !!newImagePreview}>
-            {newImagePreview && <ImagePreview src={newImagePreview} alt="New category preview" />}
-            <UploadLabel>
-              {newImageFile ? newImageFile.name : newImagePreview ? "Click to replace image" : "Click to choose image..."}
-            </UploadLabel>
-            <input
-              ref={createFileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-              style={{ display: "none" }}
-              onChange={handleNewFileChange}
-            />
-          </UploadZone>
-          {newImageFile && (
-            <GhostBtn type="button" onClick={resetNewImageSelection}>
-              Remove file
-            </GhostBtn>
-          )}
-        </Box>
-        <PrimaryBtn type="button" onClick={handleCreate} disabled={creating} style={{ alignSelf: "flex-start" }}>
-          {creating ? "Creating..." : "Create Category"}
-        </PrimaryBtn>
-      </Card>
+
+        <UploadArea
+          hasFile={!!newImageFile || !!newImagePreview}
+          preview={newImagePreview}
+          label={newImageFile ? newImageFile.name : newImagePreview ? "Click to replace image" : "Click to choose image..."}
+          inputRef={createFileInputRef}
+          onChange={handleNewFileChange}
+          alt="New category preview"
+          onClearLabel={
+            newImageFile ? (
+              <Button
+                type="button"
+                onClick={resetNewImageSelection}
+                sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx, alignSelf: "flex-start" }}
+              >
+                Remove file
+              </Button>
+            ) : null
+          }
+        />
+
+        <Button type="button" onClick={handleCreate} disabled={creating} sx={{ ...adminPrimaryButtonSx, alignSelf: "flex-start" }}>
+          {creating ? "Creating..." : "Create category"}
+        </Button>
+      </Box>
 
       {categories.map((category) => (
-        <Card key={category._id} sx={{ opacity: category.isActive ? 1 : 0.6 }}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {category.image && (
-              <img
+        <Box
+          key={category._id}
+          sx={{
+            ...adminCardSx,
+            opacity: category.isActive ? 1 : 0.72,
+            p: 2,
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+            {category.image ? (
+              <Box
+                component="img"
                 src={category.image}
                 alt={category.name}
-                width={40}
-                height={40}
-                style={{ borderRadius: 8, objectFit: "cover", flexShrink: 0 }}
+                sx={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: "10px",
+                  objectFit: "cover",
+                  border: "0.5px solid rgba(0,0,0,0.10)",
+                  flexShrink: 0,
+                }}
               />
+            ) : (
+              <Box
+                sx={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: "10px",
+                  backgroundColor: adminPalette.pageBg,
+                  border: "0.5px solid rgba(0,0,0,0.10)",
+                  color: adminPalette.textTertiary,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <ImageOutlinedIcon sx={{ fontSize: 18 }} />
+              </Box>
             )}
-            <Box sx={{ flex: 1 }}>
-              <Typography sx={{ fontWeight: 700, fontSize: 15 }}>{category.name}</Typography>
-              <Typography sx={{ fontSize: 11, color: "#9ca3af" }}>
+
+            <Box sx={{ flex: 1, minWidth: 220 }}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", mb: 0.35 }}>
+                <Typography sx={{ fontSize: 15, fontWeight: 500, color: adminPalette.textPrimary }}>
+                  {category.name}
+                </Typography>
+                <StatusBadge>{category.isActive ? "Active" : "Inactive"}</StatusBadge>
+              </Box>
+              <Typography sx={{ fontSize: 11, color: adminPalette.textTertiary }}>
                 order: {category.order} · slug: {category.slug}
               </Typography>
             </Box>
-            <GhostBtn
+
+            <Button
               type="button"
               onClick={() => setExpandedId((prev) => (prev === category._id ? null : category._id))}
+              sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx }}
             >
               {expandedId === category._id ? "Collapse" : "Manage"}
-            </GhostBtn>
+            </Button>
           </Box>
 
-          {expandedId === category._id && (
-            <CategoryDetail category={category} onRefresh={load} />
-          )}
-        </Card>
+          {expandedId === category._id && <CategoryDetail category={category} onRefresh={load} />}
+        </Box>
       ))}
 
       {categories.length === 0 && (
-        <Typography sx={{ color: "text.secondary" }}>
-          No categories yet. Create one above.
-        </Typography>
+        <Box sx={adminCardSx}>
+          <Typography sx={adminBodySx}>No categories yet. Create one above.</Typography>
+        </Box>
       )}
-    </PageWrap>
+    </Box>
   )
 }

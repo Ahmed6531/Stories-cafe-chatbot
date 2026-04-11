@@ -11,240 +11,37 @@ import { submitMenuItem } from "../../components/admin/submitMenuItem"
 import CategoryPicker from "../../components/admin/CategoryPicker"
 import VariantGroupsField from "../../components/admin/VariantGroupsField"
 import { normalizeVariantGroupIds } from "../../utils/variantGroups"
-import { styled } from "@mui/material/styles"
 import Box from "@mui/material/Box"
+import Button from "@mui/material/Button"
+import Checkbox from "@mui/material/Checkbox"
+import Divider from "@mui/material/Divider"
+import FormControlLabel from "@mui/material/FormControlLabel"
+import Table from "@mui/material/Table"
+import TableBody from "@mui/material/TableBody"
+import TableCell from "@mui/material/TableCell"
+import TableHead from "@mui/material/TableHead"
+import TableRow from "@mui/material/TableRow"
 import Typography from "@mui/material/Typography"
+import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined"
+import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined"
+import {
+  adminBadgeOptionalSx,
+  adminBodySx,
+  adminCardSx,
+  adminDangerGhostButtonSx,
+  adminGhostButtonSx,
+  adminHintSx,
+  adminInputSx,
+  adminLabelSx,
+  adminPageTitleSx,
+  adminPalette,
+  adminPrimaryButtonSx,
+  adminSectionLabelSx,
+  adminSelectSx,
+  adminSmallButtonSx,
+  adminTableWrapSx,
+} from "../../components/admin/adminUi"
 
-// ── Styled components ──────────────────────────────────────────────────────────
-
-const PageWrap = styled(Box)(() => ({
-  display: "flex",
-  flexDirection: "column",
-  gap: 28,
-}))
-
-const FormCard = styled(Box)(({ theme }) => ({
-  maxWidth: 560,
-  display: "flex",
-  flexDirection: "column",
-  gap: 12,
-  padding: "24px",
-  borderRadius: 16,
-  border: `1px solid ${theme.brand.borderCard}`,
-  background: theme.brand.bgLight,
-}))
-
-const FieldInput = styled("input")(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontSize: 14,
-  fontWeight: 500,
-  color: theme.brand.textPrimary,
-  background: "#fff",
-  border: `1px solid ${theme.brand.border}`,
-  borderRadius: 10,
-  padding: "10px 12px",
-  outline: "none",
-  width: "100%",
-  boxSizing: "border-box",
-  transition: "border-color 0.2s",
-  "&:focus": { borderColor: theme.brand.primary },
-  "&::placeholder": { color: theme.brand.radioInactive },
-}))
-
-const FieldTextarea = styled("textarea")(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontSize: 14,
-  fontWeight: 500,
-  color: theme.brand.textPrimary,
-  background: "#fff",
-  border: `1px solid ${theme.brand.border}`,
-  borderRadius: 10,
-  padding: "10px 12px",
-  outline: "none",
-  width: "100%",
-  boxSizing: "border-box",
-  resize: "vertical",
-  transition: "border-color 0.2s",
-  "&:focus": { borderColor: theme.brand.primary },
-  "&::placeholder": { color: theme.brand.radioInactive },
-}))
-
-const CheckRow = styled("label")(({ theme }) => ({
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  fontFamily: theme.brand.fontBase,
-  fontSize: 14,
-  fontWeight: 500,
-  color: theme.brand.textPrimary,
-  cursor: "pointer",
-  userSelect: "none",
-}))
-
-const BtnRow = styled(Box)(() => ({
-  display: "flex",
-  gap: 10,
-  marginTop: 4,
-}))
-
-const PrimaryBtn = styled("button")(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontWeight: 700,
-  fontSize: 14,
-  padding: "10px 20px",
-  borderRadius: 10,
-  border: "none",
-  background: theme.brand.primary,
-  color: "#fff",
-  cursor: "pointer",
-  transition: "background 0.2s",
-  "&:hover:not(:disabled)": { background: theme.brand.primaryHover },
-  "&:disabled": { opacity: 0.6, cursor: "not-allowed" },
-}))
-
-const GhostBtn = styled("button")(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontWeight: 600,
-  fontSize: 14,
-  padding: "10px 16px",
-  borderRadius: 10,
-  border: `1.5px solid ${theme.brand.border}`,
-  background: "#fff",
-  color: theme.brand.textPrimary,
-  cursor: "pointer",
-  transition: "border-color 0.2s, color 0.2s",
-  "&:hover": { borderColor: theme.brand.primary, color: theme.brand.primary },
-}))
-
-const DangerBtn = styled("button")(() => ({
-  fontFamily: "inherit",
-  fontWeight: 600,
-  fontSize: 13,
-  padding: "6px 12px",
-  borderRadius: 8,
-  border: "1.5px solid #fca5a5",
-  background: "#fff",
-  color: "#dc2626",
-  cursor: "pointer",
-  transition: "background 0.2s, border-color 0.2s",
-  "&:hover": { background: "#fef2f2", borderColor: "#dc2626" },
-}))
-
-const EditBtn = styled("button")(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontWeight: 600,
-  fontSize: 13,
-  padding: "6px 12px",
-  borderRadius: 8,
-  border: `1.5px solid ${theme.brand.border}`,
-  background: "#fff",
-  color: theme.brand.primary,
-  cursor: "pointer",
-  transition: "background 0.2s, border-color 0.2s",
-  "&:hover": {
-    background: "rgba(0,112,74,0.06)",
-    borderColor: theme.brand.primary,
-  },
-}))
-
-const StyledTable = styled("table")(({ theme }) => ({
-  width: "100%",
-  borderCollapse: "collapse",
-  fontFamily: theme.brand.fontBase,
-  fontSize: 14,
-}))
-
-const Th = styled("th")(({ theme }) => ({
-  textAlign: "left",
-  padding: "10px 14px",
-  fontWeight: 700,
-  fontSize: 13,
-  color: theme.brand.textSecondary,
-  borderBottom: `2px solid ${theme.brand.borderCard}`,
-  whiteSpace: "nowrap",
-}))
-
-const Td = styled("td")(({ theme }) => ({
-  padding: "10px 14px",
-  borderBottom: `1px solid ${theme.brand.borderLight}`,
-  color: theme.brand.textPrimary,
-  verticalAlign: "middle",
-}))
-
-const ErrorMsg = styled(Typography)(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontSize: 13,
-  fontWeight: 500,
-  color: theme.brand.error,
-  padding: "8px 12px",
-  background: "#fff5f5",
-  borderRadius: 8,
-  border: "1px solid #fecaca",
-}))
-
-const UploadZone = styled("label")(({ theme, $hasFile }) => ({
-  display: "flex",
-  alignItems: "center",
-  gap: 12,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: `1.5px dashed ${$hasFile ? theme.brand.primary : theme.brand.border}`,
-  background: $hasFile ? "rgba(0,112,74,0.04)" : "#fff",
-  cursor: "pointer",
-  transition: "border-color 0.2s, background 0.2s",
-  "&:hover": {
-    borderColor: theme.brand.primary,
-    background: "rgba(0,112,74,0.04)",
-  },
-}))
-
-const UploadLabel = styled(Typography)(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontSize: 13,
-  fontWeight: 500,
-  color: theme.brand.textSecondary,
-  flex: 1,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-}))
-
-const ImagePreview = styled("img")(() => ({
-  width: 48,
-  height: 48,
-  objectFit: "cover",
-  borderRadius: 8,
-  flexShrink: 0,
-  border: "1px solid #e5e7eb",
-}))
-
-const FieldGroup = styled(Box)(() => ({
-  display: "flex",
-  flexDirection: "column",
-  gap: 6,
-}))
-
-const FieldLabel = styled("label")(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontSize: 13,
-  fontWeight: 600,
-  color: theme.brand.textPrimary,
-}))
-
-const Badge = styled("span")(({ $yes }) => ({
-  display: "inline-block",
-  padding: "2px 8px",
-  borderRadius: 6,
-  fontSize: 12,
-  fontWeight: 600,
-  background: $yes ? "#dcfce7" : "#f3f4f6",
-  color: $yes ? "#166534" : "#6b7280",
-}))
-
-// ── Form state ─────────────────────────────────────────────────────────────────
-
-// slug intentionally excluded — auto-generated by the backend from name
-// categoryId is the ObjectId of the selected Category document
 const EMPTY_FORM = {
   name: "",
   categoryId: null,
@@ -255,7 +52,68 @@ const EMPTY_FORM = {
   isFeatured: false,
 }
 
-// ── Component ──────────────────────────────────────────────────────────────────
+const tableHeadCellSx = {
+  py: "11px",
+  px: "14px",
+  fontSize: 13,
+  fontWeight: 500,
+  color: adminPalette.textSecondary,
+  borderBottom: `0.5px solid ${adminPalette.borderRow}`,
+  backgroundColor: adminPalette.surfaceSoft,
+  whiteSpace: "nowrap",
+}
+
+const tableBodyCellSx = {
+  py: "11px",
+  px: "14px",
+  fontSize: 13,
+  color: adminPalette.textPrimary,
+  borderBottom: `0.5px solid ${adminPalette.borderRow}`,
+  verticalAlign: "middle",
+}
+
+function getBooleanBadgeSx(isActive) {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    borderRadius: "6px",
+    px: 1,
+    py: "2px",
+    fontSize: 11,
+    fontWeight: 500,
+    backgroundColor: isActive ? adminPalette.infoBg : adminPalette.pageBg,
+    color: isActive ? adminPalette.infoText : adminPalette.textSecondary,
+  }
+}
+
+const pickerOverridesSx = {
+  "& select": {
+    ...adminSelectSx,
+    fontFamily: "inherit",
+  },
+  "& input": {
+    ...adminInputSx,
+    fontFamily: "inherit",
+  },
+  "& button": {
+    ...adminGhostButtonSx,
+    fontFamily: "inherit",
+  },
+}
+
+const variantGroupsOverridesSx = {
+  "& > div > .MuiTypography-root:first-of-type": {
+    display: "none",
+  },
+  "& select": {
+    ...adminSelectSx,
+    borderStyle: "solid",
+  },
+  "& button": {
+    borderRadius: "8px",
+    fontFamily: "inherit",
+  },
+}
 
 export default function AdminItems() {
   const [items, setItems] = useState([])
@@ -273,7 +131,9 @@ export default function AdminItems() {
   const [attachedGroups, setAttachedGroups] = useState([])
   const [dragSrcId, setDragSrcId] = useState(null)
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -318,14 +178,17 @@ export default function AdminItems() {
     if (!form.categoryId) return "Category is required"
     if (!editingId && !imageFile && !imagePreview) return "Please select an image"
     const priceNum = Number(form.basePrice)
-    if (Number.isNaN(priceNum) || priceNum < 0) return "Base price must be a number ≥ 0"
+    if (Number.isNaN(priceNum) || priceNum < 0) return "Base price must be a number >= 0"
     return ""
   }
 
   async function onSubmit(e) {
     e.preventDefault()
     const msg = validateForm()
-    if (msg) { setFormError(msg); return }
+    if (msg) {
+      setFormError(msg)
+      return
+    }
     setFormError("")
 
     await submitMenuItem({
@@ -338,7 +201,10 @@ export default function AdminItems() {
       uploadMenuItemImage,
       fetchMenu,
       setItems,
-      resetForm: () => { setForm(EMPTY_FORM); setAttachedGroups([]) },
+      resetForm: () => {
+        setForm(EMPTY_FORM)
+        setAttachedGroups([])
+      },
       resetImage,
       setEditingId,
       setFormError,
@@ -364,7 +230,6 @@ export default function AdminItems() {
     setEditingId(item.id)
     setForm({
       name: item.name || "",
-      // item.category is now a populated Category object; extract its _id
       categoryId: item.category?._id || null,
       subcategory: item.subcategory || "",
       basePrice: item.basePrice ?? "",
@@ -386,11 +251,30 @@ export default function AdminItems() {
     setFormError("")
   }
 
-  if (loading) return <Typography sx={{ p: 2 }}>Loading menu items…</Typography>
-  if (error) return <ErrorMsg>{error}</ErrorMsg>
+  if (loading) {
+    return (
+      <Box sx={adminCardSx}>
+        <Typography sx={adminBodySx}>Loading menu items...</Typography>
+      </Box>
+    )
+  }
 
-  // Derive subcategory suggestions from the currently selected category's subcategories[].
-  // Falls back to deriving from loaded items for categories without defined subcategories yet.
+  if (error) {
+    return (
+      <Box
+        sx={{
+          ...adminCardSx,
+          borderColor: "#f5b7b1",
+          backgroundColor: "#fff8f7",
+        }}
+      >
+        <Typography sx={{ fontSize: 13, fontWeight: 500, color: adminPalette.danger }}>
+          {error}
+        </Typography>
+      </Box>
+    )
+  }
+
   const selectedCategory = form.categoryId
     ? items.find((i) => i.category?._id === form.categoryId)?.category
     : null
@@ -401,192 +285,406 @@ export default function AdminItems() {
   const imagePickerLabel = imageFile
     ? imageFile.name
     : imagePreview
-    ? "Click to replace image"
-    : "Click to choose image…"
+      ? "Click to replace image"
+      : "Click to choose image..."
 
   return (
-    <PageWrap>
-      <Typography variant="h5" sx={{ fontWeight: 700 }}>
-        Manage Menu Items
-      </Typography>
-
-      {/* ── Form ─────────────────────────────────────────────────────────────── */}
-      <FormCard component="form" onSubmit={onSubmit}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 0.5 }}>
-          {editingId ? "Edit Item" : "Create New Item"}
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+        <Typography sx={adminPageTitleSx}>Items</Typography>
+        <Typography sx={{ ...adminBodySx, maxWidth: 760 }}>
+          Maintain menu items, pricing, imagery, and category-scoped variant groups without
+          touching the underlying item workflow.
         </Typography>
+      </Box>
 
-        {formError && <ErrorMsg component="p">{formError}</ErrorMsg>}
+      <Box
+        component="form"
+        onSubmit={onSubmit}
+        sx={{
+          ...adminCardSx,
+          display: "flex",
+          flexDirection: "column",
+          gap: 2.25,
+          width: "100%",
+        }}
+      >
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 2, flexWrap: "wrap" }}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            <Typography sx={adminSectionLabelSx}>Item details</Typography>
+            <Typography sx={{ fontSize: 14, fontWeight: 500, color: adminPalette.textPrimary }}>
+              {editingId ? "Editing menu item" : "Create a new menu item"}
+            </Typography>
+          </Box>
+          {editingId && (
+            <Button type="button" onClick={cancelEdit} sx={adminGhostButtonSx}>
+              Cancel edit
+            </Button>
+          )}
+        </Box>
 
-        <FieldGroup>
-          <FieldLabel htmlFor="item-name">Item name</FieldLabel>
-          <FieldInput
-            id="item-name"
-            name="name"
-            placeholder="e.g. Iced Latte"
-            value={form.name}
-            onChange={onFormChange}
-          />
-        </FieldGroup>
-
-        <FieldGroup>
-          <FieldLabel>Category</FieldLabel>
-          <CategoryPicker
-            value={form.categoryId}
-            onChange={(id) => {
-              // Clear attached groups when category changes — groups are category-scoped
-              setAttachedGroups([])
-              setForm((prev) => ({ ...prev, categoryId: id, subcategory: "" }))
+        {formError && (
+          <Box
+            sx={{
+              borderRadius: "8px",
+              border: "0.5px solid #f5b7b1",
+              backgroundColor: "#fff8f7",
+              px: 1.25,
+              py: 1,
             }}
-          />
-        </FieldGroup>
+          >
+            <Typography sx={{ fontSize: 12, fontWeight: 500, color: adminPalette.danger }}>
+              {formError}
+            </Typography>
+          </Box>
+        )}
 
-        <FieldGroup>
-          <FieldLabel htmlFor="item-subcategory">Subcategory</FieldLabel>
-          <datalist id="subcategory-options">
-            {subcategoryOptions.map((s) => <option key={s} value={s} />)}
-          </datalist>
-          <FieldInput
-            id="item-subcategory"
-            name="subcategory"
-            placeholder="e.g. Hot, Iced, Frap"
-            value={form.subcategory}
-            onChange={onFormChange}
-            list="subcategory-options"
-          />
-        </FieldGroup>
-
-        {/* ── Image upload ─────────────────────────────────────────────────── */}
-        <FieldGroup>
-          <span style={{ fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>Image</span>
-          <UploadZone $hasFile={!!imageFile || !!imagePreview}>
-            {imagePreview && <ImagePreview src={imagePreview} alt="preview" />}
-            <UploadLabel>{imagePickerLabel}</UploadLabel>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-              style={{ display: "none" }}
-              onChange={onFileChange}
+        <Box
+          sx={{
+            display: "grid",
+            gap: 2,
+            gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
+          }}
+        >
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+            <Typography component="label" htmlFor="item-name" sx={adminLabelSx}>
+              Name
+            </Typography>
+            <Box
+              component="input"
+              id="item-name"
+              name="name"
+              placeholder="Iced latte"
+              value={form.name}
+              onChange={onFormChange}
+              sx={adminInputSx}
             />
-          </UploadZone>
-        </FieldGroup>
+          </Box>
 
-        <FieldGroup>
-          <FieldLabel htmlFor="item-price">Base price (L.L)</FieldLabel>
-          <FieldInput
-            id="item-price"
-            name="basePrice"
-            placeholder="e.g. 350000"
-            value={form.basePrice}
-            onChange={onFormChange}
-            type="number"
-            step="0.01"
-            min="0"
-          />
-        </FieldGroup>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+            <Typography sx={adminLabelSx}>Category</Typography>
+            <Box sx={pickerOverridesSx}>
+              <CategoryPicker
+                value={form.categoryId}
+                onChange={(id) => {
+                  setAttachedGroups([])
+                  setForm((prev) => ({ ...prev, categoryId: id, subcategory: "" }))
+                }}
+              />
+            </Box>
+          </Box>
 
-        <FieldGroup>
-          <FieldLabel htmlFor="item-description">Description</FieldLabel>
-          <FieldTextarea
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+            <Typography component="label" htmlFor="item-price" sx={adminLabelSx}>
+              Price
+            </Typography>
+            <Box
+              component="input"
+              id="item-price"
+              name="basePrice"
+              placeholder="350000"
+              value={form.basePrice}
+              onChange={onFormChange}
+              type="number"
+              step="0.01"
+              min="0"
+              sx={adminInputSx}
+            />
+          </Box>
+
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+            <Typography component="label" htmlFor="item-subcategory" sx={adminLabelSx}>
+              Subcategory
+            </Typography>
+            <datalist id="subcategory-options">
+              {subcategoryOptions.map((subcategory) => (
+                <option key={subcategory} value={subcategory} />
+              ))}
+            </datalist>
+            <Box
+              component="input"
+              id="item-subcategory"
+              name="subcategory"
+              placeholder="Hot, Iced, Frap"
+              value={form.subcategory}
+              onChange={onFormChange}
+              list="subcategory-options"
+              sx={adminInputSx}
+            />
+          </Box>
+        </Box>
+
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+          <Typography component="label" htmlFor="item-description" sx={adminLabelSx}>
+            Description
+          </Typography>
+          <Box
+            component="textarea"
             id="item-description"
             name="description"
             placeholder="A short description shown to customers"
             value={form.description}
             onChange={onFormChange}
-            rows={3}
+            rows={4}
+            sx={{
+              ...adminInputSx,
+              resize: "vertical",
+              minHeight: 112,
+            }}
           />
-        </FieldGroup>
+          <Typography sx={adminHintSx}>
+            Keep the customer-facing description concise and neutral.
+          </Typography>
+        </Box>
 
-        {/* ── Variant groups ───────────────────────────────────────────────── */}
-        <VariantGroupsField
-          key={form.categoryId || "no-category"}
-          categoryId={form.categoryId}
-          attachedGroups={attachedGroups}
-          setAttachedGroups={setAttachedGroups}
-          dragSrcId={dragSrcId}
-          setDragSrcId={setDragSrcId}
-        />
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+          <Typography sx={adminLabelSx}>Image</Typography>
+          <Box
+            component="label"
+            sx={{
+              border: "0.5px dashed rgba(0,0,0,0.18)",
+              borderRadius: "12px",
+              backgroundColor: adminPalette.surfaceSoft,
+              minHeight: 132,
+              p: 2,
+              display: "flex",
+              alignItems: "center",
+              gap: 2,
+              cursor: "pointer",
+            }}
+          >
+            {imagePreview ? (
+              <Box
+                component="img"
+                src={imagePreview}
+                alt="Item preview"
+                sx={{
+                  width: 84,
+                  height: 84,
+                  borderRadius: "10px",
+                  objectFit: "cover",
+                  border: "0.5px solid rgba(0,0,0,0.10)",
+                  flexShrink: 0,
+                }}
+              />
+            ) : (
+              <Box
+                sx={{
+                  width: 84,
+                  height: 84,
+                  borderRadius: "10px",
+                  backgroundColor: adminPalette.surface,
+                  border: "0.5px solid rgba(0,0,0,0.10)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: adminPalette.textTertiary,
+                  flexShrink: 0,
+                }}
+              >
+                <ImageOutlinedIcon />
+              </Box>
+            )}
 
-        <CheckRow>
-          <input
-            type="checkbox"
-            name="isAvailable"
-            checked={form.isAvailable}
-            onChange={onFormChange}
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, minWidth: 0 }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 500, color: adminPalette.textPrimary }}>
+                Upload product image
+              </Typography>
+              <Typography sx={{ ...adminBodySx, color: adminPalette.textTertiary }}>
+                {imagePickerLabel}
+              </Typography>
+              <Typography sx={adminHintSx}>
+                JPG, PNG, WEBP, GIF, or AVIF. The current submit flow remains unchanged.
+              </Typography>
+            </Box>
+
+            <Box
+              sx={{
+                ml: "auto",
+                width: 34,
+                height: 34,
+                borderRadius: "999px",
+                backgroundColor: adminPalette.surface,
+                border: "0.5px solid rgba(0,0,0,0.10)",
+                color: adminPalette.textPrimary,
+                display: { xs: "none", sm: "inline-flex" },
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <CloudUploadOutlinedIcon sx={{ fontSize: 18 }} />
+            </Box>
+
+            <Box
+              component="input"
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+              sx={{ display: "none" }}
+              onChange={onFileChange}
+            />
+          </Box>
+        </Box>
+
+        <Divider sx={{ borderColor: "rgba(0,0,0,0.08)" }} />
+
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+            <Typography sx={adminSectionLabelSx}>Variant groups</Typography>
+            <Box sx={adminBadgeOptionalSx}>{attachedGroups.length} attached</Box>
+          </Box>
+          <Box sx={variantGroupsOverridesSx}>
+            <VariantGroupsField
+              key={form.categoryId || "no-category"}
+              categoryId={form.categoryId}
+              attachedGroups={attachedGroups}
+              setAttachedGroups={setAttachedGroups}
+              dragSrcId={dragSrcId}
+              setDragSrcId={setDragSrcId}
+            />
+          </Box>
+        </Box>
+
+        <Box
+          sx={{
+            display: "grid",
+            gap: 1,
+            gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
+          }}
+        >
+          <FormControlLabel
+            control={
+              <Checkbox
+                name="isAvailable"
+                checked={form.isAvailable}
+                onChange={onFormChange}
+                sx={{
+                  color: adminPalette.textTertiary,
+                  "&.Mui-checked": {
+                    color: adminPalette.textPrimary,
+                  },
+                }}
+              />
+            }
+            label={<Typography sx={adminLabelSx}>Available</Typography>}
+            sx={{ m: 0 }}
           />
-          Available
-        </CheckRow>
 
-        <CheckRow>
-          <input
-            type="checkbox"
-            name="isFeatured"
-            checked={form.isFeatured}
-            onChange={onFormChange}
+          <FormControlLabel
+            control={
+              <Checkbox
+                name="isFeatured"
+                checked={form.isFeatured}
+                onChange={onFormChange}
+                sx={{
+                  color: adminPalette.textTertiary,
+                  "&.Mui-checked": {
+                    color: adminPalette.textPrimary,
+                  },
+                }}
+              />
+            }
+            label={<Typography sx={adminLabelSx}>Featured on homepage</Typography>}
+            sx={{ m: 0 }}
           />
-          Featured on homepage
-        </CheckRow>
+        </Box>
 
-        <BtnRow>
-          <PrimaryBtn type="submit" disabled={saving}>
-            {saving ? "Saving…" : editingId ? "Save Changes" : "Create"}
-          </PrimaryBtn>
+        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+          <Button type="submit" disabled={saving} sx={adminPrimaryButtonSx}>
+            {saving ? "Saving..." : editingId ? "Save changes" : "Create item"}
+          </Button>
           {editingId && (
-            <GhostBtn type="button" onClick={cancelEdit}>
+            <Button type="button" onClick={cancelEdit} sx={adminGhostButtonSx}>
               Cancel
-            </GhostBtn>
+            </Button>
           )}
-        </BtnRow>
-      </FormCard>
+        </Box>
+      </Box>
 
-      {/* ── Table ────────────────────────────────────────────────────────────── */}
-      <Box sx={{ overflowX: "auto" }}>
-        <StyledTable>
-          <thead>
-            <tr>
-              <Th>Name</Th>
-              <Th>Category</Th>
-              <Th>Image</Th>
-              <Th>Base Price</Th>
-              <Th>Available</Th>
-              <Th>Featured</Th>
-              <Th>Actions</Th>
-            </tr>
-          </thead>
-          <tbody>
+      <Box sx={adminTableWrapSx}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell sx={tableHeadCellSx}>Name</TableCell>
+              <TableCell sx={tableHeadCellSx}>Category</TableCell>
+              <TableCell sx={tableHeadCellSx}>Image</TableCell>
+              <TableCell sx={tableHeadCellSx}>Base price</TableCell>
+              <TableCell sx={tableHeadCellSx}>Available</TableCell>
+              <TableCell sx={tableHeadCellSx}>Featured</TableCell>
+              <TableCell sx={tableHeadCellSx}>Actions</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
             {items.map((item) => (
-              <tr key={item.id}>
-                <Td>{item.name}</Td>
-                <Td>{item.category?.name || "—"}</Td>
-                <Td>
-                  {/* item.image is null (not placeholder path) when no image uploaded */}
+              <TableRow
+                key={item.id}
+                sx={{
+                  "&:hover": {
+                    backgroundColor: "#fafaf9",
+                  },
+                  "&:last-of-type td": {
+                    borderBottom: "none",
+                  },
+                }}
+              >
+                <TableCell sx={tableBodyCellSx}>{item.name}</TableCell>
+                <TableCell sx={tableBodyCellSx}>{item.category?.name || "-"}</TableCell>
+                <TableCell sx={tableBodyCellSx}>
                   {item.image ? (
-                    <img
+                    <Box
+                      component="img"
                       src={item.image}
                       alt={item.name}
-                      width={48}
-                      height={48}
-                      style={{ borderRadius: 6, objectFit: "cover", display: "block" }}
+                      sx={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: "8px",
+                        objectFit: "cover",
+                        display: "block",
+                        border: "0.5px solid rgba(0,0,0,0.10)",
+                      }}
                     />
                   ) : (
-                    <span style={{ color: "#9ca3af", fontSize: 12 }}>No image</span>
+                    <Typography sx={{ fontSize: 12, color: adminPalette.textTertiary }}>
+                      No image
+                    </Typography>
                   )}
-                </Td>
-                <Td>L.L {item.basePrice?.toLocaleString()}</Td>
-                <Td><Badge $yes={item.isAvailable}>{item.isAvailable ? "Yes" : "No"}</Badge></Td>
-                <Td><Badge $yes={item.isFeatured}>{item.isFeatured ? "Yes" : "No"}</Badge></Td>
-                <Td>
-                  <Box sx={{ display: "flex", gap: 1 }}>
-                    <EditBtn type="button" onClick={() => startEdit(item)}>Edit</EditBtn>
-                    <DangerBtn type="button" onClick={() => handleDelete(item.id)}>Delete</DangerBtn>
+                </TableCell>
+                <TableCell sx={tableBodyCellSx}>L.L {item.basePrice?.toLocaleString()}</TableCell>
+                <TableCell sx={tableBodyCellSx}>
+                  <Box sx={getBooleanBadgeSx(item.isAvailable)}>
+                    {item.isAvailable ? "Yes" : "No"}
                   </Box>
-                </Td>
-              </tr>
+                </TableCell>
+                <TableCell sx={tableBodyCellSx}>
+                  <Box sx={getBooleanBadgeSx(item.isFeatured)}>
+                    {item.isFeatured ? "Yes" : "No"}
+                  </Box>
+                </TableCell>
+                <TableCell sx={tableBodyCellSx}>
+                  <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                    <Button
+                      type="button"
+                      onClick={() => startEdit(item)}
+                      sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx }}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => handleDelete(item.id)}
+                      sx={{ ...adminDangerGhostButtonSx, ...adminSmallButtonSx }}
+                    >
+                      Delete
+                    </Button>
+                  </Box>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </StyledTable>
+          </TableBody>
+        </Table>
       </Box>
-    </PageWrap>
+    </Box>
   )
 }

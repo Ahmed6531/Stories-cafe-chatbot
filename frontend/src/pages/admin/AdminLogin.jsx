@@ -1,104 +1,94 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import {
   Box,
   Paper,
   TextField,
   Button,
   Typography,
-  InputAdornment
-} from "@mui/material";
-import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
-import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
-import { adminLogin } from "../../API/adminApi";
-import { useSession } from "../../hooks/useSession";
+  InputAdornment,
+} from "@mui/material"
+import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined"
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined"
+import { adminLogin } from "../../API/adminApi"
+import { useSession } from "../../hooks/useSession"
+import {
+  adminBodySx,
+  adminBorder,
+  adminPageTitleSx,
+  adminPalette,
+  adminPrimaryButtonSx,
+  adminTextFieldSx,
+} from "../../components/admin/adminUi"
 
 export default function AdminLogin() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const navigate = useNavigate();
-  const { refreshSession } = useSession();
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const navigate = useNavigate()
+  const { refreshSession } = useSession()
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
+    e.preventDefault()
+    setError("")
 
     try {
-      await adminLogin({ email, password });
-      await refreshSession();
-      navigate("/admin");
+      await adminLogin({ email, password })
+      await refreshSession()
+      navigate("/admin")
     } catch (err) {
-      const message = err.response?.data?.error?.message || "Invalid email or password";
-      setError(message);
+      const message = err.response?.data?.error?.message || "Invalid email or password"
+      setError(message)
     }
-  };
+  }
 
   return (
     <Box
       sx={{
         minHeight: "100vh",
-        background: "#fff",
+        backgroundColor: adminPalette.pageBg,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        px: 2
+        px: 2,
       }}
     >
       <Paper
-        elevation={6}
+        elevation={0}
         sx={{
           width: "100%",
           maxWidth: 400,
-          p: "20px",
-          borderRadius: "12px",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-          border: "1px solid #e0e0e0"
+          p: { xs: 2.5, sm: 3 },
+          borderRadius: "14px",
+          border: adminBorder,
+          boxShadow: "none",
+          backgroundColor: adminPalette.surface,
         }}
       >
-        <Box sx={{ textAlign: "center", mb: "50px" }}>
-          <Typography
-            variant="h3"
-            sx={{
-              fontWeight: 700,
-              color: "#1b5e20",
-              mb: 1
-            }}
-          >
-            Stories Café
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75, mb: 3 }}>
+          <Typography sx={adminPageTitleSx}>Stories Café</Typography>
+          <Typography sx={{ ...adminBodySx, color: adminPalette.textPrimary, fontWeight: 500 }}>
+            Admin login
           </Typography>
-
-          <Typography
-            variant="h5"
-            sx={{
-              fontWeight: 700,
-              color: "#2e7d32"
-            }}
-          >
-            Admin Login
-          </Typography>
-
-          <Typography
-            variant="body2"
-            sx={{ color: "#5f6f65", mt: "10px" }}
-          >
-            Sign in to access the admin dashboard
+          <Typography sx={adminBodySx}>
+            Sign in to manage items, categories, variant groups, and orders.
           </Typography>
         </Box>
 
-        <Box component="form" onSubmit={handleSubmit} display="flex" flexDirection="column" gap={2}>
+        <Box component="form" onSubmit={handleSubmit} sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <TextField
-            label="Admin Email"
+            label="Admin email"
             type="email"
             fullWidth
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            sx={adminTextFieldSx}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
-                  <EmailOutlinedIcon sx={{ color: "#2e7d32" }} />
+                  <EmailOutlinedIcon sx={{ color: adminPalette.textTertiary }} />
                 </InputAdornment>
-              )
+              ),
             }}
           />
 
@@ -108,53 +98,38 @@ export default function AdminLogin() {
             fullWidth
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            sx={adminTextFieldSx}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
-                  <LockOutlinedIcon sx={{ color: "#2e7d32" }} />
+                  <LockOutlinedIcon sx={{ color: adminPalette.textTertiary }} />
                 </InputAdornment>
-              )
+              ),
             }}
           />
 
           {error && (
-            <p
+            <Box
               role="status"
-              style={{
-                margin: '-6px 0 0 0',
-                color: '#d93025',
-                fontStyle: 'italic',
-                fontWeight: 600,
-                fontSize: '12px',
+              sx={{
+                borderRadius: "8px",
+                border: "0.5px solid #f5b7b1",
+                backgroundColor: "#fff8f7",
+                px: 1.25,
+                py: 1,
               }}
             >
-              {error}
-            </p>
+              <Typography sx={{ fontSize: 12, fontWeight: 500, color: adminPalette.danger }}>
+                {error}
+              </Typography>
+            </Box>
           )}
 
-          <Button
-            type="submit"
-            variant="contained"
-            size="large"
-            sx={{
-              mt: "12px",
-              padding: "1rem 2rem",
-              borderRadius: "8px",
-              fontWeight: 600,
-              textTransform: "none",
-              letterSpacing: "0.5px",
-              backgroundColor: (theme) => theme.brand.primaryDark,
-              transition: "all 0.3s ease",
-              "&:hover": {
-                backgroundColor: (theme) => theme.brand.primaryDark,
-                transform: "translateY(-2px)",
-              }
-            }}
-          >
+          <Button type="submit" variant="contained" fullWidth sx={{ ...adminPrimaryButtonSx, mt: 0.5, py: 1.1 }}>
             Login
           </Button>
         </Box>
       </Paper>
     </Box>
-  );
+  )
 }
