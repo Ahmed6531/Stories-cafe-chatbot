@@ -1,5 +1,6 @@
 import { Category } from "../models/Category.js";
 import { VariantGroup } from "../models/VariantGroup.js";
+import { MenuItem } from "../models/MenuItem.js";
 import { deleteGCSImage } from "../middleware/upload.js";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -19,6 +20,12 @@ function buildVariantGroupCategoryFilter(categoryId) {
       { ctagId: categoryId },
     ],
   };
+}
+
+function getVariantGroupRefs(group) {
+  return [group?.refId, group?.groupId]
+    .filter((value) => typeof value === "string" && value.trim())
+    .map((value) => value.trim());
 }
 
 // ─── GET /categories ──────────────────────────────────────────────────────────
@@ -188,23 +195,76 @@ export async function uploadCategoryImage(req, res) {
 }
 
 // ─── DELETE /categories/:id ───────────────────────────────────────────────────
-// Admin only. Soft delete — sets isActive: false. Never hard-deletes.
+// Admin only. Permanently deletes a category, optionally cascading to related
+// menu items and variant groups after explicit confirmation.
 
 export async function deleteCategory(req, res) {
   try {
     const { id } = req.params;
-    const updated = await Category.findByIdAndUpdate(
-      id,
-      { $set: { isActive: false } },
-      { new: true },
-    );
-    if (!updated) {
+    const cascade = req.query.cascade === "true";
+    const existing = await Category.findById(id).lean();
+    if (!existing) {
       return res.status(404).json({ success: false, error: "Category not found." });
     }
-    res.status(200).json({ success: true, message: "Category deactivated.", category: updated });
+
+    const [relatedItems, relatedGroups] = await Promise.all([
+      MenuItem.find({ category: existing._id }).select("_id id image variantGroups").lean(),
+      VariantGroup.find(buildVariantGroupCategoryFilter(existing._id))
+        .select("_id refId groupId")
+        .lean(),
+    ]);
+
+    const menuItemCount = relatedItems.length;
+    const variantGroupCount = relatedGroups.length;
+
+    if (menuItemCount > 0 || variantGroupCount > 0) {
+      if (!cascade) {
+        return res.status(409).json({
+          success: false,
+          error: "Category is still in use. Confirm cascade delete to remove its menu items and variant groups.",
+          requiresCascade: true,
+          usage: {
+            menuItems: menuItemCount,
+            variantGroups: variantGroupCount,
+          },
+        });
+      }
+    }
+
+    const groupRefs = [...new Set(relatedGroups.flatMap(getVariantGroupRefs))];
+
+    if (groupRefs.length > 0) {
+      await MenuItem.updateMany(
+        { variantGroups: { $in: groupRefs } },
+        { $pull: { variantGroups: { $in: groupRefs } } },
+      );
+    }
+
+    await Promise.allSettled(relatedItems.map((item) => deleteGCSImage(item.image)));
+    await deleteGCSImage(existing.image);
+
+    if (menuItemCount > 0) {
+      await MenuItem.deleteMany({ category: existing._id });
+    }
+    if (variantGroupCount > 0) {
+      await VariantGroup.deleteMany(buildVariantGroupCategoryFilter(existing._id));
+    }
+    await Category.deleteOne({ _id: existing._id });
+
+    res.status(200).json({
+      success: true,
+      message: cascade && (menuItemCount > 0 || variantGroupCount > 0)
+        ? "Category and its related data deleted permanently."
+        : "Category deleted permanently.",
+      deletedCategoryId: String(existing._id),
+      deletedCounts: {
+        menuItems: menuItemCount,
+        variantGroups: variantGroupCount,
+      },
+    });
   } catch (error) {
-    console.error("Failed to deactivate category:", error.message);
-    res.status(500).json({ success: false, error: "Failed to deactivate category." });
+    console.error("Failed to delete category:", error.message);
+    res.status(500).json({ success: false, error: "Failed to delete category." });
   }
 }
 

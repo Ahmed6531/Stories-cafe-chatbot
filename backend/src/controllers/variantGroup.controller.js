@@ -1,5 +1,6 @@
 import { VariantGroup } from "../models/VariantGroup.js";
 import { Category } from "../models/Category.js";
+import { MenuItem } from "../models/MenuItem.js";
 import { generateVariantGroupRefId } from "../utils/variantGroupRefs.js";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -27,6 +28,12 @@ function buildScopedGroupFilter(groupRef, categoryId) {
       },
     ],
   };
+}
+
+function getGroupRefs(group) {
+  return [group?.refId, group?.groupId]
+    .filter((value) => typeof value === "string" && value.trim())
+    .map((value) => value.trim());
 }
 
 // ─── GET /variant-groups ──────────────────────────────────────────────────────
@@ -182,19 +189,60 @@ export async function deleteVariantGroup(req, res) {
   try {
     const { groupId } = req.params;
     const scopedCategoryId = req.params.categoryId || null;
+    const hardDelete = req.query.hard === "true";
+    const cascade = req.query.cascade === "true";
 
-    const updated = await VariantGroup.findOneAndUpdate(
-      buildScopedGroupFilter(groupId, scopedCategoryId),
-      { $set: { isActive: false } },
-      { new: true },
-    );
-    if (!updated) {
+    const existing = await VariantGroup.findOne(buildScopedGroupFilter(groupId, scopedCategoryId)).lean();
+    if (!existing) {
       return res.status(404).json({ success: false, error: "Variant group not found." });
     }
 
-    res.status(200).json({ success: true, message: "Variant group deactivated." });
+    if (!hardDelete) {
+      const updated = await VariantGroup.findOneAndUpdate(
+        buildScopedGroupFilter(groupId, scopedCategoryId),
+        { $set: { isActive: false } },
+        { new: true },
+      );
+
+      return res.status(200).json({ success: true, message: "Variant group deactivated.", group: updated });
+    }
+
+    const refs = getGroupRefs(existing);
+    const attachedMenuItemCount = await MenuItem.countDocuments({
+      variantGroups: { $in: refs },
+    });
+
+    if (attachedMenuItemCount > 0 && !cascade) {
+      return res.status(409).json({
+        success: false,
+        error: "Variant group is still attached to menu items. Confirm cascade delete to remove it from those items.",
+        requiresCascade: true,
+        usage: {
+          menuItems: attachedMenuItemCount,
+        },
+      });
+    }
+
+    if (refs.length > 0) {
+      await MenuItem.updateMany(
+        { variantGroups: { $in: refs } },
+        { $pull: { variantGroups: { $in: refs } } },
+      );
+    }
+
+    await VariantGroup.deleteOne({ _id: existing._id });
+
+    res.status(200).json({
+      success: true,
+      message: attachedMenuItemCount > 0
+        ? "Variant group deleted and removed from attached menu items."
+        : "Variant group deleted permanently.",
+      deletedGroupId: String(existing._id),
+      deletedRefs: refs,
+      detachedFromMenuItems: attachedMenuItemCount,
+    });
   } catch (error) {
-    console.error("Failed to deactivate variant group:", error.message);
-    res.status(500).json({ success: false, error: "Failed to deactivate variant group." });
+    console.error("Failed to delete variant group:", error.message);
+    res.status(500).json({ success: false, error: "Failed to delete variant group." });
   }
 }

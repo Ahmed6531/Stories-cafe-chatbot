@@ -1,5 +1,12 @@
 import http from './http'
 
+function toApiError(error, fallbackMessage) {
+  const next = new Error(error.response?.data?.error || fallbackMessage)
+  next.status = error.response?.status || null
+  next.data = error.response?.data || null
+  return next
+}
+
 /**
  * Fetch all variant groups, sorted by adminName.
  * @returns {Promise<Array>} Array of variant group objects
@@ -11,7 +18,7 @@ export async function fetchVariantGroups() {
     return response.data.groups || []
   } catch (error) {
     console.error('Failed to fetch variant groups:', error)
-    throw new Error(error.response?.data?.error || 'Failed to load variant groups')
+    throw toApiError(error, 'Failed to load variant groups')
   }
 }
 
@@ -22,7 +29,7 @@ export async function fetchVariantGroupsByCategory(categoryId) {
     return response.data.groups || []
   } catch (error) {
     console.error(`Failed to fetch variant groups for category ${categoryId}:`, error)
-    throw new Error(error.response?.data?.error || 'Failed to load variant groups')
+    throw toApiError(error, 'Failed to load variant groups')
   }
 }
 
@@ -33,7 +40,7 @@ export async function createVariantGroupForCategory(categoryId, data) {
     return response.data.group
   } catch (error) {
     console.error('Failed to create variant group:', error)
-    throw new Error(error.response?.data?.error || 'Failed to create variant group')
+    throw toApiError(error, 'Failed to create variant group')
   }
 }
 
@@ -44,7 +51,7 @@ export async function updateVariantGroupForCategory(categoryId, groupId, data) {
     return response.data.group
   } catch (error) {
     console.error(`Failed to update variant group ${groupId}:`, error)
-    throw new Error(error.response?.data?.error || 'Failed to update variant group')
+    throw toApiError(error, 'Failed to update variant group')
   }
 }
 
@@ -55,7 +62,19 @@ export async function deleteVariantGroupForCategory(categoryId, groupId) {
     return response.data
   } catch (error) {
     console.error(`Failed to delete variant group ${groupId}:`, error)
-    throw new Error(error.response?.data?.error || 'Failed to delete variant group')
+    throw toApiError(error, 'Failed to delete variant group')
+  }
+}
+
+export async function hardDeleteVariantGroupForCategory(categoryId, groupId, { cascade = false } = {}) {
+  try {
+    const params = new URLSearchParams({ hard: "true" })
+    if (cascade) params.set("cascade", "true")
+    const response = await http.delete(`/categories/${categoryId}/variant-groups/${groupId}?${params.toString()}`)
+    return response.data
+  } catch (error) {
+    console.error(`Failed to hard delete variant group ${groupId}:`, error)
+    throw toApiError(error, 'Failed to delete variant group permanently')
   }
 }
 
@@ -71,7 +90,7 @@ export async function createVariantGroup(data) {
     return response.data.group
   } catch (error) {
     console.error('Failed to create variant group:', error)
-    throw new Error(error.response?.data?.error || 'Failed to create variant group')
+    throw toApiError(error, 'Failed to create variant group')
   }
 }
 
@@ -87,7 +106,7 @@ export async function updateVariantGroup(groupId, data) {
     return response.data.group
   } catch (error) {
     console.error(`Failed to update variant group ${groupId}:`, error)
-    throw new Error(error.response?.data?.error || 'Failed to update variant group')
+    throw toApiError(error, 'Failed to update variant group')
   }
 }
 
@@ -102,6 +121,6 @@ export async function deleteVariantGroup(groupId) {
     return response.data
   } catch (error) {
     console.error(`Failed to delete variant group ${groupId}:`, error)
-    throw new Error(error.response?.data?.error || 'Failed to delete variant group')
+    throw toApiError(error, 'Failed to delete variant group')
   }
 }

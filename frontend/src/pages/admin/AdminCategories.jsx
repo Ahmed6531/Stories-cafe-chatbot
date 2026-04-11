@@ -6,6 +6,7 @@ import {
   fetchCategories,
   createCategory,
   updateCategory,
+  deleteCategory,
   uploadCategoryImage,
 } from "../../API/categoryApi"
 import {
@@ -13,6 +14,7 @@ import {
   createVariantGroupForCategory,
   updateVariantGroupForCategory,
   deleteVariantGroupForCategory,
+  hardDeleteVariantGroupForCategory,
 } from "../../API/variantGroupApi"
 import { invalidateCategoriesCache } from "../../API/menuApi"
 
@@ -168,6 +170,11 @@ function useObjectPreview(initialValue = "") {
   }
 
   return [preview, replacePreview]
+}
+
+function confirmCascadeDelete(message) {
+  const typed = window.prompt(`${message}\n\nType DELETE to continue.`)
+  return typed === "DELETE"
 }
 
 function createSuboptionDraft(suboption = {}) {
@@ -550,6 +557,39 @@ function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }
     setError("")
   }
 
+  async function handleDeletePermanently() {
+    const baseConfirm = window.confirm(`Delete the variant group "${group.adminName}" permanently?`)
+    if (!baseConfirm) return
+
+    setSaving(true)
+    setError("")
+    try {
+      await hardDeleteVariantGroupForCategory(categoryId, getVariantGroupRef(group))
+      onSaved()
+    } catch (err) {
+      if (err?.status === 409 && err?.data?.requiresCascade) {
+        const menuItems = err.data?.usage?.menuItems ?? 0
+        const approved = confirmCascadeDelete(
+          `This variant group is used by ${menuItems} menu item${menuItems === 1 ? "" : "s"}.\nDeleting it will remove this option group from those items and may change active cart pricing.`
+        )
+        if (!approved) {
+          setSaving(false)
+          return
+        }
+        try {
+          await hardDeleteVariantGroupForCategory(categoryId, getVariantGroupRef(group), { cascade: true })
+          onSaved()
+        } catch (cascadeErr) {
+          setError(cascadeErr.message)
+        }
+      } else {
+        setError(err.message)
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <Box
       sx={{
@@ -582,6 +622,9 @@ function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }
         </GhostBtn>
         <DangerBtn type="button" onClick={() => onDeactivate(getVariantGroupRef(group))}>
           Deactivate
+        </DangerBtn>
+        <DangerBtn type="button" onClick={handleDeletePermanently} disabled={saving}>
+          Delete permanently
         </DangerBtn>
       </Box>
 
@@ -704,6 +747,42 @@ function CategoryDetail({ category, onRefresh }) {
     onRefresh()
   }
 
+  async function handleDeleteCategory() {
+    const confirmed = window.confirm(`Delete "${category.name}" permanently? If it is still in use, you will get a second cascade warning.`)
+    if (!confirmed) return
+
+    setSaving(true)
+    setError("")
+    try {
+      await deleteCategory(category._id)
+      invalidateCategoriesCache()
+      onRefresh()
+    } catch (err) {
+      if (err?.status === 409 && err?.data?.requiresCascade) {
+        const menuItems = err.data?.usage?.menuItems ?? 0
+        const variantGroups = err.data?.usage?.variantGroups ?? 0
+        const approved = confirmCascadeDelete(
+          `This will delete ${menuItems} menu item${menuItems === 1 ? "" : "s"} and ${variantGroups} variant group${variantGroups === 1 ? "" : "s"} in "${category.name}".\nActive customer carts may lose these items.`
+        )
+        if (!approved) {
+          setSaving(false)
+          return
+        }
+        try {
+          await deleteCategory(category._id, { cascade: true })
+          invalidateCategoriesCache()
+          onRefresh()
+        } catch (cascadeErr) {
+          setError(cascadeErr.message)
+        }
+      } else {
+        setError(err.message)
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleDeactivateGroup(groupId) {
     await deleteVariantGroupForCategory(category._id, groupId).catch(() => null)
     loadGroups()
@@ -762,6 +841,9 @@ function CategoryDetail({ category, onRefresh }) {
         <Toggle type="button" $active={category.isActive} onClick={handleToggleActive}>
           {category.isActive ? "Active" : "Inactive"}
         </Toggle>
+        <DangerBtn type="button" onClick={handleDeleteCategory} disabled={saving}>
+          Delete
+        </DangerBtn>
       </Box>
 
       <SectionLabel sx={{ mt: 2 }}>Variant groups</SectionLabel>
