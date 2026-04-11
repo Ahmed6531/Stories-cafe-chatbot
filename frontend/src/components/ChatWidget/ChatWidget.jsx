@@ -218,12 +218,40 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
     }
   }
 
+  const isToppingsGroup = (groupName) => {
+    const normalized = (groupName || '').toString().trim().toLowerCase()
+    return normalized.includes('topping') || normalized.includes('flavor')
+  }
+
+  const getGroupMaxSelections = (groupName) => {
+    const suggestions = groupedChecklistSuggestions.find(([name]) => name === groupName)?.[1] || []
+    const rawMax = Number(suggestions[0]?.maxSelections)
+    if (Number.isFinite(rawMax) && rawMax > 0) return rawMax
+    return isToppingsGroup(groupName) ? 2 : 1
+  }
+
   const selectChecklistOption = (groupName, value) => {
     if (!value) return
-    setSelectedChecklist((prev) => ({
-      ...prev,
-      [groupName]: value,
-    }))
+    setSelectedChecklist((prev) => {
+      const maxSelections = getGroupMaxSelections(groupName)
+      if (maxSelections > 1) {
+        const current = Array.isArray(prev[groupName]) ? prev[groupName] : []
+        const next = current.includes(value)
+          ? current.filter((item) => item !== value)
+          : current.length >= maxSelections
+            ? [...current.slice(1), value]
+            : [...current, value]
+        return {
+          ...prev,
+          [groupName]: next,
+        }
+      }
+
+      return {
+        ...prev,
+        [groupName]: value,
+      }
+    })
   }
 
   const groupedChecklistSuggestions = useMemo(() => {
@@ -240,7 +268,13 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
 
   const selectedChecklistValues = useMemo(() => {
     if (!isChecklistSuggestions) return []
-    return Object.values(selectedChecklist).filter((value) => typeof value === 'string' && value.trim())
+    return Object.values(selectedChecklist).flatMap((value) => {
+      if (typeof value === 'string' && value.trim()) return [value.trim()]
+      if (Array.isArray(value)) {
+        return value.filter((item) => typeof item === 'string' && item.trim())
+      }
+      return []
+    })
   }, [isChecklistSuggestions, msg.suggestions, selectedChecklist])
 
   const applyChecklistSelections = () => {
@@ -266,17 +300,21 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
               <div key={groupName} style={{ marginBottom: '10px' }}>
                 <div style={{ fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
                   {groupName}
+                  {getGroupMaxSelections(groupName) > 1 ? ` (choose up to ${getGroupMaxSelections(groupName)})` : ''}
                 </div>
                 <div style={{ display: 'grid', gap: '6px' }}>
                   {options.map((s, idx) => {
                     const key = `${s?.group || groupName}:${s?.input_text || s?.item_name || idx}`
                     const optionValue = suggestionText(s)
-                    const checked = selectedChecklist[groupName] === optionValue
+                    const isMulti = getGroupMaxSelections(groupName) > 1
+                    const checked = isMulti
+                      ? Array.isArray(selectedChecklist[groupName]) && selectedChecklist[groupName].includes(optionValue)
+                      : selectedChecklist[groupName] === optionValue
                     return (
                       <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#111827', cursor: 'pointer' }}>
                         <input
-                          type="radio"
-                          name={`variant-group-${groupName}`}
+                          type={isMulti ? 'checkbox' : 'radio'}
+                          name={isMulti ? undefined : `variant-group-${groupName}`}
                           checked={checked}
                           onChange={() => selectChecklistOption(groupName, optionValue)}
                           style={{ accentColor: '#1e5631', cursor: 'pointer' }}
@@ -446,6 +484,7 @@ export default function ChatWidget({
       flushPartial()
       return
     }
+                      {getGroupMaxSelections(groupName) > 1 ? ` (choose up to ${getGroupMaxSelections(groupName)})` : ''}
     if (partialTranscriptTimeoutRef.current) {
       window.clearTimeout(partialTranscriptTimeoutRef.current)
     }

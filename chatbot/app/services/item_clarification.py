@@ -45,6 +45,8 @@ def _group_key(group: dict[str, Any]) -> str:
         return "milk"
     if "sugar" in label:
         return "sugar"
+    if "temperature" in label or "temp" in label:
+        return "temperature"
     if "topping" in label or "flavor" in label or "espresso" in label or "add on" in label or "add-on" in label:
         return "addons"
     return "other"
@@ -141,9 +143,27 @@ def _group_answered(requested_item: dict[str, Any], group: dict[str, Any]) -> bo
 
 
 def find_ambiguous_menu_matches(menu_items: list[dict[str, Any]], item_query: str) -> list[dict[str, Any]]:
+    # Only consider items that are currently available
+    menu_items = [
+        item for item in menu_items
+        if isinstance(item, dict) and item.get("isAvailable", True) is not False
+    ]
+
     normalized_query = _normalize_text(item_query)
     if not normalized_query:
         return []
+
+    filler_tokens = {
+        "can", "could", "would", "you", "u", "please", "pls", "add",
+        "get", "give", "have", "order", "want", "like", "to", "i",
+        "me", "a", "an", "the", "for", "some",
+    }
+    cleaned_tokens = [
+        token for token in normalized_query.split()
+        if token and token not in filler_tokens
+    ]
+    if cleaned_tokens:
+        normalized_query = " ".join(cleaned_tokens)
 
     exact_matches = [
         item for item in menu_items
@@ -225,10 +245,10 @@ def find_ambiguous_menu_matches(menu_items: list[dict[str, Any]], item_query: st
         if not name:
             continue
         name_words = set(name.split())
-        if normalized_query in name or query_words.issubset(name_words):
+        if normalized_query in name or name in normalized_query or query_words.issubset(name_words):
             candidates.append(item)
 
-    if len(candidates) <= 1:
+    if len(candidates) == 0:
         normalized_query_tokens = [_normalize_token(token) for token in normalized_query.split() if _normalize_token(token)]
         menu_name_words = {
             _normalize_token(word)
@@ -265,7 +285,29 @@ def find_ambiguous_menu_matches(menu_items: list[dict[str, Any]], item_query: st
             seen_names.add(key)
             unique_candidates.append(item)
 
-    return unique_candidates if len(unique_candidates) > 1 else []
+    if len(unique_candidates) > 1:
+        return unique_candidates
+
+    # Single candidate: only auto-resolve if the query is a close match to
+    # the item name.  If the item name has meaningful extra tokens the user
+    # didn't type (e.g. "water" → "Rim Sparkling Water"), return the single
+    # candidate so the bot can ask "Did you mean X?" instead of silently
+    # adding the wrong thing.
+    # EXCEPT: for very short queries (1-2 words like "water", "juice"), 
+    # auto-add without confirmation.
+    if len(unique_candidates) == 1:
+        query_word_count = len([w for w in normalized_query.split() if w])
+        if query_word_count <= 2:
+            # Short query → auto-add without confirmation
+            return []
+        
+        item_name_words = set(_normalize_text(unique_candidates[0].get("name")).split())
+        query_words_set = set(normalized_query.split())
+        extra_words = item_name_words - query_words_set
+        if any(len(w) >= 4 for w in extra_words):
+            return unique_candidates
+
+    return []
 
 
 def build_menu_choice_prompt(item_query: str, candidates: list[dict[str, Any]]) -> str:
@@ -287,17 +329,30 @@ def build_menu_choice_prompt(item_query: str, candidates: list[dict[str, Any]]) 
         if not vocab:
             return raw
 
-        corrected: list[str] = []
+        filler_tokens = {
+            "can", "could", "would", "you", "u", "please", "pls", "add",
+            "get", "give", "have", "order", "want", "like", "to", "i",
+            "me", "a", "an", "the", "for", "some",
+        }
+
+        mapped_vocab_tokens: list[str] = []
         for part in raw.split():
-            normalized_part = _normalize_token(part)
-            if not normalized_part:
-                corrected.append(part)
+            normalized_part = _normalize_token(part.strip(".,!?"))
+            if not normalized_part or normalized_part in filler_tokens:
                 continue
 
             close = get_close_matches(normalized_part, list(vocab), n=1, cutoff=0.78)
-            corrected.append(close[0] if close else part)
+            if close:
+                mapped_vocab_tokens.append(close[0])
 
-        return " ".join(corrected)
+        if mapped_vocab_tokens:
+            compact_tokens: list[str] = []
+            for token in mapped_vocab_tokens:
+                if not compact_tokens or compact_tokens[-1] != token:
+                    compact_tokens.append(token)
+            return " ".join(compact_tokens)
+
+        return raw
 
     names = [str(candidate.get("name") or "").strip() for candidate in candidates if candidate.get("name")]
     if not names:
@@ -400,6 +455,16 @@ def build_customization_suggestions(
 
     for group in missing_groups:
         label = _group_label(group)
+        group_key = _group_key(group)
+        raw_max = group.get("maxSelections")
+        if isinstance(raw_max, int) and raw_max > 0:
+            max_selections = raw_max
+        else:
+            max_selections = 1
+
+        if group_key == "addons" and "flavor" in _normalize_text(label):
+            max_selections = min(max_selections, 2) if max_selections > 1 else 2
+
         options = _active_option_names(group)[:max_options_per_group]
         for option_name in options:
             input_text = str(option_name).strip()
@@ -414,6 +479,7 @@ def build_customization_suggestions(
                     "label": f"{label}: {input_text}",
                     "input_text": input_text,
                     "group": label,
+                    "maxSelections": max_selections,
                 }
             )
             if len(suggestions) >= max_total:
@@ -601,6 +667,20 @@ def apply_smart_defaults(
             # Opt-in / optional — never prompt or default
             pass
 
+        elif key == "temperature":
+            # For drinks/water, apply a silent cold default so users are not
+            # blocked by a clarification prompt on simple add requests.
+            default_opt = _find_default_option(
+                group,
+                ["cold water", "cold", "chilled", "iced"],
+            )
+            if default_opt:
+                existing = {_normalize_text(addon) for addon in updated_item["addons"] if addon}
+                if _normalize_text(default_opt) not in existing:
+                    updated_item["addons"].append(default_opt)
+            elif is_required:
+                still_required.append(group)
+
         else:
             # Other groups (e.g. Temperature, Sauce): only block if required
             if is_required:
@@ -609,10 +689,13 @@ def apply_smart_defaults(
     return updated_item, applied_labels, still_required
 
 
-def build_defaults_confirmation_prompt(item_name: str, applied_labels: list[str]) -> str:
+def build_defaults_confirmation_prompt(
+    item_name: str,
+    applied_labels: list[str],
+    user_customizations: dict[str, Any] | None = None,
+) -> str:
     """Build a natural smart-default confirmation message."""
-    if not applied_labels:
-        return f"Got it! I added {item_name} to your cart. Want to change anything?"
+    user_customizations = user_customizations or {}
 
     _SIZE_KW = {"small", "medium", "large"}
     size_label = next(
@@ -621,15 +704,50 @@ def build_defaults_confirmation_prompt(item_name: str, applied_labels: list[str]
     )
     other_labels = [lbl for lbl in applied_labels if lbl != size_label]
 
+    user_option_values: list[str] = []
+    raw_options = user_customizations.get("options")
+    if isinstance(raw_options, dict):
+        for value in raw_options.values():
+            text = str(value or "").strip()
+            if text:
+                user_option_values.append(text)
+
+    user_addons = [
+        str(addon).strip()
+        for addon in (user_customizations.get("addons") or [])
+        if str(addon or "").strip()
+    ]
+    user_instructions = str(user_customizations.get("instructions") or "").strip()
+
+    customizations: list[str] = []
+    seen_customizations: set[str] = set()
+
+    def _append_once(value: str) -> None:
+        norm = _normalize_text(value)
+        if not norm or norm in seen_customizations:
+            return
+        seen_customizations.add(norm)
+        customizations.append(value.lower())
+
+    for value in user_addons + user_option_values:
+        _append_once(value)
+    if user_instructions:
+        _append_once(user_instructions)
+    for value in other_labels:
+        _append_once(value)
+
+    if not size_label and not customizations:
+        return f"Got it! I added {item_name} to your cart. Want to change anything?"
+
     parts: list[str] = []
     if size_label:
         parts.append(size_label.lower())
     parts.append(item_name)
-    if other_labels:
-        parts.append(f"with {other_labels[0].lower()}")
+    if customizations:
+        parts.append(f"with {', '.join(customizations)}")
 
     description = " ".join(parts)
-    return f"Got it! A {description} ☕. Want to change anything?"
+    return f"Got it! {description} ☕. Want to change anything?"
 
 
 def build_defaults_confirmation_suggestions() -> list[dict[str, Any]]:

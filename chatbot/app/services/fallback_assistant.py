@@ -1,5 +1,6 @@
 import logging
 import re
+from collections.abc import Awaitable, Callable
 
 import httpx
 
@@ -26,6 +27,10 @@ FALLBACK_SYSTEM_PROMPT = (
     "If you are unsure, guide the user to menu, cart, or checkout actions."
 )
 
+FALLBACK_TEMPERATURE = 0.35
+FALLBACK_MAX_TOKENS = 420
+FALLBACK_HTTP_TIMEOUT_SECONDS = 6.0
+
 
 def _safe_static_reply(user_message: str) -> str:
     normalized = (user_message or "").strip().lower()
@@ -33,7 +38,7 @@ def _safe_static_reply(user_message: str) -> str:
         return "You're welcome! Happy to help."
     if any(token in normalized for token in ["hi", "hello", "hey"]):
         return "Hi! How can I help with your order today?"
-    return "I can help with menu details, cart updates, or checkout."
+    return "I didn't quite understand that. Can you repeat or rephrase?"
 
 
 def _is_incomplete_reply(text: str) -> bool:
@@ -81,16 +86,54 @@ def _is_incomplete_reply(text: str) -> bool:
     if cleaned[-1] not in {".", "!", "?"} and len(cleaned.split()) <= 6:
         return True
 
+    # Common clipped endings in model output.
+    if cleaned.endswith((":", ";", ",", " -", " --", "(", "[", "{")):
+        return True
+    if cleaned.count("(") > cleaned.count(")"):
+        return True
+    if cleaned.count("[") > cleaned.count("]"):
+        return True
+    if cleaned.count("{") > cleaned.count("}"):
+        return True
+
+    # Trailing connector words usually mean an unfinished thought.
+    trailing_words = cleaned.lower().split()
+    if trailing_words:
+        if trailing_words[-1] in {
+            "and", "or", "but", "with", "to", "for", "of", "in", "on", "because",
+            "if", "when", "while", "that", "which",
+        }:
+            return True
+
     return False
 
 
-def _finalize_reply(user_message: str, reply: str | None) -> str | None:
-    if not reply:
+async def _generate_complete_reply_once(
+    user_message: str,
+    generate_fn: Callable[[str], Awaitable[str | None]],
+) -> str | None:
+    """Generate a fallback reply and retry once if the first reply is clipped."""
+    first = await generate_fn(user_message)
+    if not first:
         return None
-    cleaned = reply.strip()
-    if _is_incomplete_reply(cleaned):
+
+    first_clean = first.strip()
+    if first_clean and not _is_incomplete_reply(first_clean):
+        return first_clean
+
+    retry_prompt = (
+        f"{user_message}\n\n"
+        "Please answer in one or two complete sentences and finish your thought."
+    )
+    second = await generate_fn(retry_prompt)
+    if not second:
         return _safe_static_reply(user_message)
-    return cleaned
+
+    second_clean = second.strip()
+    if second_clean and not _is_incomplete_reply(second_clean):
+        return second_clean
+
+    return _safe_static_reply(user_message)
 
 
 def _normalize_gemini_model_name(model_name: str | None) -> str:
@@ -127,12 +170,12 @@ async def _generate_with_azure_openai(user_message: str) -> str | None:
             {"role": "system", "content": FALLBACK_SYSTEM_PROMPT},
             {"role": "user", "content": user_message},
         ],
-        "temperature": 0.6,
-        "max_tokens": 220,
+        "temperature": FALLBACK_TEMPERATURE,
+        "max_tokens": FALLBACK_MAX_TOKENS,
     }
 
     try:
-        async with httpx.AsyncClient(timeout=4.0) as client:
+        async with httpx.AsyncClient(timeout=FALLBACK_HTTP_TIMEOUT_SECONDS) as client:
             response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
         data = response.json()
@@ -158,12 +201,12 @@ async def _generate_with_openai(user_message: str) -> str | None:
             {"role": "system", "content": FALLBACK_SYSTEM_PROMPT},
             {"role": "user", "content": user_message},
         ],
-        "temperature": 0.6,
-        "max_tokens": 220,
+        "temperature": FALLBACK_TEMPERATURE,
+        "max_tokens": FALLBACK_MAX_TOKENS,
     }
 
     try:
-        async with httpx.AsyncClient(timeout=4.0) as client:
+        async with httpx.AsyncClient(timeout=FALLBACK_HTTP_TIMEOUT_SECONDS) as client:
             response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
         data = response.json()
@@ -189,7 +232,10 @@ async def _generate_with_gemini(user_message: str) -> str | None:
             )
             response = await model.generate_content_async(
                 user_message,
-                generation_config={"temperature": 0.6, "max_output_tokens": 220},
+                generation_config={
+                    "temperature": FALLBACK_TEMPERATURE,
+                    "max_output_tokens": FALLBACK_MAX_TOKENS,
+                },
             )
             content = response.text.strip() if response.text else None
 
@@ -216,32 +262,32 @@ async def generate_fallback_reply(user_message: str) -> str | None:
     provider = (settings.openai_provider or "").lower().strip()
 
     if provider == "gemini":
-        reply = await _generate_with_gemini(message)
+        reply = await _generate_complete_reply_once(message, _generate_with_gemini)
         if reply:
-            return _finalize_reply(message, reply)
+            return reply
         # cascade to OpenAI then Azure as fallbacks
-        reply = await _generate_with_openai(message)
+        reply = await _generate_complete_reply_once(message, _generate_with_openai)
         if reply:
-            return _finalize_reply(message, reply)
-        return _finalize_reply(message, await _generate_with_azure_openai(message))
+            return reply
+        return await _generate_complete_reply_once(message, _generate_with_azure_openai)
 
     if provider == "azure":
-        reply = await _generate_with_azure_openai(message)
+        reply = await _generate_complete_reply_once(message, _generate_with_azure_openai)
         if reply:
-            return _finalize_reply(message, reply)
-        return _finalize_reply(message, await _generate_with_openai(message))
+            return reply
+        return await _generate_complete_reply_once(message, _generate_with_openai)
 
     if provider == "openai":
-        reply = await _generate_with_openai(message)
+        reply = await _generate_complete_reply_once(message, _generate_with_openai)
         if reply:
-            return _finalize_reply(message, reply)
-        return _finalize_reply(message, await _generate_with_azure_openai(message))
+            return reply
+        return await _generate_complete_reply_once(message, _generate_with_azure_openai)
 
     # unknown provider — try all in order
-    reply = await _generate_with_gemini(message)
+    reply = await _generate_complete_reply_once(message, _generate_with_gemini)
     if reply:
-        return _finalize_reply(message, reply)
-    reply = await _generate_with_azure_openai(message)
+        return reply
+    reply = await _generate_complete_reply_once(message, _generate_with_azure_openai)
     if reply:
-        return _finalize_reply(message, reply)
-    return _finalize_reply(message, await _generate_with_openai(message))
+        return reply
+    return await _generate_complete_reply_once(message, _generate_with_openai)

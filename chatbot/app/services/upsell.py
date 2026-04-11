@@ -75,6 +75,16 @@ def _is_drink_item(item: dict[str, Any] | None) -> bool:
     )
 
 
+def _is_coffee_item(item: dict[str, Any] | None) -> bool:
+    if not item:
+        return False
+    category = _safe_lower(item.get("category"))
+    subcategory = _safe_lower(item.get("subcategory"))
+    name = _safe_lower(item.get("name"))
+    hay = f"{category} {subcategory} {name}"
+    return any(word in hay for word in ["coffee", "latte", "espresso", "mocha", "cappuccino", "americano", "frap", "frappe", "flat white", "macchiato"])
+
+
 def _is_food_item(item: dict[str, Any] | None) -> bool:
     if not item:
         return False
@@ -131,11 +141,19 @@ def _build_combo_fun_fact(anchor_item: dict[str, Any] | None, suggested_item: di
     suggested_is_food = _is_food_item(suggested_item)
 
     if anchor_is_drink and suggested_is_food:
+        if _is_coffee_item(anchor_item):
+            return random.choice(
+                [
+                    "Drink + pastry pairings work well because sweetness can soften coffee bitterness.",
+                    "A pastry bite between sips can smooth roast intensity and highlight aroma.",
+                    "Coffee and pastry pairings usually work best when one is rich and the other is clean-finishing.",
+                ]
+            )
         return random.choice(
             [
-                "Drink + pastry pairings work well because sweetness can soften coffee bitterness.",
-                "A pastry bite between sips can smooth roast intensity and highlight aroma.",
-                "Coffee and pastry pairings usually work best when one is rich and the other is clean-finishing.",
+                "A snack alongside your drink makes for a more satisfying cafe experience.",
+                "Pairing a drink with something to eat keeps energy balanced throughout your visit.",
+                "A bite to go with your drink is always a good idea.",
             ]
         )
     if anchor_is_food and suggested_is_drink:
@@ -231,6 +249,7 @@ async def suggest_upsell_items(
     cart_items: list[dict],
     menu_items: list[dict],
     limit: int = 1,
+    anchor_menu_item: dict | None = None,
 ) -> list[dict]:
     menu_by_id = {
         int(item.get("id")): item
@@ -244,19 +263,39 @@ async def suggest_upsell_items(
         if i.get("menuItemId") is not None
     }
     cart_categories = {_safe_lower(i.get("category")) for i in cart_items}
-    recent_item = cart_items[-1] if cart_items else None
+    # Use the explicitly provided anchor (just-added item) rather than the last cart item.
+    recent_item = anchor_menu_item if anchor_menu_item is not None else (cart_items[-1] if cart_items else None)
     recent_menu_item_id = (
-        int(recent_item.get("menuItemId"))
-        if isinstance(recent_item, dict) and recent_item.get("menuItemId") is not None
-        else None
+        int(recent_item.get("id"))
+        if isinstance(recent_item, dict) and recent_item.get("id") is not None
+        else (
+            int(recent_item.get("menuItemId"))
+            if isinstance(recent_item, dict) and recent_item.get("menuItemId") is not None
+            else None
+        )
     )
     recent_is_drink = _is_drink_item(recent_item)
     recent_is_food = _is_food_item(recent_item)
 
-    combo_stats = await fetch_combo_suggestions(
-        anchor_menu_item_ids=sorted(cart_menu_item_ids),
-        exclude_menu_item_ids=sorted(cart_menu_item_ids),
-        limit=max(limit * 10, 20),
+    # Try to fetch combos for the most recent item first (primary anchor)
+    # to ensure upsell suggestions are anchored to the item just added.
+    primary_combo_stats = []
+    if recent_menu_item_id is not None:
+        primary_combo_stats = await fetch_combo_suggestions(
+            anchor_menu_item_ids=[recent_menu_item_id],
+            exclude_menu_item_ids=sorted(cart_menu_item_ids),
+            limit=max(limit * 10, 20),
+        )
+
+    # If insufficient results from primary anchor, fall back to full cart
+    combo_stats = (
+        primary_combo_stats
+        if primary_combo_stats and len(primary_combo_stats) >= limit
+        else await fetch_combo_suggestions(
+            anchor_menu_item_ids=sorted(cart_menu_item_ids),
+            exclude_menu_item_ids=sorted(cart_menu_item_ids),
+            limit=max(limit * 10, 20),
+        )
     )
     combo_ranked_by_id: dict[int, dict[str, Any]] = {}
     combo_fun_facts_by_id: dict[int, str] = {}
@@ -441,7 +480,7 @@ async def suggest_upsell_items(
                 combo_fun_facts_by_id.get(int(item.get("id")))
                 if item.get("id") in combo_candidate_ids and item.get("id") is not None
                 else _build_combo_fun_fact(
-                    cart_items[-1] if cart_items else None,
+                    anchor_menu_item if anchor_menu_item is not None else (cart_items[-1] if cart_items else None),
                     item,
                 )
             ),
@@ -455,10 +494,11 @@ async def get_upsell_suggestions(
     intent: str,
     cart_items: list[dict],
     menu_items: list[dict],
+    anchor_menu_item: dict | None = None,
 ) -> list[dict]:
     if not should_upsell(session_id, intent, cart_items):
         return []
-    suggestions = await suggest_upsell_items(cart_items, menu_items)
+    suggestions = await suggest_upsell_items(cart_items, menu_items, anchor_menu_item=anchor_menu_item)
     if suggestions:
         _upsell_last_shown[session_id] = _session_turn_counter.get(session_id, 0)
     return suggestions
