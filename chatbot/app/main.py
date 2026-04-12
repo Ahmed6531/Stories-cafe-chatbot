@@ -13,6 +13,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "https://stories-cafe-chatbot-a.vercel.app",
+        "https://www.storieschatbot.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],
