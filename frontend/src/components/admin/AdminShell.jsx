@@ -3,8 +3,6 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom"
 import Box from "@mui/material/Box"
 import Button from "@mui/material/Button"
 import Drawer from "@mui/material/Drawer"
-import IconButton from "@mui/material/IconButton"
-import MenuRoundedIcon from "@mui/icons-material/MenuRounded"
 import { styled } from "@mui/material/styles"
 import { useSession } from "../../hooks/useSession"
 import {
@@ -58,8 +56,28 @@ function OrdersNavIcon(props) {
   )
 }
 
+function TopbarHamburgerIcon(props) {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      {...props}
+    >
+      <line x1="3" y1="6" x2="21" y2="6" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <line x1="3" y1="18" x2="21" y2="18" />
+    </svg>
+  )
+}
+
 const TOPBAR_HEIGHT = 52
 const SIDEBAR_WIDTH = 232
+const MOBILE_SIDEBAR_WIDTH = 212
 
 const navItems = [
   { to: "/admin", label: "Dashboard", icon: DashboardNavIcon, end: true },
@@ -72,35 +90,39 @@ const SidebarLink = styled(NavLink)(() => ({
   position: "relative",
   display: "flex",
   alignItems: "center",
-  gap: 10,
-  padding: "8px 10px",
+  justifyContent: "flex-start",
+  gap: 12,
+  padding: "10px 12px",
   borderRadius: 8,
-  color: "#666",
-  fontSize: 13,
-  fontWeight: 400,
+  color: "#5f5f5f",
+  fontSize: 14,
+  fontWeight: 500,
   textDecoration: "none",
   transition: "background-color 0.15s ease, color 0.15s ease",
   "& .nav-icon": {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    width: 16,
-    height: 16,
-    fontSize: 16,
-    opacity: 0.45,
+    width: 18,
+    height: 18,
+    fontSize: 18,
+    opacity: 0.62,
     flexShrink: 0,
-    transition: "opacity 0.15s ease",
+    transition: "opacity 0.15s ease, color 0.15s ease",
+    "& svg": {
+      strokeWidth: 2.15,
+    },
   },
   "&:hover": {
-    backgroundColor: "#f5f5f3",
-    color: "#222",
+    backgroundColor: adminPalette.brandTint,
+    color: adminPalette.brandPrimaryDark,
     "& .nav-icon": { opacity: 0.85 },
   },
   "&.active": {
-    backgroundColor: "#f0f0ec",
-    color: "#111",
-    fontWeight: 500,
-    "& .nav-icon": { opacity: 0.85 },
+    backgroundColor: adminPalette.brandTintStrong,
+    color: adminPalette.brandPrimaryDark,
+    fontWeight: 600,
+    "& .nav-icon": { opacity: 0.9 },
   },
   "&.active::before": {
     content: '""',
@@ -110,8 +132,29 @@ const SidebarLink = styled(NavLink)(() => ({
     transform: "translateY(-50%)",
     width: 3,
     height: 18,
-    background: "#111",
+    background: adminPalette.brandPrimary,
     borderRadius: "0 3px 3px 0",
+  },
+}))
+
+const TopbarToggleButton = styled("button")(() => ({
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 36,
+  height: 36,
+  border: "none",
+  background: "transparent",
+  color: "#374151",
+  cursor: "pointer",
+  borderRadius: 8,
+  padding: 0,
+  flexShrink: 0,
+  appearance: "none",
+  transition: "background 0.15s ease, color 0.15s ease",
+  "&:hover": {
+    background: "rgba(0,0,0,0.05)",
+    color: adminPalette.textPrimary,
   },
 }))
 
@@ -128,7 +171,15 @@ function getInitials(user) {
 
 function SidebarContent({ onNavigate }) {
   return (
-    <Box component="nav" sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+    <Box
+      component="nav"
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 0.5,
+        height: "100%",
+      }}
+    >
       {navItems.map((item) => {
         const NavIcon = item.icon
         return (
@@ -159,54 +210,77 @@ export default function AdminShell() {
   return (
     <Box
       sx={{
-        minHeight: "100vh",
+        height: "100vh",
         backgroundColor: adminPalette.pageBg,
         display: "grid",
         gridTemplateColumns: { xs: "1fr", md: `${SIDEBAR_WIDTH}px minmax(0, 1fr)` },
         gridTemplateRows: `${TOPBAR_HEIGHT}px minmax(0, 1fr)`,
+        overflow: "hidden",
       }}
     >
       <Box
         component="header"
         sx={{
-          position: "sticky",
-          top: 0,
+          position: "relative",
           zIndex: 1201,
           gridColumn: "1 / -1",
           height: TOPBAR_HEIGHT,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          px: { xs: 1.5, sm: 2.5 },
+          pl: { xs: 1.5, md: 0 },
+          pr: { xs: 1.5, sm: 2.5 },
           backgroundColor: adminPalette.surface,
           borderBottom: "0.5px solid rgba(0,0,0,0.09)",
         }}
       >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <IconButton
-            onClick={() => setMobileOpen(true)}
-            sx={{
-              display: { xs: "inline-flex", md: "none" },
-              color: adminPalette.textPrimary,
-            }}
-            aria-label="Open navigation"
-          >
-            <MenuRoundedIcon />
-          </IconButton>
+        <Box sx={{ display: "flex", alignItems: "center", minWidth: 0, flex: 1 }}>
           <Box
-            component="img"
-            src="/stories-logo.png"
-            alt="Stories"
             sx={{
-              maxWidth: "112px",
-              maxHeight: "26px",
-              objectFit: "contain",
+              display: { xs: "none", md: "flex" },
+              width: `${SIDEBAR_WIDTH}px`,
+              height: "100%",
+              alignItems: "center",
+              pl: 2.5,
               flexShrink: 0,
             }}
-            onError={(e) => {
-              e.currentTarget.style.display = "none"
-            }}
-          />
+          >
+            <Box
+              component="img"
+              src="/stories-logo.png"
+              alt="Stories"
+              sx={{
+                maxWidth: "112px",
+                maxHeight: "26px",
+                objectFit: "contain",
+                flexShrink: 0,
+              }}
+              onError={(e) => {
+                e.currentTarget.style.display = "none"
+              }}
+            />
+          </Box>
+          <Box sx={{ display: { xs: "flex", md: "none" }, alignItems: "center", gap: 0.5 }}>
+            <Box sx={{ display: "inline-flex", ml: "-6px" }}>
+              <TopbarToggleButton onClick={() => setMobileOpen(true)} aria-label="Open navigation">
+                <TopbarHamburgerIcon />
+              </TopbarToggleButton>
+            </Box>
+            <Box
+              component="img"
+              src="/stories-logo.png"
+              alt="Stories"
+              sx={{
+                maxWidth: "112px",
+                maxHeight: "26px",
+                objectFit: "contain",
+                flexShrink: 0,
+              }}
+              onError={(e) => {
+                e.currentTarget.style.display = "none"
+              }}
+            />
+          </Box>
         </Box>
 
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
@@ -229,7 +303,12 @@ export default function AdminShell() {
           </Box>
           <Button
             onClick={handleLogout}
-            sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx, borderRadius: "18px", px: 2 }}
+            sx={{
+              ...adminGhostButtonSx,
+              ...adminSmallButtonSx,
+              borderRadius: "18px",
+              px: 2,
+            }}
           >
             Logout
           </Button>
@@ -240,12 +319,38 @@ export default function AdminShell() {
         component="aside"
         sx={{
           display: { xs: "none", md: "block" },
-          backgroundColor: "#fff",
-          borderRight: "0.5px solid rgba(0,0,0,0.09)",
-          padding: "10px 8px",
+          width: SIDEBAR_WIDTH,
+          minWidth: 0,
         }}
       >
-        <SidebarContent />
+        <Drawer
+          variant="permanent"
+          open
+          slotProps={{
+            paper: {
+              sx: {
+                position: "relative",
+                top: 0,
+                height: `calc(100vh - ${TOPBAR_HEIGHT}px)`,
+                width: SIDEBAR_WIDTH,
+                overflow: "hidden",
+                backgroundColor: "#fff",
+                borderRight: "0.5px solid rgba(0,0,0,0.09)",
+                padding: "12px 8px",
+                boxSizing: "border-box",
+              },
+            },
+          }}
+          sx={{
+            width: SIDEBAR_WIDTH,
+            flexShrink: 0,
+            "& .MuiDrawer-paper": {
+              width: SIDEBAR_WIDTH,
+            },
+          }}
+        >
+          <SidebarContent />
+        </Drawer>
       </Box>
 
       <Drawer
@@ -256,10 +361,10 @@ export default function AdminShell() {
             sx: {
               top: `${TOPBAR_HEIGHT}px`,
               height: `calc(100% - ${TOPBAR_HEIGHT}px)`,
-              width: SIDEBAR_WIDTH,
+              width: MOBILE_SIDEBAR_WIDTH,
               backgroundColor: "#fff",
               borderRight: "0.5px solid rgba(0,0,0,0.09)",
-              padding: "10px 8px",
+              padding: "12px 8px",
             },
           },
         }}
@@ -271,6 +376,11 @@ export default function AdminShell() {
         component="main"
         sx={{
           minWidth: 0,
+          minHeight: 0,
+          height: `calc(100vh - ${TOPBAR_HEIGHT}px)`,
+          overflowY: "auto",
+          overflowX: "hidden",
+          overscrollBehavior: "contain",
           px: { xs: 2, sm: 3, md: 4 },
           py: { xs: 2.5, md: 3.5 },
           backgroundColor: adminPalette.pageBg,

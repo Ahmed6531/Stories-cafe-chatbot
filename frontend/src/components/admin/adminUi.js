@@ -1,7 +1,12 @@
 export const adminPalette = {
-  pageBg: "#eeeee9",
+  pageBg: "#f8f9f8",
   surface: "#ffffff",
-  surfaceSoft: "#f0f0ec",
+  surfaceSoft: "#f8f9f8",
+  brandPrimary: "#00704a",
+  brandPrimaryHover: "#147d56",
+  brandPrimaryDark: "#1e5631",
+  brandTint: "#eef7f2",
+  brandTintStrong: "#e3f1ea",
   border: "rgba(0,0,0,0.10)",
   borderStrong: "rgba(0,0,0,0.15)",
   borderRow: "rgba(0,0,0,0.07)",
@@ -20,7 +25,7 @@ export const adminBorder = `0.5px solid ${adminPalette.border}`
 export const adminBorderStrong = `0.5px solid ${adminPalette.borderStrong}`
 
 export const adminPageTitleSx = {
-  fontSize: 20,
+  fontSize: 22,
   fontWeight: 600,
   color: adminPalette.textPrimary,
   lineHeight: 1.3,
@@ -28,10 +33,10 @@ export const adminPageTitleSx = {
 
 export const adminSectionLabelSx = {
   fontSize: 11,
-  fontWeight: 500,
+  fontWeight: 600,
   textTransform: "uppercase",
   letterSpacing: "0.05em",
-  color: adminPalette.textTertiary,
+  color: adminPalette.brandPrimary,
   lineHeight: 1.4,
 }
 
@@ -79,7 +84,7 @@ export const adminInputSx = {
   fontWeight: 400,
   lineHeight: 1.5,
   color: adminPalette.textPrimary,
-  backgroundColor: adminPalette.surface,
+  backgroundColor: adminPalette.pageBg,
   transition: "border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease",
   "&::placeholder": {
     color: "#c0c0c0",
@@ -87,11 +92,11 @@ export const adminInputSx = {
   },
   "&:focus": {
     outline: "none",
-    borderColor: adminPalette.accent,
-    boxShadow: "0 0 0 2px rgba(0,0,0,0.06)",
+    borderColor: adminPalette.brandPrimary,
+    boxShadow: "0 0 0 2px rgba(0,112,74,0.10)",
   },
   "&:disabled": {
-    backgroundColor: adminPalette.surfaceSoft,
+    backgroundColor: adminPalette.pageBg,
     color: adminPalette.textTertiary,
     cursor: "not-allowed",
   },
@@ -120,15 +125,15 @@ export const adminTextFieldSx = {
   },
   "& .MuiInputLabel-root.MuiInputLabel-shrink": {
     transform: "translate(14px, -8px) scale(0.92)",
-    backgroundColor: adminPalette.surface,
+    backgroundColor: adminPalette.pageBg,
     padding: "0 4px",
   },
   "& .MuiInputLabel-root.Mui-focused": {
-    color: adminPalette.textSecondary,
+    color: adminPalette.brandPrimary,
   },
   "& .MuiOutlinedInput-root": {
     borderRadius: "8px",
-    backgroundColor: adminPalette.surface,
+    backgroundColor: adminPalette.pageBg,
     fontSize: 13,
     color: adminPalette.textPrimary,
     "& fieldset": {
@@ -138,8 +143,8 @@ export const adminTextFieldSx = {
       borderColor: adminPalette.borderStrong,
     },
     "&.Mui-focused fieldset": {
-      borderColor: adminPalette.accent,
-      boxShadow: "0 0 0 2px rgba(0,0,0,0.06)",
+      borderColor: adminPalette.brandPrimary,
+      boxShadow: "0 0 0 2px rgba(0,112,74,0.10)",
     },
   },
   "& .MuiInputBase-input": {
@@ -160,7 +165,7 @@ export const adminPrimaryButtonSx = {
   minWidth: 0,
   borderRadius: "8px",
   padding: "8px 16px",
-  backgroundColor: adminPalette.accent,
+  backgroundColor: adminPalette.brandPrimary,
   color: "#ffffff",
   fontSize: 13,
   fontWeight: 500,
@@ -168,8 +173,7 @@ export const adminPrimaryButtonSx = {
   textTransform: "none",
   boxShadow: "none",
   "&:hover": {
-    backgroundColor: adminPalette.accent,
-    opacity: 0.85,
+    backgroundColor: adminPalette.brandPrimaryHover,
     boxShadow: "none",
   },
 }
@@ -187,8 +191,9 @@ export const adminGhostButtonSx = {
   textTransform: "none",
   boxShadow: "none",
   "&:hover": {
-    backgroundColor: adminPalette.pageBg,
-    borderColor: adminPalette.borderStrong,
+    backgroundColor: adminPalette.brandTint,
+    borderColor: "rgba(0,112,74,0.18)",
+    color: adminPalette.brandPrimary,
     boxShadow: "none",
   },
 }
@@ -234,6 +239,6 @@ export const adminBadgeOptionalSx = {
   py: "2px",
   fontSize: 11,
   fontWeight: 500,
-  backgroundColor: adminPalette.pageBg,
-  color: adminPalette.textSecondary,
+  backgroundColor: adminPalette.brandTint,
+  color: adminPalette.brandPrimaryDark,
 }

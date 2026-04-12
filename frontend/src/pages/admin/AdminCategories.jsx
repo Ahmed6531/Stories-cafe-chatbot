@@ -4,6 +4,7 @@ import Button from "@mui/material/Button"
 import Checkbox from "@mui/material/Checkbox"
 import Divider from "@mui/material/Divider"
 import FormControlLabel from "@mui/material/FormControlLabel"
+import Skeleton from "@mui/material/Skeleton"
 import Typography from "@mui/material/Typography"
 import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined"
 import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined"
@@ -177,18 +178,21 @@ function ErrorNotice({ children }) {
   )
 }
 
-function UploadArea({ hasFile, preview, label, inputRef, onChange, alt, onClearLabel }) {
+function UploadArea({ hasFile, preview, label, inputRef, onChange, alt, onClear }) {
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
       <Box
         component="label"
         sx={{
+          position: "relative",
           border: `0.5px dashed ${hasFile ? "rgba(0,0,0,0.24)" : "rgba(0,0,0,0.18)"}`,
           borderRadius: "12px",
           backgroundColor: adminPalette.surfaceSoft,
           p: 2,
           display: "flex",
           alignItems: "center",
+          alignContent: "flex-start",
+          flexWrap: "wrap",
           gap: 2,
           cursor: "pointer",
         }}
@@ -213,7 +217,7 @@ function UploadArea({ hasFile, preview, label, inputRef, onChange, alt, onClearL
               width: 64,
               height: 64,
               borderRadius: "10px",
-              backgroundColor: adminPalette.surface,
+              backgroundColor: adminPalette.pageBg,
               border: "0.5px solid rgba(0,0,0,0.10)",
               display: "inline-flex",
               alignItems: "center",
@@ -233,26 +237,61 @@ function UploadArea({ hasFile, preview, label, inputRef, onChange, alt, onClearL
           <Typography sx={{ ...adminBodySx, color: adminPalette.textTertiary }}>
             {label}
           </Typography>
-          <Typography sx={adminHintSx}>Files are uploaded through the existing image flow.</Typography>
         </Box>
 
-        <Box
-          sx={{
-            ml: "auto",
-            width: 34,
-            height: 34,
-            borderRadius: "999px",
-            backgroundColor: adminPalette.surface,
-            border: "0.5px solid rgba(0,0,0,0.10)",
-            color: adminPalette.textPrimary,
-            display: { xs: "none", sm: "inline-flex" },
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-          }}
-        >
-          <CloudUploadOutlinedIcon sx={{ fontSize: 18 }} />
-        </Box>
+        {hasFile && onClear ? (
+          <Box
+            component="button"
+            type="button"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onClear()
+            }}
+            sx={{
+              position: "absolute",
+              top: 10,
+              right: 10,
+              width: 28,
+              height: 28,
+              borderRadius: "999px",
+              border: "0.5px solid rgba(0,0,0,0.12)",
+              backgroundColor: adminPalette.pageBg,
+              color: adminPalette.textSecondary,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              fontSize: 16,
+              lineHeight: 1,
+              "&:hover": {
+                backgroundColor: adminPalette.surface,
+                color: adminPalette.textPrimary,
+              },
+            }}
+            aria-label="Remove selected image"
+          >
+            ×
+          </Box>
+        ) : (
+          <Box
+            sx={{
+              ml: "auto",
+              width: 34,
+              height: 34,
+              borderRadius: "999px",
+              backgroundColor: adminPalette.pageBg,
+              border: "0.5px solid rgba(0,0,0,0.10)",
+              color: adminPalette.textPrimary,
+              display: { xs: "none", sm: "inline-flex" },
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <CloudUploadOutlinedIcon sx={{ fontSize: 18 }} />
+          </Box>
+        )}
 
         <Box
           component="input"
@@ -263,8 +302,133 @@ function UploadArea({ hasFile, preview, label, inputRef, onChange, alt, onClearL
           onChange={onChange}
         />
       </Box>
+    </Box>
+  )
+}
 
-      {onClearLabel}
+const skeletonCardSx = {
+  border: "1px solid #e0e0e0",
+  borderRadius: "12px",
+  backgroundColor: "#fff",
+  boxShadow: "0 0 6px rgba(0,0,0,0.06)",
+  overflow: "hidden",
+}
+
+function CategoryFormSkeleton() {
+  return (
+    <Box sx={{ ...skeletonCardSx, p: { xs: 2, md: "16px 20px" } }} aria-hidden="true">
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+          <Skeleton animation="wave" variant="text" width={94} height={18} sx={{ bgcolor: "#eceff1" }} />
+          <Skeleton animation="wave" variant="text" width={140} height={24} sx={{ bgcolor: "#eceff1" }} />
+        </Box>
+
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          <Skeleton animation="wave" variant="rounded" width="100%" height={40} sx={{ borderRadius: "8px", bgcolor: "#eceff1" }} />
+        </Box>
+
+        <Box
+          sx={{
+            borderRadius: "12px",
+            border: "1px dashed #e0e0e0",
+            backgroundColor: adminPalette.surfaceSoft,
+            p: 2,
+            display: "flex",
+            alignItems: "center",
+            gap: 2,
+          }}
+        >
+          <Skeleton animation="wave" variant="rounded" width={64} height={64} sx={{ borderRadius: "10px", bgcolor: "#eceff1" }} />
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, flex: 1 }}>
+            <Skeleton animation="wave" variant="text" width={110} height={20} sx={{ bgcolor: "#eceff1" }} />
+            <Skeleton animation="wave" variant="text" width={180} height={18} sx={{ bgcolor: "#eceff1" }} />
+          </Box>
+          <Skeleton animation="wave" variant="circular" width={34} height={34} sx={{ bgcolor: "#eceff1" }} />
+        </Box>
+
+        <Skeleton animation="wave" variant="text" width={220} height={16} sx={{ bgcolor: "#eceff1", mx: "auto" }} />
+        <Skeleton animation="wave" variant="rounded" width={132} height={38} sx={{ borderRadius: "8px", bgcolor: "#eceff1" }} />
+      </Box>
+    </Box>
+  )
+}
+
+function CategoryRowSkeleton({ expanded = false }) {
+  return (
+    <Box sx={{ ...skeletonCardSx, p: 2 }} aria-hidden="true">
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+        <Skeleton animation="wave" variant="rounded" width={44} height={44} sx={{ borderRadius: "10px", bgcolor: "#eceff1" }} />
+        <Box sx={{ flex: 1, minWidth: 220 }}>
+          <Skeleton animation="wave" variant="text" width={160} height={24} sx={{ bgcolor: "#eceff1" }} />
+          <Skeleton animation="wave" variant="text" width={124} height={16} sx={{ bgcolor: "#eceff1" }} />
+        </Box>
+        <Skeleton animation="wave" variant="rounded" width={78} height={30} sx={{ borderRadius: "8px", bgcolor: "#eceff1" }} />
+      </Box>
+
+      {expanded && (
+        <Box
+          sx={{
+            mt: 2,
+            pt: 2,
+            borderTop: "0.5px solid rgba(0,0,0,0.08)",
+            backgroundColor: adminPalette.surfaceSoft,
+            borderRadius: "0 0 12px 12px",
+            px: { xs: 1.5, md: 2 },
+            pb: { xs: 1.5, md: 2 },
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+          }}
+        >
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+            <Skeleton animation="wave" variant="text" width={110} height={18} sx={{ bgcolor: "#eceff1" }} />
+            <Box
+              sx={{
+                display: "grid",
+                gap: 1,
+                gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) 120px" },
+              }}
+            >
+              <Skeleton animation="wave" variant="rounded" width="100%" height={40} sx={{ borderRadius: "8px", bgcolor: "#eceff1" }} />
+              <Skeleton animation="wave" variant="rounded" width="100%" height={40} sx={{ borderRadius: "8px", bgcolor: "#eceff1" }} />
+            </Box>
+            <Box
+              sx={{
+                borderRadius: "12px",
+                border: "1px dashed #e0e0e0",
+                backgroundColor: adminPalette.surface,
+                p: 2,
+                display: "flex",
+                alignItems: "center",
+                gap: 2,
+              }}
+            >
+              <Skeleton animation="wave" variant="rounded" width={64} height={64} sx={{ borderRadius: "10px", bgcolor: "#eceff1" }} />
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, flex: 1 }}>
+                <Skeleton animation="wave" variant="text" width={110} height={20} sx={{ bgcolor: "#eceff1" }} />
+                <Skeleton animation="wave" variant="text" width={180} height={18} sx={{ bgcolor: "#eceff1" }} />
+              </Box>
+              <Skeleton animation="wave" variant="circular" width={34} height={34} sx={{ bgcolor: "#eceff1" }} />
+            </Box>
+            <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+              <Skeleton animation="wave" variant="rounded" width={86} height={38} sx={{ borderRadius: "8px", bgcolor: "#eceff1" }} />
+              <Skeleton animation="wave" variant="rounded" width={82} height={38} sx={{ borderRadius: "8px", bgcolor: "#eceff1" }} />
+              <Skeleton animation="wave" variant="rounded" width={74} height={38} sx={{ borderRadius: "8px", bgcolor: "#eceff1" }} />
+            </Box>
+          </Box>
+
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 0.35 }}>
+                <Skeleton animation="wave" variant="text" width={96} height={18} sx={{ bgcolor: "#eceff1" }} />
+                <Skeleton animation="wave" variant="text" width={230} height={16} sx={{ bgcolor: "#eceff1" }} />
+              </Box>
+              <Skeleton animation="wave" variant="rounded" width={120} height={30} sx={{ borderRadius: "8px", bgcolor: "#eceff1" }} />
+            </Box>
+            <Skeleton animation="wave" variant="rounded" width="100%" height={72} sx={{ borderRadius: "12px", bgcolor: "#eceff1" }} />
+          </Box>
+        </Box>
+      )}
     </Box>
   )
 }
@@ -1099,7 +1263,7 @@ function CategoryDetail({ category, onRefresh }) {
           sx={{
             display: "grid",
             gap: 1,
-            gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) minmax(0, 1fr) 120px" },
+            gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) 120px" },
           }}
         >
           <Box
@@ -1107,13 +1271,6 @@ function CategoryDetail({ category, onRefresh }) {
             placeholder="Name"
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
-            sx={adminInputSx}
-          />
-          <Box
-            component="input"
-            placeholder="Image URL"
-            value={editImage}
-            onChange={(e) => setEditImage(e.target.value)}
             sx={adminInputSx}
           />
           <Box
@@ -1133,18 +1290,11 @@ function CategoryDetail({ category, onRefresh }) {
           inputRef={fileInputRef}
           onChange={handleFileChange}
           alt={`${category.name} preview`}
-          onClearLabel={
-            imageFile ? (
-              <Button
-                type="button"
-                onClick={clearSelectedFile}
-                sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx, alignSelf: "flex-start" }}
-              >
-                Keep current image
-              </Button>
-            ) : null
-          }
+          onClear={imageFile ? clearSelectedFile : null}
         />
+        <Typography sx={{ ...adminHintSx, fontStyle: "italic", textAlign: "center" }}>
+          Images look best with a transparent background.
+        </Typography>
 
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
           <Button type="button" onClick={handleSaveCategory} disabled={saving} sx={adminPrimaryButtonSx}>
@@ -1275,8 +1425,18 @@ export default function AdminCategories() {
 
   if (loading) {
     return (
-      <Box sx={adminCardSx}>
-        <Typography sx={adminBodySx}>Loading categories...</Typography>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+          <Typography sx={adminPageTitleSx}>Categories</Typography>
+          <Typography sx={{ ...adminBodySx, maxWidth: 760 }}>
+            Create new categories, edit their ordering and imagery, and manage the variant groups
+            attached to each one inline.
+          </Typography>
+        </Box>
+        <CategoryFormSkeleton />
+        <CategoryRowSkeleton expanded />
+        <CategoryRowSkeleton />
+        <CategoryRowSkeleton />
       </Box>
     )
   }
@@ -1321,7 +1481,7 @@ export default function AdminCategories() {
           sx={{
             display: "grid",
             gap: 1,
-            gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) minmax(0, 1fr)" },
+            gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr)" },
           }}
         >
           <Box
@@ -1334,13 +1494,6 @@ export default function AdminCategories() {
             }}
             sx={adminInputSx}
           />
-          <Box
-            component="input"
-            placeholder="Image URL (optional)"
-            value={newImage}
-            onChange={(e) => setNewImage(e.target.value)}
-            sx={adminInputSx}
-          />
         </Box>
 
         <UploadArea
@@ -1350,18 +1503,11 @@ export default function AdminCategories() {
           inputRef={createFileInputRef}
           onChange={handleNewFileChange}
           alt="New category preview"
-          onClearLabel={
-            newImageFile ? (
-              <Button
-                type="button"
-                onClick={resetNewImageSelection}
-                sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx, alignSelf: "flex-start" }}
-              >
-                Remove file
-              </Button>
-            ) : null
-          }
+          onClear={newImageFile ? resetNewImageSelection : null}
         />
+        <Typography sx={{ ...adminHintSx, fontStyle: "italic", textAlign: "center" }}>
+          Images look best with a transparent background.
+        </Typography>
 
         <Button type="button" onClick={handleCreate} disabled={creating} sx={{ ...adminPrimaryButtonSx, alignSelf: "flex-start" }}>
           {creating ? "Creating..." : "Create category"}

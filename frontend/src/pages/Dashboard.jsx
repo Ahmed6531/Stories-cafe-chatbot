@@ -8,6 +8,7 @@ import { useTheme } from '@mui/material/styles'
 import { useSession } from '../hooks/useSession'
 import { getMyOrders } from '../API/ordersApi'
 import { formatLL } from '../utils/currency'
+import { formatBeirutDate } from '../utils/dateTime'
 
 const STATUS_CONFIG = {
   received:    { label: 'Received',    bg: '#dbeafe', color: '#1d4ed8' },
@@ -203,9 +204,7 @@ export default function Dashboard() {
                 fontFamily: theme.brand.fontBase,
                 flexShrink: 0,
               }}>
-                {new Date(order.createdAt).toLocaleDateString('en-US', {
-                  year: 'numeric', month: 'short', day: 'numeric',
-                })}
+                {formatBeirutDate(order.createdAt)}
               </Typography>
             </Stack>
 

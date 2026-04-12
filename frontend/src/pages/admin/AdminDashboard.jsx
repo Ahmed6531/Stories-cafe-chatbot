@@ -14,7 +14,7 @@ function ItemsCardIcon(props) {
     <svg
       viewBox="0 0 24 24"
       fill="none"
-      stroke="#333"
+      stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       width="16"
@@ -33,7 +33,7 @@ function CategoriesCardIcon(props) {
     <svg
       viewBox="0 0 24 24"
       fill="none"
-      stroke="#333"
+      stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -56,7 +56,7 @@ function OrdersCardIcon(props) {
     <svg
       viewBox="0 0 24 24"
       fill="none"
-      stroke="#333"
+      stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -74,7 +74,7 @@ function OrdersCardIcon(props) {
 const cards = [
   {
     to: "/admin/items",
-    title: "Menu items",
+    title: "Menu",
     description: "Create, edit, and organize the products shown to customers.",
     icon: ItemsCardIcon,
   },
@@ -97,9 +97,8 @@ export default function AdminDashboard() {
     <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
         <Typography sx={adminPageTitleSx}>Admin dashboard</Typography>
-        <Typography sx={{ ...adminBodySx, maxWidth: 720 }}>
-          A clean control surface for the Stories Café back office. Use the cards below to jump
-          into the areas you manage most often.
+        <Typography sx={{ ...adminBodySx, color: adminPalette.textSecondary, maxWidth: 720 }}>
+          Manage menu items, categories, and orders in one place.
         </Typography>
       </Box>
 
@@ -122,28 +121,33 @@ export default function AdminDashboard() {
               component={Link}
               to={card.to}
               sx={{
-              ...adminCardSx,
-              minHeight: 196,
-              display: "flex",
-              flexDirection: "column",
-              gap: 2.5,
-              textDecoration: "none",
-              p: { xs: 2.5, md: 3 },
-              transition: "border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease",
-              "&:hover": {
-                borderColor: "rgba(0,0,0,0.20)",
-                boxShadow: "0 6px 16px rgba(17,17,17,0.05)",
-                transform: "translateY(-1px)",
-              },
-            }}
-          >
+                ...adminCardSx,
+                minHeight: 196,
+                display: "flex",
+                flexDirection: "column",
+                gap: 2.25,
+                textDecoration: "none",
+                p: { xs: 2.5, md: 3 },
+                transition: "all 0.3s cubic-bezier(0.23, 1, 0.32, 1)",
+                "&:hover": {
+                  borderColor: "rgba(26, 74, 53, 0.35)",
+                  boxShadow:
+                    "0 18px 30px rgba(26, 74, 53, 0.10), inset 0 0 0 1px rgba(26, 74, 53, 0.08)",
+                  transform: "translateY(-4px)",
+                  "& .dashboard-arrow": {
+                    color: adminPalette.brandPrimary,
+                    transform: "translate(3px, -3px)",
+                  },
+                },
+              }}
+            >
               <Box
                 sx={{
                   width: 36,
                   height: 36,
                   borderRadius: "999px",
-                  backgroundColor: adminPalette.surfaceSoft,
-                  color: adminPalette.textPrimary,
+                  backgroundColor: adminPalette.brandPrimary,
+                  color: "#ffffff",
                   display: "inline-flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -156,13 +160,20 @@ export default function AdminDashboard() {
                 <Typography sx={{ fontSize: 14, fontWeight: 500, color: adminPalette.textPrimary }}>
                   {card.title}
                 </Typography>
-                <Typography sx={{ fontSize: 12, color: adminPalette.textTertiary, lineHeight: 1.6 }}>
+                <Typography sx={{ fontSize: 12, color: adminPalette.textSecondary, lineHeight: 1.6 }}>
                   {card.description}
                 </Typography>
               </Box>
 
               <Box sx={{ display: "flex", justifyContent: "flex-end", mt: "auto" }}>
-                <ArrowOutwardRoundedIcon sx={{ fontSize: 18, color: "#c0c0c0" }} />
+                <ArrowOutwardRoundedIcon
+                  className="dashboard-arrow"
+                  sx={{
+                    fontSize: 18,
+                    color: "#c0c0c0",
+                    transition: "transform 0.2s ease, color 0.2s ease",
+                  }}
+                />
               </Box>
             </Box>
           )

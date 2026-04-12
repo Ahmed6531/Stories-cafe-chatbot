@@ -15,7 +15,11 @@ import Box from "@mui/material/Box"
 import Button from "@mui/material/Button"
 import Checkbox from "@mui/material/Checkbox"
 import Divider from "@mui/material/Divider"
+import FormControl from "@mui/material/FormControl"
 import FormControlLabel from "@mui/material/FormControlLabel"
+import MenuItem from "@mui/material/MenuItem"
+import Select from "@mui/material/Select"
+import Skeleton from "@mui/material/Skeleton"
 import Table from "@mui/material/Table"
 import TableBody from "@mui/material/TableBody"
 import TableCell from "@mui/material/TableCell"
@@ -24,6 +28,7 @@ import TableRow from "@mui/material/TableRow"
 import Typography from "@mui/material/Typography"
 import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined"
 import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined"
+import { formatLL } from "../../utils/currency"
 import {
   adminBadgeOptionalSx,
   adminBodySx,
@@ -115,6 +120,299 @@ const variantGroupsOverridesSx = {
   },
 }
 
+const itemFormLabelSx = {
+  ...adminLabelSx,
+  color: "#525252",
+  fontWeight: 600,
+}
+
+const itemFormHintSx = {
+  ...adminHintSx,
+  color: "#848484",
+}
+
+const itemFormErrorSx = {
+  ...adminHintSx,
+  color: adminPalette.danger,
+  fontWeight: 500,
+}
+
+const itemInputTightSx = {
+  ...adminInputSx,
+  border: "0.5px solid rgba(0,0,0,0.18)",
+  padding: "7px 10px",
+}
+
+const requiredAsteriskSx = {
+  color: adminPalette.warningText,
+  fontWeight: 600,
+}
+
+const dropdownMenuProps = {
+  PaperProps: {
+    sx: {
+      mt: 0.5,
+      borderRadius: "10px",
+      border: "0.5px solid rgba(0,0,0,0.10)",
+      boxShadow: "0 10px 24px rgba(15,23,42,0.08)",
+    },
+  },
+}
+
+const itemSelectFieldSx = {
+  "& .MuiOutlinedInput-notchedOutline": {
+    border: "0.5px solid rgba(0,0,0,0.15)",
+  },
+  "& .MuiSelect-select": {
+    padding: "8px 34px 8px 10px",
+    fontSize: 13,
+    color: adminPalette.textPrimary,
+    backgroundColor: adminPalette.pageBg,
+    borderRadius: "8px",
+  },
+  "& .MuiSvgIcon-root": {
+    color: adminPalette.textTertiary,
+    right: 10,
+  },
+  "& .Mui-focused .MuiOutlinedInput-notchedOutline": {
+    borderColor: adminPalette.brandPrimary,
+    boxShadow: "0 0 0 2px rgba(0,112,74,0.10)",
+  },
+}
+
+function normalizeSubcategoryKey(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase()
+}
+
+function canonicalizeSubcategoryValue(value, options = []) {
+  const trimmedValue = String(value || "").trim().replace(/\s+/g, " ")
+  if (!trimmedValue) return ""
+
+  const normalizedValue = normalizeSubcategoryKey(trimmedValue)
+  const matchedOption = options.find((option) => normalizeSubcategoryKey(option) === normalizedValue)
+  return matchedOption || trimmedValue
+}
+
+function AdminImagePlaceholder({ size = 48, radius = "8px", iconSize = 18 }) {
+  return (
+    <Box
+      sx={{
+        width: size,
+        height: size,
+        borderRadius: radius,
+        backgroundColor: adminPalette.pageBg,
+        border: "0.5px solid rgba(0,0,0,0.10)",
+        color: adminPalette.textTertiary,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      <ImageOutlinedIcon sx={{ fontSize: iconSize }} />
+    </Box>
+  )
+}
+
+const skeletonCardSx = {
+  border: "1px solid #e0e0e0",
+  borderRadius: "12px",
+  backgroundColor: "#fff",
+  boxShadow: "0 0 6px rgba(0,0,0,0.06)",
+  overflow: "hidden",
+}
+
+function ItemsTableSkeleton() {
+  const rows = Array.from({ length: 6 })
+
+  return (
+    <Box sx={{ ...skeletonCardSx, overflowX: "auto" }} aria-hidden="true">
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: "minmax(180px, 1.4fr) 150px 110px 130px 110px 110px 150px",
+          backgroundColor: adminPalette.surfaceSoft,
+          borderBottom: "0.5px solid rgba(0,0,0,0.07)",
+          minWidth: 940,
+        }}
+      >
+        {["Name", "Category", "Image", "Base price", "Available", "Featured", "Actions"].map((key) => (
+          <Box key={key} sx={{ px: "14px", py: "11px" }}>
+            <Skeleton
+              animation="wave"
+              variant="text"
+              width={key === "Name" ? "54%" : "62%"}
+              height={18}
+              sx={{ bgcolor: "#eceff1" }}
+            />
+          </Box>
+        ))}
+      </Box>
+
+      <Box sx={{ minWidth: 940 }}>
+        {rows.map((_, index) => (
+          <Box
+            key={`items-skeleton-row-${index}`}
+            sx={{
+              display: "grid",
+              gridTemplateColumns: "minmax(180px, 1.4fr) 150px 110px 130px 110px 110px 150px",
+              borderBottom: index === rows.length - 1 ? "none" : "0.5px solid rgba(0,0,0,0.07)",
+              backgroundColor: adminPalette.surface,
+            }}
+          >
+            <Box sx={{ px: "14px", py: "14px" }}>
+              <Skeleton animation="wave" variant="text" width="72%" height={22} sx={{ bgcolor: "#eceff1" }} />
+            </Box>
+            <Box sx={{ px: "14px", py: "14px" }}>
+              <Skeleton animation="wave" variant="text" width="80%" height={22} sx={{ bgcolor: "#eceff1" }} />
+            </Box>
+            <Box sx={{ px: "14px", py: "12px" }}>
+              <Skeleton
+                animation="wave"
+                variant="rounded"
+                width={48}
+                height={48}
+                sx={{ borderRadius: "8px", bgcolor: "#eceff1" }}
+              />
+            </Box>
+            <Box sx={{ px: "14px", py: "14px" }}>
+              <Skeleton animation="wave" variant="text" width="78%" height={22} sx={{ bgcolor: "#eceff1" }} />
+            </Box>
+            <Box sx={{ px: "14px", py: "14px" }}>
+              <Skeleton
+                animation="wave"
+                variant="rounded"
+                width={42}
+                height={24}
+                sx={{ borderRadius: "6px", bgcolor: "#eceff1" }}
+              />
+            </Box>
+            <Box sx={{ px: "14px", py: "14px" }}>
+              <Skeleton
+                animation="wave"
+                variant="rounded"
+                width={42}
+                height={24}
+                sx={{ borderRadius: "6px", bgcolor: "#eceff1" }}
+              />
+            </Box>
+            <Box sx={{ px: "14px", py: "12px", display: "flex", gap: 8, alignItems: "center" }}>
+              <Skeleton
+                animation="wave"
+                variant="rounded"
+                width={58}
+                height={30}
+                sx={{ borderRadius: "8px", bgcolor: "#eceff1" }}
+              />
+              <Skeleton
+                animation="wave"
+                variant="rounded"
+                width={66}
+                height={30}
+                sx={{ borderRadius: "8px", bgcolor: "#eceff1" }}
+              />
+            </Box>
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  )
+}
+
+function ItemFormSkeleton() {
+  return (
+    <Box sx={{ ...skeletonCardSx, p: { xs: 2, md: "16px 20px" } }} aria-hidden="true">
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1.75 }}>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 2, flexWrap: "wrap" }}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            <Skeleton animation="wave" variant="text" width={84} height={18} sx={{ bgcolor: "#eceff1" }} />
+            <Skeleton animation="wave" variant="text" width={168} height={24} sx={{ bgcolor: "#eceff1" }} />
+            <Skeleton animation="wave" variant="text" width={250} height={18} sx={{ bgcolor: "#eceff1" }} />
+          </Box>
+          <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+            <Skeleton animation="wave" variant="rounded" width={126} height={38} sx={{ borderRadius: "8px", bgcolor: "#eceff1" }} />
+          </Box>
+        </Box>
+
+        <Box
+          sx={{
+            display: "grid",
+            gap: 1.5,
+            gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
+          }}
+        >
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Box key={`item-form-field-${index}`} sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+              <Skeleton animation="wave" variant="text" width={90} height={18} sx={{ bgcolor: "#eceff1" }} />
+              <Skeleton animation="wave" variant="rounded" width="100%" height={40} sx={{ borderRadius: "8px", bgcolor: "#eceff1" }} />
+              {index === 3 && (
+                <Skeleton animation="wave" variant="text" width="76%" height={16} sx={{ bgcolor: "#eceff1" }} />
+              )}
+            </Box>
+          ))}
+        </Box>
+
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+          <Skeleton animation="wave" variant="text" width={80} height={18} sx={{ bgcolor: "#eceff1" }} />
+          <Skeleton animation="wave" variant="rounded" width="100%" height={104} sx={{ borderRadius: "8px", bgcolor: "#eceff1" }} />
+          <Skeleton animation="wave" variant="text" width="34%" height={16} sx={{ bgcolor: "#eceff1" }} />
+        </Box>
+
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+          <Skeleton animation="wave" variant="text" width={44} height={18} sx={{ bgcolor: "#eceff1" }} />
+          <Box
+            sx={{
+              borderRadius: "12px",
+              border: "1px dashed #e0e0e0",
+              backgroundColor: adminPalette.surfaceSoft,
+              p: 2,
+              display: "flex",
+              alignItems: "center",
+              gap: 2,
+            }}
+          >
+            <Skeleton animation="wave" variant="rounded" width={64} height={64} sx={{ borderRadius: "10px", bgcolor: "#eceff1" }} />
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, flex: 1 }}>
+              <Skeleton animation="wave" variant="text" width={110} height={20} sx={{ bgcolor: "#eceff1" }} />
+              <Skeleton animation="wave" variant="text" width={180} height={18} sx={{ bgcolor: "#eceff1" }} />
+            </Box>
+            <Skeleton animation="wave" variant="circular" width={34} height={34} sx={{ bgcolor: "#eceff1" }} />
+          </Box>
+          <Skeleton animation="wave" variant="text" width={220} height={16} sx={{ bgcolor: "#eceff1", mx: "auto" }} />
+        </Box>
+
+        <Box sx={{ borderTop: "0.5px solid rgba(0,0,0,0.08)" }} />
+
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+            <Skeleton animation="wave" variant="text" width={70} height={18} sx={{ bgcolor: "#eceff1" }} />
+            <Skeleton animation="wave" variant="rounded" width={72} height={24} sx={{ borderRadius: "6px", bgcolor: "#eceff1" }} />
+          </Box>
+          <Skeleton animation="wave" variant="rounded" width="100%" height={76} sx={{ borderRadius: "12px", bgcolor: "#eceff1" }} />
+        </Box>
+
+        <Box
+          sx={{
+            display: "grid",
+            gap: 1,
+            gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
+          }}
+        >
+          {Array.from({ length: 2 }).map((_, index) => (
+            <Box key={`item-checkbox-${index}`} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Skeleton animation="wave" variant="rounded" width={20} height={20} sx={{ borderRadius: "4px", bgcolor: "#eceff1" }} />
+              <Skeleton animation="wave" variant="text" width={index === 0 ? 64 : 138} height={18} sx={{ bgcolor: "#eceff1" }} />
+            </Box>
+          ))}
+        </Box>
+      </Box>
+    </Box>
+  )
+}
+
 export default function AdminItems() {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
@@ -173,18 +471,22 @@ export default function AdminItems() {
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
-  function validateForm() {
-    if (!form.name.trim()) return "Name is required"
-    if (!form.categoryId) return "Category is required"
-    if (!editingId && !imageFile && !imagePreview) return "Please select an image"
-    const priceNum = Number(form.basePrice)
+  function validateForm(nextForm, subcategoryRequired) {
+    if (!nextForm.name.trim()) return "Name is required"
+    if (!nextForm.categoryId) return "Category is required"
+    if (subcategoryRequired && !nextForm.subcategory.trim()) return "Subcategory is required"
+    const priceNum = Number(nextForm.basePrice)
     if (Number.isNaN(priceNum) || priceNum < 0) return "Base price must be a number >= 0"
     return ""
   }
 
   async function onSubmit(e) {
     e.preventDefault()
-    const msg = validateForm()
+    const nextForm = {
+      ...form,
+      subcategory: canonicalizeSubcategoryValue(form.subcategory, subcategoryOptions),
+    }
+    const msg = validateForm(nextForm, subcategoryRequired)
     if (msg) {
       setFormError(msg)
       return
@@ -193,7 +495,7 @@ export default function AdminItems() {
 
     await submitMenuItem({
       editingId,
-      form,
+      form: nextForm,
       variantGroups: attachedGroups,
       imageFile,
       createMenuItem,
@@ -253,8 +555,16 @@ export default function AdminItems() {
 
   if (loading) {
     return (
-      <Box sx={adminCardSx}>
-        <Typography sx={adminBodySx}>Loading menu items...</Typography>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+          <Typography sx={adminPageTitleSx}>Items</Typography>
+          <Typography sx={{ ...adminBodySx, maxWidth: 760 }}>
+            Maintain menu items, pricing, imagery, and category-scoped variant groups without
+            touching the underlying item workflow.
+          </Typography>
+        </Box>
+        <ItemFormSkeleton />
+        <ItemsTableSkeleton />
       </Box>
     )
   }
@@ -281,12 +591,35 @@ export default function AdminItems() {
   const subcategoryOptions = selectedCategory?.subcategories?.length
     ? selectedCategory.subcategories.map((s) => s.name).sort()
     : [...new Set(items.map((i) => i.subcategory).filter(Boolean))].sort()
+  const subcategoryRequired = Boolean(selectedCategory?.subcategories?.length)
 
   const imagePickerLabel = imageFile
     ? imageFile.name
     : imagePreview
       ? "Click to replace image"
       : "Click to choose image..."
+  const fieldErrors = {
+    name: formError === "Name is required" ? formError : "",
+    category: formError === "Category is required" ? formError : "",
+    subcategory: formError === "Subcategory is required" ? formError : "",
+    price: formError === "Base price must be a number >= 0" ? formError : "",
+  }
+  const generalFormError =
+    formError &&
+    !fieldErrors.name &&
+    !fieldErrors.category &&
+    !fieldErrors.subcategory &&
+    !fieldErrors.price
+      ? formError
+      : ""
+  const nameInvalid = Boolean(fieldErrors.name)
+  const categoryInvalid = Boolean(fieldErrors.category)
+  const subcategoryInvalid = Boolean(fieldErrors.subcategory)
+  const priceInvalid = Boolean(fieldErrors.price)
+  const invalidFieldSx = {
+    borderColor: "#d67b73",
+    boxShadow: "0 0 0 2px rgba(192,57,43,0.08)",
+  }
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
@@ -305,25 +638,36 @@ export default function AdminItems() {
           ...adminCardSx,
           display: "flex",
           flexDirection: "column",
-          gap: 2.25,
+          gap: 1.75,
           width: "100%",
+          borderColor: "rgba(0,0,0,0.13)",
         }}
       >
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 2, flexWrap: "wrap" }}>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
             <Typography sx={adminSectionLabelSx}>Item details</Typography>
             <Typography sx={{ fontSize: 14, fontWeight: 500, color: adminPalette.textPrimary }}>
-              {editingId ? "Editing menu item" : "Create a new menu item"}
+              {editingId ? "Edit Menu Item" : "Add Menu Item"}
+            </Typography>
+            <Typography sx={itemFormHintSx}>
+              {editingId
+                ? "Update the details and save your changes."
+                : "Fill in the details below to add it to your menu."}
             </Typography>
           </Box>
-          {editingId && (
-            <Button type="button" onClick={cancelEdit} sx={adminGhostButtonSx}>
-              Cancel edit
+          <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+            {editingId && (
+              <Button type="button" onClick={cancelEdit} sx={adminGhostButtonSx}>
+                Cancel
+              </Button>
+            )}
+            <Button type="submit" disabled={saving} sx={adminPrimaryButtonSx}>
+              {saving ? "Saving..." : editingId ? "Save Changes" : "Add Menu Item"}
             </Button>
-          )}
+          </Box>
         </Box>
 
-        {formError && (
+        {generalFormError && (
           <Box
             sx={{
               borderRadius: "8px",
@@ -334,7 +678,7 @@ export default function AdminItems() {
             }}
           >
             <Typography sx={{ fontSize: 12, fontWeight: 500, color: adminPalette.danger }}>
-              {formError}
+              {generalFormError}
             </Typography>
           </Box>
         )}
@@ -342,13 +686,13 @@ export default function AdminItems() {
         <Box
           sx={{
             display: "grid",
-            gap: 2,
+            gap: 1.5,
             gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
           }}
         >
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-            <Typography component="label" htmlFor="item-name" sx={adminLabelSx}>
-              Name
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            <Typography component="label" htmlFor="item-name" sx={itemFormLabelSx}>
+              Name <Box component="span" sx={requiredAsteriskSx}>*</Box>
             </Typography>
             <Box
               component="input"
@@ -357,13 +701,16 @@ export default function AdminItems() {
               placeholder="Iced latte"
               value={form.name}
               onChange={onFormChange}
-              sx={adminInputSx}
+              sx={nameInvalid ? { ...itemInputTightSx, ...invalidFieldSx } : itemInputTightSx}
             />
+            {fieldErrors.name && <Typography sx={itemFormErrorSx}>{fieldErrors.name}</Typography>}
           </Box>
 
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-            <Typography sx={adminLabelSx}>Category</Typography>
-            <Box sx={pickerOverridesSx}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            <Typography sx={itemFormLabelSx}>
+              Category <Box component="span" sx={requiredAsteriskSx}>*</Box>
+            </Typography>
+            <Box sx={categoryInvalid ? { ...pickerOverridesSx, "& select": { ...adminSelectSx, ...invalidFieldSx, fontFamily: "inherit" } } : pickerOverridesSx}>
               <CategoryPicker
                 value={form.categoryId}
                 onChange={(id) => {
@@ -372,11 +719,14 @@ export default function AdminItems() {
                 }}
               />
             </Box>
+            {fieldErrors.category && (
+              <Typography sx={itemFormErrorSx}>{fieldErrors.category}</Typography>
+            )}
           </Box>
 
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-            <Typography component="label" htmlFor="item-price" sx={adminLabelSx}>
-              Price
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            <Typography component="label" htmlFor="item-price" sx={itemFormLabelSx}>
+              Price <Box component="span" sx={requiredAsteriskSx}>*</Box>
             </Typography>
             <Box
               component="input"
@@ -388,34 +738,60 @@ export default function AdminItems() {
               type="number"
               step="0.01"
               min="0"
-              sx={adminInputSx}
+              sx={priceInvalid ? { ...itemInputTightSx, ...invalidFieldSx } : itemInputTightSx}
             />
+            {fieldErrors.price && <Typography sx={itemFormErrorSx}>{fieldErrors.price}</Typography>}
           </Box>
 
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-            <Typography component="label" htmlFor="item-subcategory" sx={adminLabelSx}>
-              Subcategory
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            <Typography component="label" htmlFor="item-subcategory" sx={itemFormLabelSx}>
+              Subcategory {subcategoryRequired && <Box component="span" sx={requiredAsteriskSx}>*</Box>}
             </Typography>
-            <datalist id="subcategory-options">
-              {subcategoryOptions.map((subcategory) => (
-                <option key={subcategory} value={subcategory} />
-              ))}
-            </datalist>
-            <Box
-              component="input"
-              id="item-subcategory"
-              name="subcategory"
-              placeholder="Hot, Iced, Frap"
-              value={form.subcategory}
-              onChange={onFormChange}
-              list="subcategory-options"
-              sx={adminInputSx}
-            />
+            {subcategoryRequired ? (
+              <FormControl
+                size="small"
+                sx={subcategoryInvalid ? { ...itemSelectFieldSx, ...invalidFieldSx } : itemSelectFieldSx}
+              >
+                <Select
+                  id="item-subcategory"
+                  name="subcategory"
+                  value={form.subcategory}
+                  displayEmpty
+                  onChange={onFormChange}
+                  MenuProps={dropdownMenuProps}
+                >
+                  <MenuItem value="">
+                    <em>Select subcategory</em>
+                  </MenuItem>
+                  {subcategoryOptions.map((subcategory) => (
+                    <MenuItem key={subcategory} value={subcategory}>
+                      {subcategory}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            ) : (
+              <Box
+                component="input"
+                id="item-subcategory"
+                name="subcategory"
+                placeholder="Optional"
+                value={form.subcategory}
+                onChange={onFormChange}
+                sx={subcategoryInvalid ? { ...itemInputTightSx, ...invalidFieldSx } : itemInputTightSx}
+              />
+            )}
+            <Typography sx={subcategoryInvalid ? itemFormErrorSx : itemFormHintSx}>
+              {fieldErrors.subcategory ||
+                (subcategoryRequired
+                  ? "Choose one of the existing subcategories for this category."
+                  : "Optional unless this category already uses subcategories. Matching names are normalized automatically.")}
+            </Typography>
           </Box>
         </Box>
 
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-          <Typography component="label" htmlFor="item-description" sx={adminLabelSx}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+          <Typography component="label" htmlFor="item-description" sx={itemFormLabelSx}>
             Description
           </Typography>
           <Box
@@ -427,28 +803,32 @@ export default function AdminItems() {
             onChange={onFormChange}
             rows={4}
             sx={{
-              ...adminInputSx,
+              ...itemInputTightSx,
               resize: "vertical",
-              minHeight: 112,
+              minHeight: 104,
             }}
           />
-          <Typography sx={adminHintSx}>
+          <Typography sx={itemFormHintSx}>
             Keep the customer-facing description concise and neutral.
           </Typography>
         </Box>
 
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-          <Typography sx={adminLabelSx}>Image</Typography>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+          <Typography sx={itemFormLabelSx}>
+            Image
+          </Typography>
           <Box
             component="label"
             sx={{
+              position: "relative",
               border: "0.5px dashed rgba(0,0,0,0.18)",
               borderRadius: "12px",
               backgroundColor: adminPalette.surfaceSoft,
-              minHeight: 132,
               p: 2,
               display: "flex",
               alignItems: "center",
+              alignContent: "flex-start",
+              flexWrap: "wrap",
               gap: 2,
               cursor: "pointer",
             }}
@@ -459,8 +839,8 @@ export default function AdminItems() {
                 src={imagePreview}
                 alt="Item preview"
                 sx={{
-                  width: 84,
-                  height: 84,
+                  width: 64,
+                  height: 64,
                   borderRadius: "10px",
                   objectFit: "cover",
                   border: "0.5px solid rgba(0,0,0,0.10)",
@@ -470,10 +850,10 @@ export default function AdminItems() {
             ) : (
               <Box
                 sx={{
-                  width: 84,
-                  height: 84,
+                  width: 64,
+                  height: 64,
                   borderRadius: "10px",
-                  backgroundColor: adminPalette.surface,
+                  backgroundColor: adminPalette.pageBg,
                   border: "0.5px solid rgba(0,0,0,0.10)",
                   display: "inline-flex",
                   alignItems: "center",
@@ -488,33 +868,66 @@ export default function AdminItems() {
 
             <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, minWidth: 0 }}>
               <Typography sx={{ fontSize: 13, fontWeight: 500, color: adminPalette.textPrimary }}>
-                Upload product image
+                Upload image
               </Typography>
-              <Typography sx={{ ...adminBodySx, color: adminPalette.textTertiary }}>
+              <Typography sx={{ ...adminBodySx, color: "#7a7a7a" }}>
                 {imagePickerLabel}
-              </Typography>
-              <Typography sx={adminHintSx}>
-                JPG, PNG, WEBP, GIF, or AVIF. The current submit flow remains unchanged.
               </Typography>
             </Box>
 
-            <Box
-              sx={{
-                ml: "auto",
-                width: 34,
-                height: 34,
-                borderRadius: "999px",
-                backgroundColor: adminPalette.surface,
-                border: "0.5px solid rgba(0,0,0,0.10)",
-                color: adminPalette.textPrimary,
-                display: { xs: "none", sm: "inline-flex" },
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <CloudUploadOutlinedIcon sx={{ fontSize: 18 }} />
-            </Box>
+            {imageFile ? (
+              <Box
+                component="button"
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  resetImage()
+                }}
+                sx={{
+                  position: "absolute",
+                  top: 10,
+                  right: 10,
+                  width: 28,
+                  height: 28,
+                  borderRadius: "999px",
+                  border: "0.5px solid rgba(0,0,0,0.12)",
+                  backgroundColor: adminPalette.pageBg,
+                  color: adminPalette.textSecondary,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  fontSize: 16,
+                  lineHeight: 1,
+                  "&:hover": {
+                    backgroundColor: adminPalette.surface,
+                    color: adminPalette.textPrimary,
+                  },
+                }}
+                aria-label="Remove selected image"
+              >
+                ×
+              </Box>
+            ) : (
+              <Box
+                sx={{
+                  ml: "auto",
+                  width: 34,
+                  height: 34,
+                  borderRadius: "999px",
+                  backgroundColor: adminPalette.pageBg,
+                  border: "0.5px solid rgba(0,0,0,0.10)",
+                  color: adminPalette.textPrimary,
+                  display: { xs: "none", sm: "inline-flex" },
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <CloudUploadOutlinedIcon sx={{ fontSize: 18 }} />
+              </Box>
+            )}
 
             <Box
               component="input"
@@ -525,13 +938,24 @@ export default function AdminItems() {
               onChange={onFileChange}
             />
           </Box>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.35 }}>
+            <Typography sx={{ ...itemFormHintSx, fontStyle: "italic", textAlign: "center" }}>
+              Images look best with a transparent background.
+            </Typography>
+          </Box>
         </Box>
 
         <Divider sx={{ borderColor: "rgba(0,0,0,0.08)" }} />
 
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 1,
+          }}
+        >
           <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
-            <Typography sx={adminSectionLabelSx}>Variant groups</Typography>
+            <Typography sx={adminSectionLabelSx}>Options</Typography>
             <Box sx={adminBadgeOptionalSx}>{attachedGroups.length} attached</Box>
           </Box>
           <Box sx={variantGroupsOverridesSx}>
@@ -589,17 +1013,6 @@ export default function AdminItems() {
             sx={{ m: 0 }}
           />
         </Box>
-
-        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-          <Button type="submit" disabled={saving} sx={adminPrimaryButtonSx}>
-            {saving ? "Saving..." : editingId ? "Save changes" : "Create item"}
-          </Button>
-          {editingId && (
-            <Button type="button" onClick={cancelEdit} sx={adminGhostButtonSx}>
-              Cancel
-            </Button>
-          )}
-        </Box>
       </Box>
 
       <Box sx={adminTableWrapSx}>
@@ -632,26 +1045,36 @@ export default function AdminItems() {
                 <TableCell sx={tableBodyCellSx}>{item.category?.name || "-"}</TableCell>
                 <TableCell sx={tableBodyCellSx}>
                   {item.image ? (
-                    <Box
-                      component="img"
-                      src={item.image}
-                      alt={item.name}
-                      sx={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: "8px",
-                        objectFit: "cover",
-                        display: "block",
-                        border: "0.5px solid rgba(0,0,0,0.10)",
-                      }}
-                    />
+                    <Box sx={{ position: "relative", width: 48, height: 48 }}>
+                      <Box
+                        component="img"
+                        src={item.image}
+                        alt={item.name}
+                        sx={{
+                          width: 48,
+                          height: 48,
+                          borderRadius: "8px",
+                          objectFit: "cover",
+                          display: "block",
+                          border: "0.5px solid rgba(0,0,0,0.10)",
+                        }}
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none"
+                          const fallback = e.currentTarget.nextElementSibling
+                          if (fallback instanceof HTMLElement) {
+                            fallback.style.display = "inline-flex"
+                          }
+                        }}
+                      />
+                      <Box sx={{ display: "none", position: "absolute", inset: 0 }}>
+                        <AdminImagePlaceholder />
+                      </Box>
+                    </Box>
                   ) : (
-                    <Typography sx={{ fontSize: 12, color: adminPalette.textTertiary }}>
-                      No image
-                    </Typography>
+                    <AdminImagePlaceholder />
                   )}
                 </TableCell>
-                <TableCell sx={tableBodyCellSx}>L.L {item.basePrice?.toLocaleString()}</TableCell>
+                <TableCell sx={tableBodyCellSx}>{formatLL(item.basePrice)}</TableCell>
                 <TableCell sx={tableBodyCellSx}>
                   <Box sx={getBooleanBadgeSx(item.isAvailable)}>
                     {item.isAvailable ? "Yes" : "No"}

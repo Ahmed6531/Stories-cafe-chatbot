@@ -15,7 +15,6 @@ import { useSession } from "../../hooks/useSession"
 import {
   adminBodySx,
   adminBorder,
-  adminPageTitleSx,
   adminPalette,
   adminPrimaryButtonSx,
   adminTextFieldSx,
@@ -57,32 +56,83 @@ export default function AdminLogin() {
         elevation={0}
         sx={{
           width: "100%",
-          maxWidth: 400,
-          p: { xs: 2.5, sm: 3 },
+          maxWidth: 440,
+          p: { xs: 3, sm: 3.5 },
           borderRadius: "14px",
           border: adminBorder,
           boxShadow: "none",
           backgroundColor: adminPalette.surface,
         }}
       >
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75, mb: 3 }}>
-          <Typography sx={adminPageTitleSx}>Stories Café</Typography>
-          <Typography sx={{ ...adminBodySx, color: adminPalette.textPrimary, fontWeight: 500 }}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.9, mb: 3.25 }}>
+          <Box
+            component="img"
+            src="/stories-logo.png"
+            alt="Stories"
+            sx={{
+              maxWidth: "118px",
+              maxHeight: "28px",
+              objectFit: "contain",
+              display: "block",
+            }}
+            onError={(e) => {
+              e.currentTarget.style.display = "none"
+            }}
+          />
+          <Typography
+            sx={{
+              ...adminBodySx,
+              color: adminPalette.textPrimary,
+              fontWeight: 600,
+              fontSize: 14,
+            }}
+          >
             Admin login
           </Typography>
-          <Typography sx={adminBodySx}>
+          <Typography sx={{ ...adminBodySx, fontSize: 13.5 }}>
             Sign in to manage items, categories, variant groups, and orders.
           </Typography>
         </Box>
 
-        <Box component="form" onSubmit={handleSubmit} sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <Box component="form" onSubmit={handleSubmit} sx={{ display: "flex", flexDirection: "column", gap: 2.1 }}>
           <TextField
             label="Admin email"
             type="email"
             fullWidth
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            sx={adminTextFieldSx}
+            sx={{
+              ...adminTextFieldSx,
+              "& .MuiInputLabel-root": {
+                fontSize: 13,
+                fontWeight: 600,
+                color: adminPalette.textSecondary,
+                transform: "translate(14px, 13px) scale(1)",
+              },
+              "& .MuiInputLabel-root.MuiInputLabel-shrink": {
+                transform: "translate(14px, -8px) scale(0.92)",
+                backgroundColor: adminPalette.surface,
+                padding: "0 4px",
+              },
+              "& .MuiOutlinedInput-root": {
+                borderRadius: "8px",
+                backgroundColor: adminPalette.surface,
+                "& fieldset": {
+                  border: "1px solid #e0e0e0",
+                },
+                "&:hover fieldset": {
+                  borderColor: "#e0e0e0",
+                },
+                "&.Mui-focused fieldset": {
+                  borderColor: "#1e5631",
+                  boxShadow: "none",
+                },
+              },
+              "& .MuiInputBase-input": {
+                padding: "12px",
+                fontSize: 14,
+              },
+            }}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
@@ -98,7 +148,38 @@ export default function AdminLogin() {
             fullWidth
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            sx={adminTextFieldSx}
+            sx={{
+              ...adminTextFieldSx,
+              "& .MuiInputLabel-root": {
+                fontSize: 13,
+                fontWeight: 600,
+                color: adminPalette.textSecondary,
+                transform: "translate(14px, 13px) scale(1)",
+              },
+              "& .MuiInputLabel-root.MuiInputLabel-shrink": {
+                transform: "translate(14px, -8px) scale(0.92)",
+                backgroundColor: adminPalette.surface,
+                padding: "0 4px",
+              },
+              "& .MuiOutlinedInput-root": {
+                borderRadius: "8px",
+                backgroundColor: adminPalette.surface,
+                "& fieldset": {
+                  border: "1px solid #e0e0e0",
+                },
+                "&:hover fieldset": {
+                  borderColor: "#e0e0e0",
+                },
+                "&.Mui-focused fieldset": {
+                  borderColor: "#1e5631",
+                  boxShadow: "none",
+                },
+              },
+              "& .MuiInputBase-input": {
+                padding: "12px",
+                fontSize: 14,
+              },
+            }}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
@@ -125,7 +206,32 @@ export default function AdminLogin() {
             </Box>
           )}
 
-          <Button type="submit" variant="contained" fullWidth sx={{ ...adminPrimaryButtonSx, mt: 0.5, py: 1.1 }}>
+          <Button
+            type="submit"
+            variant="contained"
+            fullWidth
+            sx={{
+              ...adminPrimaryButtonSx,
+              mt: 1,
+              border: "none",
+              backgroundColor: "#1e5631",
+              color: "#fff",
+              fontWeight: 600,
+              borderRadius: "8px",
+              py: "1rem",
+              px: "2rem",
+              cursor: "pointer",
+              width: "100%",
+              fontSize: "1rem",
+              letterSpacing: "0.5px",
+              transition: "all 0.3s ease",
+              "&:hover": {
+                backgroundColor: "#1e5631",
+                transform: "translateY(-2px)",
+                boxShadow: "none",
+              },
+            }}
+          >
             Login
           </Button>
         </Box>
