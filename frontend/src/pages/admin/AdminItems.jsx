@@ -7,6 +7,7 @@ import {
   uploadMenuItemImage,
   invalidateCategoriesCache,
 } from "../../API/menuApi"
+import { fetchCategories } from "../../API/categoryApi"
 import { submitMenuItem } from "../../components/admin/submitMenuItem"
 import CategoryPicker from "../../components/admin/CategoryPicker"
 import VariantGroupsField from "../../components/admin/VariantGroupsField"
@@ -155,6 +156,10 @@ const dropdownMenuProps = {
       borderRadius: "10px",
       border: "0.5px solid rgba(0,0,0,0.10)",
       boxShadow: "0 10px 24px rgba(15,23,42,0.08)",
+      "& .MuiMenuItem-root": {
+        fontSize: 12,
+        minHeight: 34,
+      },
     },
   },
 }
@@ -165,7 +170,7 @@ const itemSelectFieldSx = {
   },
   "& .MuiSelect-select": {
     padding: "8px 34px 8px 10px",
-    fontSize: 13,
+    fontSize: 12,
     color: adminPalette.textPrimary,
     backgroundColor: adminPalette.pageBg,
     borderRadius: "8px",
@@ -415,6 +420,7 @@ function ItemFormSkeleton() {
 
 export default function AdminItems() {
   const [items, setItems] = useState([])
+  const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [editingId, setEditingId] = useState(null)
@@ -425,6 +431,7 @@ export default function AdminItems() {
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState("")
   const fileInputRef = useRef(null)
+  const formCardRef = useRef(null)
 
   const [attachedGroups, setAttachedGroups] = useState([])
   const [dragSrcId, setDragSrcId] = useState(null)
@@ -442,8 +449,12 @@ export default function AdminItems() {
   async function load() {
     try {
       setLoading(true)
-      const data = await fetchMenu()
-      setItems(data.items)
+      const [menuData, categoryData] = await Promise.all([
+        fetchMenu(),
+        fetchCategories({ includeInactive: true }),
+      ])
+      setItems(menuData.items)
+      setCategories(categoryData)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -543,6 +554,13 @@ export default function AdminItems() {
     resetImage()
     setImagePreview(item.image || "")
     setFormError("")
+
+    requestAnimationFrame(() => {
+      formCardRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      })
+    })
   }
 
   function cancelEdit() {
@@ -586,12 +604,26 @@ export default function AdminItems() {
   }
 
   const selectedCategory = form.categoryId
-    ? items.find((i) => i.category?._id === form.categoryId)?.category
+    ? categories.find((category) => String(category?._id) === String(form.categoryId))
     : null
-  const subcategoryOptions = selectedCategory?.subcategories?.length
-    ? selectedCategory.subcategories.map((s) => s.name).sort()
-    : [...new Set(items.map((i) => i.subcategory).filter(Boolean))].sort()
-  const subcategoryRequired = Boolean(selectedCategory?.subcategories?.length)
+  const categoryItemSubcategories = form.categoryId
+    ? [...new Set(
+      items
+        .filter((item) => String(item.category?._id) === String(form.categoryId))
+        .map((item) => String(item.subcategory || "").trim())
+        .filter(Boolean),
+    )].sort((a, b) => a.localeCompare(b))
+    : []
+  const configuredSubcategories = selectedCategory?.subcategories?.length
+    ? [...selectedCategory.subcategories]
+      .sort((a, b) => (a.order ?? 999) - (b.order ?? 999) || a.name.localeCompare(b.name))
+      .map((subcategory) => subcategory.name)
+    : []
+  const subcategoryOptions = configuredSubcategories.length > 0
+    ? configuredSubcategories
+    : categoryItemSubcategories
+  const subcategoryRequired = configuredSubcategories.length > 0
+  const useSubcategoryDropdown = subcategoryOptions.length > 0
 
   const imagePickerLabel = imageFile
     ? imageFile.name
@@ -632,6 +664,7 @@ export default function AdminItems() {
       </Box>
 
       <Box
+        ref={formCardRef}
         component="form"
         onSubmit={onSubmit}
         sx={{
@@ -747,7 +780,7 @@ export default function AdminItems() {
             <Typography component="label" htmlFor="item-subcategory" sx={itemFormLabelSx}>
               Subcategory {subcategoryRequired && <Box component="span" sx={requiredAsteriskSx}>*</Box>}
             </Typography>
-            {subcategoryRequired ? (
+            {useSubcategoryDropdown ? (
               <FormControl
                 size="small"
                 sx={subcategoryInvalid ? { ...itemSelectFieldSx, ...invalidFieldSx } : itemSelectFieldSx}
@@ -784,7 +817,9 @@ export default function AdminItems() {
             <Typography sx={subcategoryInvalid ? itemFormErrorSx : itemFormHintSx}>
               {fieldErrors.subcategory ||
                 (subcategoryRequired
-                  ? "Choose one of the existing subcategories for this category."
+                  ? "Choose one of the configured subcategories for this category."
+                  : useSubcategoryDropdown
+                  ? "Choose one of the existing subcategories already used in this category, or leave it blank."
                   : "Optional unless this category already uses subcategories. Matching names are normalized automatically.")}
             </Typography>
           </Box>

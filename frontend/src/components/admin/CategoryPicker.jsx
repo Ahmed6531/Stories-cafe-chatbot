@@ -1,27 +1,51 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import Box from "@mui/material/Box"
+import FormControl from "@mui/material/FormControl"
+import MenuItem from "@mui/material/MenuItem"
+import Select from "@mui/material/Select"
 import Typography from "@mui/material/Typography"
 import { styled } from "@mui/material/styles"
 import { fetchCategories, createCategory } from "../../API/categoryApi"
 import { invalidateCategoriesCache } from "../../API/menuApi"
+import { adminPalette } from "./adminUi"
 
 // ── Styled ────────────────────────────────────────────────────────────────────
 
-const StyledSelect = styled("select")(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontSize: 14,
-  fontWeight: 500,
-  color: theme.brand.textPrimary,
-  background: "#fff",
-  border: `1px solid ${theme.brand.border}`,
-  borderRadius: 10,
-  padding: "10px 12px",
-  outline: "none",
-  width: "100%",
-  boxSizing: "border-box",
-  cursor: "pointer",
-  "&:focus": { borderColor: theme.brand.primary },
-}))
+const categorySelectSx = {
+  "& .MuiOutlinedInput-notchedOutline": {
+    border: "0.5px solid rgba(0,0,0,0.15)",
+  },
+  "& .MuiSelect-select": {
+    padding: "8px 34px 8px 10px",
+    fontSize: 12,
+    color: adminPalette.textPrimary,
+    backgroundColor: adminPalette.pageBg,
+    borderRadius: "8px",
+  },
+  "& .MuiSvgIcon-root": {
+    color: adminPalette.textTertiary,
+    right: 10,
+  },
+  "& .Mui-focused .MuiOutlinedInput-notchedOutline": {
+    borderColor: adminPalette.brandPrimary,
+    boxShadow: "0 0 0 2px rgba(0,112,74,0.10)",
+  },
+}
+
+const categoryMenuProps = {
+  PaperProps: {
+    sx: {
+      mt: 0.5,
+      borderRadius: "10px",
+      border: "0.5px solid rgba(0,0,0,0.10)",
+      boxShadow: "0 10px 24px rgba(15,23,42,0.08)",
+      "& .MuiMenuItem-root": {
+        fontSize: 12,
+        minHeight: 34,
+      },
+    },
+  },
+}
 
 const ModalOverlay = styled(Box)(() => ({
   position: "fixed",
@@ -118,7 +142,6 @@ export default function CategoryPicker({ value, onChange }) {
   const [modalImage, setModalImage] = useState("")
   const [modalError, setModalError] = useState("")
   const [saving, setSaving] = useState(false)
-  const selectRef = useRef(null)
 
   useEffect(() => {
     fetchCategories().then(setCategories).catch(() => setCategories([]))
@@ -127,8 +150,6 @@ export default function CategoryPicker({ value, onChange }) {
   function handleSelectChange(e) {
     const val = e.target.value
     if (val === ADD_NEW_SENTINEL) {
-      // Reset select back to current value while modal is open
-      if (selectRef.current) selectRef.current.value = value || ""
       setModalName("")
       setModalImage("")
       setModalError("")
@@ -165,19 +186,24 @@ export default function CategoryPicker({ value, onChange }) {
 
   return (
     <>
-      <StyledSelect
-        ref={selectRef}
-        value={value || ""}
-        onChange={handleSelectChange}
-      >
-        <option value="">— Select category —</option>
-        {categories.map((cat) => (
-          <option key={cat._id} value={cat._id}>
-            {cat.name}
-          </option>
-        ))}
-        <option value={ADD_NEW_SENTINEL}>+ Add new category…</option>
-      </StyledSelect>
+      <FormControl size="small" fullWidth sx={categorySelectSx}>
+        <Select
+          value={value || ""}
+          displayEmpty
+          onChange={handleSelectChange}
+          MenuProps={categoryMenuProps}
+        >
+          <MenuItem value="">
+            <em>Select category</em>
+          </MenuItem>
+          {categories.map((cat) => (
+            <MenuItem key={cat._id} value={cat._id}>
+              {cat.name}
+            </MenuItem>
+          ))}
+          <MenuItem value={ADD_NEW_SENTINEL}>+ Add new category…</MenuItem>
+        </Select>
+      </FormControl>
 
       {showModal && (
         <ModalOverlay onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false) }}>

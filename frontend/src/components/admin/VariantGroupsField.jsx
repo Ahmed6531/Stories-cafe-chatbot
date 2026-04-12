@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react"
 import Box from "@mui/material/Box"
+import FormControl from "@mui/material/FormControl"
+import MenuItem from "@mui/material/MenuItem"
+import Select from "@mui/material/Select"
+import Skeleton from "@mui/material/Skeleton"
 import Typography from "@mui/material/Typography"
 import { fetchVariantGroupsByCategory } from "../../API/variantGroupApi"
 
@@ -41,6 +45,43 @@ export default function VariantGroupsField({
   dragSrcId,
   setDragSrcId,
 }) {
+  const attachSelectSx = {
+    mt: 0.25,
+    "& .MuiOutlinedInput-notchedOutline": {
+      border: "0.5px solid rgba(0,0,0,0.15)",
+    },
+    "& .MuiSelect-select": {
+      padding: "8px 34px 8px 10px",
+      fontSize: 12,
+      color: "#111111",
+      backgroundColor: "#f8f9f8",
+      borderRadius: "8px",
+    },
+    "& .MuiSvgIcon-root": {
+      color: "#9e9e9e",
+      right: 10,
+    },
+    "& .Mui-focused .MuiOutlinedInput-notchedOutline": {
+      borderColor: "#00704a",
+      boxShadow: "0 0 0 2px rgba(0,112,74,0.10)",
+    },
+  }
+
+  const attachMenuProps = {
+    PaperProps: {
+      sx: {
+        mt: 0.5,
+        borderRadius: "10px",
+        border: "0.5px solid rgba(0,0,0,0.10)",
+        boxShadow: "0 10px 24px rgba(15,23,42,0.08)",
+        "& .MuiMenuItem-root": {
+          fontSize: 12,
+          minHeight: 34,
+        },
+      },
+    },
+  }
+
   const [allGroups, setAllGroups] = useState([])
   const [loading, setLoading] = useState(Boolean(categoryId))
 
@@ -53,6 +94,8 @@ export default function VariantGroupsField({
     })
     if (!categoryId) return
     let cancelled = false
+    setLoading(true)
+    setAllGroups([])
     fetchVariantGroupsByCategory(categoryId)
       .then((groups) => {
         if (cancelled) return
@@ -166,13 +209,12 @@ export default function VariantGroupsField({
       allowedGroupIds: normalizedAllGroups.map((group) => group.groupId),
     })
     setAttachedGroups((prev) => sanitizeVariantGroupIds([...prev, groupId]))
-    e.target.value = ""
   }
 
   const hasAny = normalizedAttachedGroups.length > 0
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
 
       {/* ── Section label ─────────────────────────────────────────────────── */}
       <Typography sx={{
@@ -258,6 +300,27 @@ export default function VariantGroupsField({
 
         // Stale reference
         if (!g) {
+          if (loading) {
+            return (
+              <Box key={id} sx={{
+                display: "flex", alignItems: "center", gap: "10px",
+                padding: "9px 12px", borderRadius: 8,
+                border: "1px solid #e5e7eb", background: "#fff",
+              }}>
+                <Box sx={{ display: "flex", flexDirection: "column", gap: "3px", flexShrink: 0, opacity: 0.18 }}>
+                  {[0,1,2].map((i) => (
+                    <Box key={i} sx={{ width: 14, height: "1.5px", background: "#374151", borderRadius: 2 }} />
+                  ))}
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Skeleton animation="wave" variant="text" width="42%" height={22} />
+                  <Skeleton animation="wave" variant="text" width="28%" height={16} />
+                </Box>
+                <Skeleton animation="wave" variant="rounded" width={58} height={24} sx={{ borderRadius: "6px" }} />
+              </Box>
+            )
+          }
+
           return (
             <Box key={id} sx={{
               display: "flex", alignItems: "center", gap: "10px",
@@ -344,36 +407,30 @@ export default function VariantGroupsField({
       })}
 
       {/* ── Attach select — always shown ──────────────────────────────────── */}
-      <select
-        value=""
-        onChange={handleAttach}
-        style={{
-          fontFamily: "inherit",
-          fontSize: 13,
-          padding: "9px 10px",
-          borderRadius: 8,
-          border: "1px dashed #d1d5db",
-          background: "#fff",
-          color: available.length === 0 ? "#9ca3af" : "#374151",
-          cursor: available.length === 0 ? "default" : "pointer",
-          width: "100%",
-          marginTop: 2,
-        }}
-        disabled={loading || available.length === 0}
-      >
-        <option value="">
-          {loading
-            ? "Loading variant groups..."
-            : available.length === 0
-            ? "All groups attached"
-            : "+ Attach a variant group…"}
-        </option>
-        {available.map((g) => (
-          <option key={g.groupId} value={g.groupId}>
-            {g.adminName || g.name}
-          </option>
-        ))}
-      </select>
+      <FormControl size="small" fullWidth sx={attachSelectSx}>
+        <Select
+          value=""
+          displayEmpty
+          onChange={handleAttach}
+          MenuProps={attachMenuProps}
+          disabled={loading || available.length === 0}
+        >
+          <MenuItem value="">
+            <em>
+              {loading
+                ? "Loading variant groups..."
+                : available.length === 0
+                ? "All groups attached"
+                : "Attach a variant group"}
+            </em>
+          </MenuItem>
+          {available.map((g) => (
+            <MenuItem key={g.groupId} value={g.groupId}>
+              {g.adminName || g.name}
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
 
     </Box>
   )

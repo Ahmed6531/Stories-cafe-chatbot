@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Box from "@mui/material/Box"
 import Button from "@mui/material/Button"
 import Checkbox from "@mui/material/Checkbox"
 import Divider from "@mui/material/Divider"
+import Dialog from "@mui/material/Dialog"
+import DialogActions from "@mui/material/DialogActions"
+import DialogContent from "@mui/material/DialogContent"
 import FormControlLabel from "@mui/material/FormControlLabel"
 import Skeleton from "@mui/material/Skeleton"
 import Typography from "@mui/material/Typography"
@@ -52,21 +55,16 @@ function useObjectPreview(initialValue = "") {
     }
   }, [preview])
 
-  function replacePreview(nextPreview) {
+  const replacePreview = useCallback((nextPreview) => {
     setPreview((current) => {
       if (current?.startsWith("blob:")) {
         URL.revokeObjectURL(current)
       }
       return nextPreview
     })
-  }
+  }, [])
 
   return [preview, replacePreview]
-}
-
-function confirmCascadeDelete(message) {
-  const typed = window.prompt(`${message}\n\nType DELETE to continue.`)
-  return typed === "DELETE"
 }
 
 function createSuboptionDraft(suboption = {}) {
@@ -175,6 +173,148 @@ function ErrorNotice({ children }) {
         {children}
       </Typography>
     </Box>
+  )
+}
+
+function ConfirmActionDialog({
+  open,
+  title,
+  message,
+  confirmLabel,
+  onClose,
+  onConfirm,
+  loading = false,
+  requireDeleteText = false,
+}) {
+  const [confirmationText, setConfirmationText] = useState("")
+
+  useEffect(() => {
+    if (!open) {
+      setConfirmationText("")
+    }
+  }, [open])
+
+  const confirmDisabled = loading || (requireDeleteText && confirmationText.trim() !== "DELETE")
+
+  return (
+    <Dialog
+      open={open}
+      onClose={loading ? undefined : onClose}
+      BackdropProps={{
+        sx: {
+          backgroundColor: "rgba(0,0,0,0.18)",
+        },
+      }}
+      PaperProps={{
+        sx: {
+          width: "100%",
+          maxWidth: "320px",
+          mx: 2,
+          p: "24px",
+          borderRadius: "14px",
+          border: "0.5px solid rgba(0,0,0,0.10)",
+          boxShadow: "none",
+          textAlign: "center",
+          backgroundColor: "#ffffff",
+        },
+      }}
+    >
+      <DialogContent sx={{ p: 0 }}>
+        <Typography
+          sx={{
+            fontSize: "15px",
+            fontWeight: 600,
+            color: adminPalette.textPrimary,
+            lineHeight: 1.25,
+          }}
+        >
+          {title}
+        </Typography>
+        <Typography
+          sx={{
+            mt: 0.75,
+            fontSize: "12px",
+            fontWeight: 500,
+            color: adminPalette.textSecondary,
+            lineHeight: 1.4,
+            whiteSpace: "pre-line",
+          }}
+        >
+          {message}
+        </Typography>
+
+        {requireDeleteText && (
+          <Box
+            component="input"
+            value={confirmationText}
+            onChange={(e) => setConfirmationText(e.target.value)}
+            placeholder='Type "DELETE" to continue'
+            sx={{
+              ...adminInputSx,
+              mt: 1.5,
+              textAlign: "center",
+              fontSize: 12,
+            }}
+          />
+        )}
+      </DialogContent>
+
+      <DialogActions sx={{ p: 0, pt: 2, gap: 1.25 }}>
+        <Button
+          fullWidth
+          onClick={onClose}
+          disabled={loading}
+          variant="outlined"
+          sx={{
+            minWidth: 0,
+            flex: 1,
+            borderRadius: "9px",
+            border: "0.5px solid rgba(0,0,0,0.10)",
+            backgroundColor: "transparent",
+            color: adminPalette.textSecondary,
+            fontSize: "13px",
+            fontWeight: 500,
+            textTransform: "none",
+            py: 0.95,
+            "&:hover": {
+              border: "0.5px solid rgba(0,0,0,0.10)",
+              backgroundColor: "transparent",
+            },
+          }}
+        >
+          Cancel
+        </Button>
+        <Button
+          fullWidth
+          onClick={onConfirm}
+          disabled={confirmDisabled}
+          variant="contained"
+          sx={{
+            minWidth: 0,
+            flex: 1,
+            borderRadius: "9px",
+            border: "none",
+            boxShadow: "none",
+            backgroundColor: "#f5ebe9",
+            color: "#a93226",
+            fontSize: "13px",
+            fontWeight: 600,
+            textTransform: "none",
+            py: 0.95,
+            "&:hover": {
+              backgroundColor: "#f5ebe9",
+              boxShadow: "none",
+            },
+            "&.Mui-disabled": {
+              backgroundColor: "#f5ebe9",
+              color: "rgba(169,50,38,0.55)",
+            },
+          }}
+        >
+          {loading ? `${confirmLabel}...` : confirmLabel}
+        </Button>
+      </DialogActions>
+    </Dialog>
   )
 }
 
@@ -875,6 +1015,7 @@ function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, cascade: false, menuItems: 0 })
 
   useEffect(() => {
     setEditing(false)
@@ -920,33 +1061,36 @@ function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }
   }
 
   async function handleDeletePermanently() {
-    const baseConfirm = window.confirm(`Delete the variant group "${group.adminName}" permanently?`)
-    if (!baseConfirm) return
-
     setSaving(true)
     setError("")
     try {
       await hardDeleteVariantGroupForCategory(categoryId, getVariantGroupRef(group))
+      setDeleteDialog({ open: false, cascade: false, menuItems: 0 })
       onSaved()
     } catch (err) {
       if (err?.status === 409 && err?.data?.requiresCascade) {
-        const menuItems = err.data?.usage?.menuItems ?? 0
-        const approved = confirmCascadeDelete(
-          `This variant group is used by ${menuItems} menu item${menuItems === 1 ? "" : "s"}.\nDeleting it will remove this option group from those items and may change active cart pricing.`,
-        )
-        if (!approved) {
-          setSaving(false)
-          return
-        }
-        try {
-          await hardDeleteVariantGroupForCategory(categoryId, getVariantGroupRef(group), { cascade: true })
-          onSaved()
-        } catch (cascadeErr) {
-          setError(cascadeErr.message)
-        }
+        setDeleteDialog({
+          open: true,
+          cascade: true,
+          menuItems: err.data?.usage?.menuItems ?? 0,
+        })
       } else {
         setError(err.message)
       }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleCascadeDeletePermanently() {
+    setSaving(true)
+    setError("")
+    try {
+      await hardDeleteVariantGroupForCategory(categoryId, getVariantGroupRef(group), { cascade: true })
+      setDeleteDialog({ open: false, cascade: false, menuItems: 0 })
+      onSaved()
+    } catch (err) {
+      setError(err.message)
     } finally {
       setSaving(false)
     }
@@ -995,7 +1139,7 @@ function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }
           </Button>
           <Button
             type="button"
-            onClick={handleDeletePermanently}
+            onClick={() => setDeleteDialog({ open: true, cascade: false, menuItems: 0 })}
             disabled={saving}
             sx={{ ...adminDangerGhostButtonSx, ...adminSmallButtonSx }}
           >
@@ -1113,6 +1257,24 @@ function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }
           </Box>
         </>
       )}
+
+      <ConfirmActionDialog
+        open={deleteDialog.open}
+        title={deleteDialog.cascade ? "Cascade delete variant group?" : "Delete variant group?"}
+        message={
+          deleteDialog.cascade
+            ? `This variant group is used by ${deleteDialog.menuItems} menu item${deleteDialog.menuItems === 1 ? "" : "s"}.\nDeleting it will remove this option group from those items and may change active cart pricing.`
+            : `Delete "${group.adminName}" permanently?`
+        }
+        confirmLabel="Delete"
+        onClose={() => {
+          if (saving) return
+          setDeleteDialog({ open: false, cascade: false, menuItems: 0 })
+        }}
+        onConfirm={deleteDialog.cascade ? handleCascadeDeletePermanently : handleDeletePermanently}
+        loading={saving}
+        requireDeleteText={deleteDialog.cascade}
+      />
     </Box>
   )
 }
@@ -1127,6 +1289,7 @@ function CategoryDetail({ category, onRefresh }) {
   const [imagePreview, setImagePreview] = useObjectPreview(category.image || "")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, cascade: false, menuItems: 0, variantGroups: 0 })
   const fileInputRef = useRef(null)
 
   async function loadGroups() {
@@ -1155,7 +1318,7 @@ function CategoryDetail({ category, onRefresh }) {
     setImageFile(null)
     setImagePreview(category.image || "")
     if (fileInputRef.current) fileInputRef.current.value = ""
-  }, [category, setImagePreview])
+  }, [category._id, category.name, category.image, category.order, setImagePreview])
 
   function handleFileChange(e) {
     const file = e.target.files?.[0]
@@ -1199,36 +1362,39 @@ function CategoryDetail({ category, onRefresh }) {
   }
 
   async function handleDeleteCategory() {
-    const confirmed = window.confirm(`Delete "${category.name}" permanently? If it is still in use, you will get a second cascade warning.`)
-    if (!confirmed) return
-
     setSaving(true)
     setError("")
     try {
       await deleteCategory(category._id)
+      setDeleteDialog({ open: false, cascade: false, menuItems: 0, variantGroups: 0 })
       invalidateCategoriesCache()
       onRefresh()
     } catch (err) {
       if (err?.status === 409 && err?.data?.requiresCascade) {
-        const menuItems = err.data?.usage?.menuItems ?? 0
-        const variantGroups = err.data?.usage?.variantGroups ?? 0
-        const approved = confirmCascadeDelete(
-          `This will delete ${menuItems} menu item${menuItems === 1 ? "" : "s"} and ${variantGroups} variant group${variantGroups === 1 ? "" : "s"} in "${category.name}".\nActive customer carts may lose these items.`,
-        )
-        if (!approved) {
-          setSaving(false)
-          return
-        }
-        try {
-          await deleteCategory(category._id, { cascade: true })
-          invalidateCategoriesCache()
-          onRefresh()
-        } catch (cascadeErr) {
-          setError(cascadeErr.message)
-        }
+        setDeleteDialog({
+          open: true,
+          cascade: true,
+          menuItems: err.data?.usage?.menuItems ?? 0,
+          variantGroups: err.data?.usage?.variantGroups ?? 0,
+        })
       } else {
         setError(err.message)
       }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleCascadeDeleteCategory() {
+    setSaving(true)
+    setError("")
+    try {
+      await deleteCategory(category._id, { cascade: true })
+      setDeleteDialog({ open: false, cascade: false, menuItems: 0, variantGroups: 0 })
+      invalidateCategoriesCache()
+      onRefresh()
+    } catch (err) {
+      setError(err.message)
     } finally {
       setSaving(false)
     }
@@ -1303,7 +1469,12 @@ function CategoryDetail({ category, onRefresh }) {
           <Button type="button" onClick={handleToggleActive} sx={adminGhostButtonSx}>
             {category.isActive ? "Active" : "Inactive"}
           </Button>
-          <Button type="button" onClick={handleDeleteCategory} disabled={saving} sx={adminDangerGhostButtonSx}>
+          <Button
+            type="button"
+            onClick={() => setDeleteDialog({ open: true, cascade: false, menuItems: 0, variantGroups: 0 })}
+            disabled={saving}
+            sx={adminDangerGhostButtonSx}
+          >
             Delete
           </Button>
         </Box>
@@ -1352,6 +1523,24 @@ function CategoryDetail({ category, onRefresh }) {
           />
         ))}
       </Box>
+
+      <ConfirmActionDialog
+        open={deleteDialog.open}
+        title={deleteDialog.cascade ? "Cascade delete category?" : "Delete category?"}
+        message={
+          deleteDialog.cascade
+            ? `This will delete ${deleteDialog.menuItems} menu item${deleteDialog.menuItems === 1 ? "" : "s"} and ${deleteDialog.variantGroups} variant group${deleteDialog.variantGroups === 1 ? "" : "s"} in "${category.name}".\nActive customer carts may lose these items.`
+            : `Delete "${category.name}" permanently?\nIf it is still in use, you'll get a second cascade confirmation.`
+        }
+        confirmLabel="Delete"
+        onClose={() => {
+          if (saving) return
+          setDeleteDialog({ open: false, cascade: false, menuItems: 0, variantGroups: 0 })
+        }}
+        onConfirm={deleteDialog.cascade ? handleCascadeDeleteCategory : handleDeleteCategory}
+        loading={saving}
+        requireDeleteText={deleteDialog.cascade}
+      />
     </Box>
   )
 }
