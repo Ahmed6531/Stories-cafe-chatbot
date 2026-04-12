@@ -170,7 +170,7 @@ export async function getMyOrders(req, res) {
 }
 
 const ALLOWED_TRANSITIONS = {
-  received:    ["in_progress", "cancelled"],
+  received:    ["in_progress", "completed", "cancelled"],
   in_progress: ["completed", "cancelled"],
   completed:   [],
   cancelled:   [],
