@@ -23,9 +23,10 @@ export async function fetchVariantGroups() {
 }
 
 // Category-scoped list — prefer this for the item form and admin categories page.
-export async function fetchVariantGroupsByCategory(categoryId) {
+export async function fetchVariantGroupsByCategory(categoryId, { includeInactive = false } = {}) {
   try {
-    const response = await http.get(`/categories/${categoryId}/variant-groups`)
+    const params = includeInactive ? "?includeInactive=true" : ""
+    const response = await http.get(`/categories/${categoryId}/variant-groups${params}`)
     return response.data.groups || []
   } catch (error) {
     console.error(`Failed to fetch variant groups for category ${categoryId}:`, error)

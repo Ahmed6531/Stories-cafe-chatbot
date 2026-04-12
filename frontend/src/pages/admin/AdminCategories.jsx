@@ -7,10 +7,13 @@ import Dialog from "@mui/material/Dialog"
 import DialogActions from "@mui/material/DialogActions"
 import DialogContent from "@mui/material/DialogContent"
 import FormControlLabel from "@mui/material/FormControlLabel"
+import IconButton from "@mui/material/IconButton"
 import Skeleton from "@mui/material/Skeleton"
 import Typography from "@mui/material/Typography"
 import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined"
 import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined"
+import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined"
+import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined"
 import {
   fetchCategories,
   createCategory,
@@ -22,7 +25,6 @@ import {
   fetchVariantGroupsByCategory,
   createVariantGroupForCategory,
   updateVariantGroupForCategory,
-  deleteVariantGroupForCategory,
   hardDeleteVariantGroupForCategory,
 } from "../../API/variantGroupApi"
 import { invalidateCategoriesCache } from "../../API/menuApi"
@@ -43,6 +45,33 @@ import {
   adminSectionLabelSx,
   adminSmallButtonSx,
 } from "../../components/admin/adminUi"
+
+const hiddenEntityCardSx = {
+  opacity: 0.62,
+  backgroundColor: adminPalette.surfaceSoft,
+}
+
+const hiddenEntityPanelSx = {
+  opacity: 0.58,
+  pointerEvents: "none",
+}
+
+const visibilityToggleSx = {
+  width: 32,
+  height: 32,
+  borderRadius: "999px",
+  border: "0.5px solid rgba(0,0,0,0.10)",
+  color: adminPalette.textSecondary,
+  backgroundColor: adminPalette.pageBg,
+  "&:hover": {
+    backgroundColor: adminPalette.surface,
+  },
+  "&.Mui-disabled": {
+    opacity: 0.55,
+    color: adminPalette.textTertiary,
+    backgroundColor: adminPalette.pageBg,
+  },
+}
 
 function useObjectPreview(initialValue = "") {
   const [preview, setPreview] = useState(initialValue)
@@ -318,7 +347,7 @@ function ConfirmActionDialog({
   )
 }
 
-function UploadArea({ hasFile, preview, label, inputRef, onChange, alt, onClear }) {
+function UploadArea({ hasFile, preview, label, inputRef, onChange, alt, onClear, disabled = false }) {
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
       <Box
@@ -334,7 +363,7 @@ function UploadArea({ hasFile, preview, label, inputRef, onChange, alt, onClear 
           alignContent: "flex-start",
           flexWrap: "wrap",
           gap: 2,
-          cursor: "pointer",
+          cursor: disabled ? "default" : "pointer",
         }}
       >
         {preview ? (
@@ -388,6 +417,7 @@ function UploadArea({ hasFile, preview, label, inputRef, onChange, alt, onClear 
               e.stopPropagation()
               onClear()
             }}
+            disabled={disabled}
             sx={{
               position: "absolute",
               top: 10,
@@ -401,7 +431,7 @@ function UploadArea({ hasFile, preview, label, inputRef, onChange, alt, onClear 
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
-              cursor: "pointer",
+              cursor: disabled ? "default" : "pointer",
               fontSize: 16,
               lineHeight: 1,
               "&:hover": {
@@ -439,10 +469,26 @@ function UploadArea({ hasFile, preview, label, inputRef, onChange, alt, onClear 
           type="file"
           accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
           sx={{ display: "none" }}
+          disabled={disabled}
           onChange={onChange}
         />
       </Box>
     </Box>
+  )
+}
+
+function VisibilityToggleButton({ visible, onClick, disabled = false, label }) {
+  return (
+    <IconButton
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      sx={visibilityToggleSx}
+    >
+      {visible ? <VisibilityOutlinedIcon sx={{ fontSize: 18 }} /> : <VisibilityOffOutlinedIcon sx={{ fontSize: 18 }} />}
+    </IconButton>
   )
 }
 
@@ -1005,7 +1051,7 @@ function VariantGroupForm({ categoryId, onSaved }) {
   )
 }
 
-function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }) {
+function ExistingVariantGroupEditor({ categoryId, group, onSaved }) {
   const [editing, setEditing] = useState(false)
   const [customerLabel, setCustomerLabel] = useState(group.customerLabel || "")
   const [isRequired, setIsRequired] = useState(group.isRequired === true)
@@ -1016,6 +1062,7 @@ function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
   const [deleteDialog, setDeleteDialog] = useState({ open: false, cascade: false, menuItems: 0 })
+  const isVisible = group.isActive !== false
 
   useEffect(() => {
     setEditing(false)
@@ -1060,6 +1107,22 @@ function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }
     setError("")
   }
 
+  async function handleToggleVisibility() {
+    setSaving(true)
+    setError("")
+    try {
+      await updateVariantGroupForCategory(categoryId, getVariantGroupRef(group), {
+        isActive: !isVisible,
+      })
+      setEditing(false)
+      onSaved()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleDeletePermanently() {
     setSaving(true)
     setError("")
@@ -1100,6 +1163,7 @@ function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }
     <Box
       sx={{
         ...adminCardSx,
+        ...(isVisible ? null : hiddenEntityCardSx),
         p: 2,
         display: "flex",
         flexDirection: "column",
@@ -1113,6 +1177,7 @@ function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }
               {group.adminName}
             </Typography>
             <StatusBadge required={group.isRequired}>{group.isRequired ? "Required" : "Optional"}</StatusBadge>
+            {!isVisible && <StatusBadge>Hidden</StatusBadge>}
           </Box>
           <Typography sx={{ fontSize: 12, color: adminPalette.textSecondary, mb: 0.75 }}>
             Shows as: {group.customerLabel || group.adminName}
@@ -1126,21 +1191,21 @@ function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }
           <Button
             type="button"
             onClick={() => (editing ? handleCancel() : setEditing(true))}
+            disabled={!isVisible || saving}
             sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx }}
           >
             {editing ? "Close editor" : "Manage options"}
           </Button>
-          <Button
-            type="button"
-            onClick={() => onDeactivate(getVariantGroupRef(group))}
-            sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx }}
-          >
-            Deactivate
-          </Button>
+          <VisibilityToggleButton
+            visible={isVisible}
+            onClick={handleToggleVisibility}
+            disabled={saving}
+            label={isVisible ? "Hide variant group from customers" : "Show variant group to customers"}
+          />
           <Button
             type="button"
             onClick={() => setDeleteDialog({ open: true, cascade: false, menuItems: 0 })}
-            disabled={saving}
+            disabled={!isVisible || saving}
             sx={{ ...adminDangerGhostButtonSx, ...adminSmallButtonSx }}
           >
             Delete
@@ -1148,7 +1213,7 @@ function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }
         </Box>
       </Box>
 
-      <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap" }}>
+      <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", ...(isVisible ? null : hiddenEntityPanelSx) }}>
         {group.options?.map((option, optionIndex) => (
           <Box
             key={`${getVariantGroupRef(group)}-option-${optionIndex}`}
@@ -1166,7 +1231,7 @@ function ExistingVariantGroupEditor({ categoryId, group, onSaved, onDeactivate }
         ))}
       </Box>
 
-      {editing && (
+      {editing && isVisible && (
         <>
           <Divider sx={{ borderColor: "rgba(0,0,0,0.08)" }} />
           <ErrorNotice>{error}</ErrorNotice>
@@ -1291,9 +1356,10 @@ function CategoryDetail({ category, onRefresh }) {
   const [error, setError] = useState("")
   const [deleteDialog, setDeleteDialog] = useState({ open: false, cascade: false, menuItems: 0, variantGroups: 0 })
   const fileInputRef = useRef(null)
+  const isVisible = category.isActive !== false
 
   async function loadGroups() {
-    const data = await fetchVariantGroupsByCategory(category._id).catch(() => [])
+    const data = await fetchVariantGroupsByCategory(category._id, { includeInactive: true }).catch(() => [])
     setGroups(data)
   }
 
@@ -1301,7 +1367,7 @@ function CategoryDetail({ category, onRefresh }) {
     let active = true
 
     async function run() {
-      const data = await fetchVariantGroupsByCategory(category._id).catch(() => [])
+      const data = await fetchVariantGroupsByCategory(category._id, { includeInactive: true }).catch(() => [])
       if (active) setGroups(data)
     }
 
@@ -1319,6 +1385,12 @@ function CategoryDetail({ category, onRefresh }) {
     setImagePreview(category.image || "")
     if (fileInputRef.current) fileInputRef.current.value = ""
   }, [category._id, category.name, category.image, category.order, setImagePreview])
+
+  useEffect(() => {
+    if (!isVisible) {
+      setShowGroupForm(false)
+    }
+  }, [isVisible])
 
   function handleFileChange(e) {
     const file = e.target.files?.[0]
@@ -1356,9 +1428,17 @@ function CategoryDetail({ category, onRefresh }) {
   }
 
   async function handleToggleActive() {
-    await updateCategory(category._id, { isActive: !category.isActive }).catch(() => null)
-    invalidateCategoriesCache()
-    onRefresh()
+    setSaving(true)
+    setError("")
+    try {
+      await updateCategory(category._id, { isActive: !isVisible })
+      invalidateCategoriesCache()
+      onRefresh()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function handleDeleteCategory() {
@@ -1400,11 +1480,6 @@ function CategoryDetail({ category, onRefresh }) {
     }
   }
 
-  async function handleDeactivateGroup(groupId) {
-    await deleteVariantGroupForCategory(category._id, groupId).catch(() => null)
-    loadGroups()
-  }
-
   return (
     <Box
       sx={{
@@ -1422,7 +1497,7 @@ function CategoryDetail({ category, onRefresh }) {
     >
       <ErrorNotice>{error}</ErrorNotice>
 
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25, ...(isVisible ? null : hiddenEntityPanelSx) }}>
         <Typography sx={adminSectionLabelSx}>Category settings</Typography>
 
         <Box
@@ -1437,6 +1512,7 @@ function CategoryDetail({ category, onRefresh }) {
             placeholder="Name"
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
+            disabled={!isVisible || saving}
             sx={adminInputSx}
           />
           <Box
@@ -1445,6 +1521,7 @@ function CategoryDetail({ category, onRefresh }) {
             type="number"
             value={editOrder}
             onChange={(e) => setEditOrder(e.target.value)}
+            disabled={!isVisible || saving}
             sx={adminInputSx}
           />
         </Box>
@@ -1457,22 +1534,20 @@ function CategoryDetail({ category, onRefresh }) {
           onChange={handleFileChange}
           alt={`${category.name} preview`}
           onClear={imageFile ? clearSelectedFile : null}
+          disabled={!isVisible || saving}
         />
         <Typography sx={{ ...adminHintSx, fontStyle: "italic", textAlign: "center" }}>
           Images look best with a transparent background.
         </Typography>
 
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-          <Button type="button" onClick={handleSaveCategory} disabled={saving} sx={adminPrimaryButtonSx}>
+          <Button type="button" onClick={handleSaveCategory} disabled={!isVisible || saving} sx={adminPrimaryButtonSx}>
             {saving ? "Saving..." : "Save"}
-          </Button>
-          <Button type="button" onClick={handleToggleActive} sx={adminGhostButtonSx}>
-            {category.isActive ? "Active" : "Inactive"}
           </Button>
           <Button
             type="button"
             onClick={() => setDeleteDialog({ open: true, cascade: false, menuItems: 0, variantGroups: 0 })}
-            disabled={saving}
+            disabled={!isVisible || saving}
             sx={adminDangerGhostButtonSx}
           >
             Delete
@@ -1480,7 +1555,13 @@ function CategoryDetail({ category, onRefresh }) {
         </Box>
       </Box>
 
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+      {!isVisible && (
+        <Typography sx={{ ...adminHintSx, mt: -0.5 }}>
+          Hidden categories stay visible in admin, but editing is locked until you show them again.
+        </Typography>
+      )}
+
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, ...(isVisible ? null : hiddenEntityPanelSx) }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 0.35 }}>
             <Typography sx={adminSectionLabelSx}>Variant groups</Typography>
@@ -1491,6 +1572,7 @@ function CategoryDetail({ category, onRefresh }) {
           <Button
             type="button"
             onClick={() => setShowGroupForm((prev) => !prev)}
+            disabled={!isVisible}
             sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx }}
           >
             {showGroupForm ? "Close panel" : "+ Add variant group"}
@@ -1519,7 +1601,6 @@ function CategoryDetail({ category, onRefresh }) {
             categoryId={category._id}
             group={group}
             onSaved={loadGroups}
-            onDeactivate={handleDeactivateGroup}
           />
         ))}
       </Box>
@@ -1708,7 +1789,7 @@ export default function AdminCategories() {
           key={category._id}
           sx={{
             ...adminCardSx,
-            opacity: category.isActive ? 1 : 0.72,
+            ...(category.isActive ? null : hiddenEntityCardSx),
             p: 2,
           }}
         >
@@ -1758,13 +1839,25 @@ export default function AdminCategories() {
               </Typography>
             </Box>
 
-            <Button
-              type="button"
-              onClick={() => setExpandedId((prev) => (prev === category._id ? null : category._id))}
-              sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx }}
-            >
-              {expandedId === category._id ? "Collapse" : "Manage"}
-            </Button>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <VisibilityToggleButton
+                visible={category.isActive !== false}
+                onClick={async () => {
+                  await updateCategory(category._id, { isActive: category.isActive === false }).catch(() => null)
+                  invalidateCategoriesCache()
+                  load()
+                }}
+                label={category.isActive ? "Hide category from customers" : "Show category to customers"}
+              />
+              <Button
+                type="button"
+                onClick={() => setExpandedId((prev) => (prev === category._id ? null : category._id))}
+                disabled={category.isActive === false}
+                sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx }}
+              >
+                {expandedId === category._id ? "Collapse" : "Manage"}
+              </Button>
+            </Box>
           </Box>
 
           {expandedId === category._id && <CategoryDetail category={category} onRefresh={load} />}

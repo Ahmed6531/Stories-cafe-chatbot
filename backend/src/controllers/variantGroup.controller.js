@@ -126,7 +126,7 @@ export async function updateVariantGroup(req, res) {
   try {
     const { groupId } = req.params;
     const scopedCategoryId = req.params.categoryId || null;
-    const { adminName, customerLabel, isRequired, maxSelections, options } = req.body;
+    const { adminName, customerLabel, isRequired, maxSelections, options, isActive } = req.body;
 
     const existing = await VariantGroup.findOne(buildScopedGroupFilter(groupId, scopedCategoryId)).lean();
     if (!existing) {
@@ -156,6 +156,10 @@ export async function updateVariantGroup(req, res) {
 
     if (maxSelections !== undefined) {
       updateData.maxSelections = maxSelections === null || maxSelections === "" ? undefined : Number(maxSelections);
+    }
+
+    if (isActive !== undefined) {
+      updateData.isActive = isActive === true || isActive === "true";
     }
 
     if (options !== undefined) {

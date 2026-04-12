@@ -274,6 +274,7 @@ export async function deleteCategory(req, res) {
 export async function getVariantGroupsByCategory(req, res) {
   try {
     const { categoryId } = req.params;
+    const includeInactive = req.query.includeInactive === "true";
     const category = await Category.findById(categoryId).lean();
     if (!category) {
       return res.status(404).json({ success: false, error: "Category not found." });
@@ -281,8 +282,10 @@ export async function getVariantGroupsByCategory(req, res) {
 
     const query = {
       ...buildVariantGroupCategoryFilter(category._id),
-      isActive: { $ne: false },
     };
+    if (!includeInactive) {
+      query.isActive = { $ne: false };
+    }
     const groups = await VariantGroup.find(query)
       .sort({ order: 1, adminName: 1 })
       .lean();
