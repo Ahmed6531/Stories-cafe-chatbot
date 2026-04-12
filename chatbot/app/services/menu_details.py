@@ -15,6 +15,7 @@ from difflib import SequenceMatcher
 import re
 
 from app.schemas.chat import ChatMessageResponse
+from app.services.item_clarification import get_menu_detail_variants
 
 
 # ---------------------------------------------------------------------------
@@ -258,13 +259,13 @@ def build_item_detail_reply(
     """
     Build a human-readable reply for an item detail query.
 
-    source_item should be the full detail dict (with `variants` list) returned
-    by fetch_menu_item_detail.  Falls back gracefully if variants are absent.
+    source_item should be the full detail dict returned by fetch_menu_item_detail.
+    Falls back gracefully if variant groups are absent.
     """
     item_name = (source_item.get("name") or "This item").strip()
     description = (source_item.get("description") or "").strip()
     base_price = source_item.get("basePrice") or source_item.get("price")
-    variants = source_item.get("variants") or []
+    variants = get_menu_detail_variants(source_item)
 
     parts: list[str] = []
 

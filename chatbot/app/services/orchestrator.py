@@ -664,8 +664,8 @@ def iter_variant_options(menu_detail: dict | None) -> list[tuple[dict, dict]]:
     if not isinstance(menu_detail, dict):
         return []
 
-    variants = menu_detail.get("variants")
-    if not isinstance(variants, list):
+    variants = get_menu_detail_variants(menu_detail)
+    if not variants:
         return []
 
     variant_options: list[tuple[dict, dict]] = []
@@ -958,6 +958,7 @@ async def process_chat_message(
         build_menu_choice_suggestions,
         collect_missing_variant_groups,
         find_ambiguous_menu_matches,
+        get_menu_detail_variants,
         _is_frozen_yogurt,
         resolve_menu_choice,
     )

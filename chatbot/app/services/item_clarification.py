@@ -79,6 +79,21 @@ def _option_aliases(option_name: str, group_key: str) -> list[str]:
     return [alias for alias in aliases if alias]
 
 
+def get_menu_detail_variants(menu_detail: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(menu_detail, dict):
+        return []
+
+    variants = menu_detail.get("variantGroupDetails")
+    if isinstance(variants, list):
+        return [group for group in variants if isinstance(group, dict)]
+
+    variants = menu_detail.get("variants")
+    if isinstance(variants, list):
+        return [group for group in variants if isinstance(group, dict)]
+
+    return []
+
+
 def _phrase_matches_message(normalized_message: str, phrase: str) -> bool:
     if not phrase:
         return False
@@ -412,8 +427,8 @@ def collect_missing_variant_groups(requested_item: dict[str, Any], menu_detail: 
     if not isinstance(menu_detail, dict):
         return []
 
-    variants = menu_detail.get("variants")
-    if not isinstance(variants, list):
+    variants = get_menu_detail_variants(menu_detail)
+    if not variants:
         return []
 
     missing_groups: list[dict[str, Any]] = []
@@ -505,8 +520,8 @@ def apply_customization_response(
     if not isinstance(menu_detail, dict):
         return updated_item
 
-    variants = menu_detail.get("variants")
-    if not isinstance(variants, list):
+    variants = get_menu_detail_variants(menu_detail)
+    if not variants:
         return updated_item
 
     normalized_message = _normalize_text(message)
@@ -618,8 +633,8 @@ def apply_smart_defaults(
     if not isinstance(menu_detail, dict):
         return requested_item, [], []
 
-    variants = menu_detail.get("variants")
-    if not isinstance(variants, list):
+    variants = get_menu_detail_variants(menu_detail)
+    if not variants:
         return requested_item, [], []
 
     updated_item: dict[str, Any] = {
