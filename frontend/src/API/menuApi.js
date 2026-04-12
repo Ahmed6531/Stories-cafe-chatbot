@@ -1,37 +1,52 @@
 import http from './http'
+import { normalizeVariantGroupIds } from "../utils/variantGroups"
 
 let categoriesCache = null
 let categoriesRequest = null
-
-export function invalidateCategoriesCache() {
-  categoriesCache = null
-}
 /**
  * Transform backend menu item to frontend format
  */
 function transformMenuItem(item) {
-  // Skip items missing id or name (robustness for partial backend data)
   if (!item.id || !item.name) return null;
   const hasImage = Boolean(item.image && String(item.image).trim());
+
+  // category is now a populated Category object {name, slug, image, subcategories}.
+  // Expose the full object plus convenience accessors so callers don't have to
+  // guard everywhere.
+  const category = item.category && typeof item.category === 'object'
+    ? item.category
+    : null;
+
   return {
     id: item.id,
     name: item.name,
     description: item.description,
     price: item.price || item.basePrice || 0,
     basePrice: item.basePrice || item.price || 0,
-    category: item.category,
+    category,                                       // full Category object
+    categorySlug: category?.slug || null,           // convenience: used for URL routing
     subcategory: item.subcategory || null,
-    image: item.image || '/images/placeholder.png',
+    slug: item.slug || null,
+    // null instead of '/images/placeholder.png' — that file doesn't exist and
+    // causes a wasted 404 request. All three customer components (MenuItem,
+    // MenuItemDetails, CartSummary) already render an inline SVG fallback when
+    // image is null or falsy.
+    image: item.image || null,
     hasImage,
     isAvailable: item.isAvailable !== undefined ? item.isAvailable : true,
     isFeatured: item.isFeatured || false,
     options: item.options || [],
-    variantGroups: item.variantGroups || [],
+    variantGroups: normalizeVariantGroupIds(item.variantGroups),
     variants: (item.variants || []).map(v => ({
       ...v,
-      id: v.groupId || v.id // Map groupId to id for frontend compatibility
+      id: v.refId || v.groupId || v.id
     })).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)),
   }
+}
+
+export function invalidateCategoriesCache() {
+  categoriesCache = null
+  categoriesRequest = null
 }
 
 export async function fetchMenuCategories() {
@@ -65,7 +80,6 @@ export async function fetchMenu(category) {
         http.get('/menu'),
       ])
       const allItems = response.data.items || []
-
       return {
         items: allItems.map(transformMenuItem).filter(Boolean),
         categories,
@@ -77,11 +91,7 @@ export async function fetchMenu(category) {
       http.get(`/menu/category/${encodeURIComponent(category)}`),
     ])
     const items = (response.data.items || []).map(transformMenuItem).filter(Boolean)
-
-    return {
-      items,
-      categories,
-    }
+    return { items, categories }
   } catch (error) {
     console.error('Failed to fetch menu:', error)
     throw new Error(error.response?.data?.error || 'Failed to load menu');
@@ -117,12 +127,14 @@ export async function fetchMenuItemById(id) {
     throw new Error(error.response?.data?.error || 'Failed to load menu item')
   }
 }
+
 /**
- * Admin-only: Create a new menu item
+ * Admin-only: Create a new menu item.
+ * Slug is NOT sent — the backend auto-generates it from name.
  */
 export async function createMenuItem(data) {
   try {
-    const response = await http.post("/menu", data); // JWT sent automatically via http
+    const response = await http.post("/menu", data);
     return transformMenuItem(response.data.item || response.data);
   } catch (error) {
     console.error("Failed to create menu item:", error);
@@ -131,12 +143,41 @@ export async function createMenuItem(data) {
 }
 
 /**
- * Admin-only: Update a menu item by ID
+ * Admin-only: Upload an image for a menu item.
+ * Called after createMenuItem or to replace an existing image.
+ *
+ * No Content-Type header is set — axios detects FormData and lets the browser
+ * set the full multipart/form-data header including the boundary automatically.
+ * Setting it manually strips the boundary and breaks multer parsing.
+ *
+ * @param {number|string} id   - Numeric item ID returned by createMenuItem
+ * @param {File}          file - Browser File selected via <input type="file">
+ * @returns {Promise<{ success: boolean, imageUrl: string, item: object }>}
+ */
+export async function uploadMenuItemImage(id, file) {
+  try {
+    const formData = new FormData()
+    formData.append("image", file)
+    // null explicitly removes the instance-level "application/json" default for
+    // this request — axios v1.x then lets the browser set the correct
+    // multipart/form-data + boundary header automatically
+    const response = await http.post(`/menu/${id}/image`, formData, {
+      headers: { "Content-Type": null },
+    })
+    return response.data
+  } catch (error) {
+    console.error(`Failed to upload image for menu item ${id}:`, error)
+    throw new Error(error.response?.data?.error || "Failed to upload image")
+  }
+}
+
+/**
+ * Admin-only: Update a menu item by ID.
+ * Slug is NOT sent — backend regenerates it automatically if name changes.
  */
 export async function updateMenuItem(id, data) {
   console.log("→ Sending PATCH request for id:", id, "data:", data);
   try {
-
     const response = await http.patch(`/menu/${id}`, data);
     return transformMenuItem(response.data.item || response.data);
   } catch (error) {
@@ -146,7 +187,8 @@ export async function updateMenuItem(id, data) {
 }
 
 /**
- * Admin-only: Delete a menu item by ID
+ * Admin-only: Delete a menu item by ID.
+ * The backend also deletes the image file from disk automatically.
  */
 export async function deleteMenuItem(id) {
   try {

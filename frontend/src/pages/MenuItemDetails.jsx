@@ -143,6 +143,11 @@ function getDefaultSuboptionName(option) {
   return regular?.name || suboptions[0]?.name || ''
 }
 
+function getSuboptionLabel(option) {
+  const label = String(option?.suboptionLabel || '').trim()
+  return label || 'Amount'
+}
+
 function createSelectionForOption(group, optionName, existingSelection = null) {
   const option = findOptionByName(group, optionName)
   if (!option) return createSelectionEntry(optionName, '', group.id)
@@ -269,17 +274,49 @@ function chunkGroups(groups, size) {
 }
 
 function getStableGroupKey(group) {
-  return String(group?.groupId || group?.id || '').toLowerCase()
+  return [
+    group?.name,
+    group?.customerLabel,
+    group?.adminName,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
+function getNormalizedOptionNames(options) {
+  return options.map((option) => String(option?.name || '').trim().toLowerCase()).filter(Boolean)
+}
+
+function hasSuboptions(options) {
+  return options.some((option) => Array.isArray(option?.suboptions) && option.suboptions.length > 0)
 }
 
 function shouldUsePillSelector(group, options) {
   if (group?.maxSelections !== 1) return false
-  return getStableGroupKey(group).includes('size') && options.length <= 4
+  const groupKey = getStableGroupKey(group)
+  const optionNames = getNormalizedOptionNames(options)
+  const sizeOptions = new Set(['small', 'medium', 'large', 'regular'])
+
+  return (
+    options.length <= 4 &&
+    (
+      groupKey.includes('size') ||
+      (optionNames.length > 0 && optionNames.every((optionName) => sizeOptions.has(optionName)))
+    )
+  )
 }
 
 function shouldUseChecklist(group, options) {
   if (group?.maxSelections === 1) return false
-  return getStableGroupKey(group).includes('topping') && options.length <= 8
+  const groupKey = getStableGroupKey(group)
+  return (
+    options.length <= 8 &&
+    (
+      hasSuboptions(options) ||
+      ['topping', 'addon', 'add on', 'extra'].some((keyword) => groupKey.includes(keyword))
+    )
+  )
 }
 
 function OptionGroupSection({ group, showErrors, errors, children }) {
@@ -604,7 +641,7 @@ const editLineId = searchParams.get('edit') || null
     if (!item?.variants || item.variants.length === 0) return []
     return item.variants.map((v) => ({
       ...v,
-      id: v.id || v.groupId,
+      id: v.id || v.refId || v.groupId,
       options: Array.isArray(v.options) ? v.options : [],
     }))
   }, [item])
@@ -670,10 +707,12 @@ const isEditMode = Boolean(cartItemToEdit)
 
     return (
       <FormControl fullWidth size="small" sx={sx}>
-        <InputLabel id={`${group.id}-${optionName}-suboption-label`}>Amount</InputLabel>
+        <InputLabel id={`${group.id}-${optionName}-suboption-label`}>
+          {getSuboptionLabel(option)}
+        </InputLabel>
         <Select
           labelId={`${group.id}-${optionName}-suboption-label`}
-          label="Amount"
+          label={getSuboptionLabel(option)}
           value={normalizedSelection?.suboptionName || getDefaultSuboptionName(option)}
           onChange={(event) => onChange(event.target.value)}
         >

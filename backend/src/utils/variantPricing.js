@@ -56,7 +56,18 @@ export function sameSelectedOptions(a, b) {
 }
 
 export function createVariantGroupMap(variantGroups = []) {
-  return new Map(variantGroups.map((group) => [String(group.groupId), group]));
+  const groupsByRef = new Map();
+
+  variantGroups.forEach((group) => {
+    [group?.refId, group?.groupId]
+      .map((value) => (typeof value === "string" ? value.trim() : ""))
+      .filter(Boolean)
+      .forEach((ref) => {
+        groupsByRef.set(ref, group);
+      });
+  });
+
+  return groupsByRef;
 }
 
 export function resolveVariantGroupsForMenuItem(menuItem, variantGroupsById) {

@@ -1,5 +1,7 @@
 import express from "express";
 import cors from "cors";
+import { fileURLToPath } from "url";
+import path from "path";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -11,7 +13,12 @@ import ordersRoutes from "./routes/orders.routes.js";
 import cartRoutes from "./routes/cart.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import adminRoutes from "./routes/adminRoutes.js";
+import variantGroupRoutes from "./routes/variantGroup.routes.js";
+import categoryRoutes from "./routes/category.routes.js";
+import { setUploadedImageHeaders } from "./utils/imageHeaders.js";
 import { errorHandler } from "./utils/error.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function validateEnv() {
   const required = ["JWT_SECRET", "TOKEN_SECRET", "COOKIE_SECRET", "CORS_ORIGIN", "NODE_ENV"];
@@ -43,12 +50,22 @@ export function createApp() {
   // General rate limiter
   const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: 250,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: { code: "RATE_LIMITED", message: "Too many requests, please try again later" } },
   });
   app.use(apiLimiter);
+
+  // Uploaded images are served from the backend origin. The frontend dev server
+  // sets COEP=require-corp, so these responses must opt into cross-origin
+  // embedding or browser <img> tags will be blocked.
+  app.use(
+    "/images",
+    express.static(path.join(__dirname, "../public/images"), {
+      setHeaders: setUploadedImageHeaders,
+    })
+  );
 
   // Routes
   app.use("/health", healthRoutes);
@@ -57,6 +74,8 @@ export function createApp() {
   app.use("/cart", cartRoutes);
   app.use("/auth", authRoutes);
   app.use("/admin", adminRoutes);
+  app.use("/variant-groups", variantGroupRoutes);
+  app.use("/categories", categoryRoutes);
 
   app.use((_req, res) => res.status(404).json({ error: "Not Found" }));
 

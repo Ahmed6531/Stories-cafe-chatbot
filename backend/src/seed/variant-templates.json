@@ -157,6 +157,29 @@
         }
       ]
     },
+    "mixed-size-standard": {
+      "name": "Choose Size",
+      "description": "",
+      "isRequired": true,
+      "maxSelections": 1,
+      "order": 1,
+      "options": [
+        {
+          "name": "Small",
+          "description": "small",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 1
+        },
+        {
+          "name": "Medium",
+          "description": "med",
+          "additionalPrice": 50000,
+          "isActive": true,
+          "order": 2
+        }
+      ]
+    },
     "coffee-size-with-large": {
       "name": "Choose Size",
       "description": "",
@@ -420,6 +443,252 @@
       ]
     },
     "coffee-add-ons": {
+      "name": "Add-ons",
+      "description": null,
+      "isRequired": false,
+      "maxSelections": null,
+      "order": 4,
+      "options": [
+        {
+          "name": "Caramel",
+          "description": "Caramel",
+          "additionalPrice": 50000,
+          "isActive": false,
+          "order": 1
+        },
+        {
+          "name": "Caramel Sugar Free",
+          "description": "Caramel",
+          "additionalPrice": 50000,
+          "isActive": false,
+          "order": 2
+        },
+        {
+          "name": "Vanilla",
+          "description": "Vanilla",
+          "additionalPrice": 50000,
+          "isActive": false,
+          "order": 3
+        },
+        {
+          "name": "Vanilla Sugar Free",
+          "description": "Vanilla",
+          "additionalPrice": 50000,
+          "isActive": false,
+          "order": 4
+        },
+        {
+          "name": "Hazelnut",
+          "description": "Hazelnut",
+          "additionalPrice": 50000,
+          "isActive": false,
+          "order": 5
+        },
+        {
+          "name": "White Mocha",
+          "description": "White mocha",
+          "additionalPrice": 50000,
+          "isActive": false,
+          "order": 6
+        },
+        {
+          "name": "Mocha",
+          "description": "Mocha",
+          "additionalPrice": 50000,
+          "isActive": false,
+          "order": 7
+        },
+        {
+          "name": "Whipped Cream",
+          "description": "Whipped Cream",
+          "additionalPrice": 50000,
+          "isActive": false,
+          "order": 8
+        },
+        {
+          "name": "Caramel Drizzle",
+          "description": "Caramel Drizzle",
+          "additionalPrice": 50000,
+          "isActive": false,
+          "order": 9
+        },
+        {
+          "name": "Chocolate Drizzle",
+          "description": "Chocolate Drizzle",
+          "additionalPrice": 50000,
+          "isActive": false,
+          "order": 10
+        },
+        {
+          "name": "Chocolate Chips",
+          "description": "Chocolate Chips",
+          "additionalPrice": 100000,
+          "isActive": false,
+          "order": 11
+        }
+      ]
+    },
+    "mixed-espresso-options": {
+      "name": "Espresso Options",
+      "description": null,
+      "isRequired": false,
+      "maxSelections": null,
+      "order": 2,
+      "options": [
+        {
+          "name": "Shot Decaffe",
+          "description": "decaf",
+          "additionalPrice": 0,
+          "isActive": true,
+          "order": 1
+        },
+        {
+          "name": "Add Shot",
+          "description": "decaf",
+          "additionalPrice": 50000,
+          "isActive": true,
+          "order": 2
+        },
+        {
+          "name": "Yirgacheffe Shot",
+          "description": "decaf",
+          "additionalPrice": 50000,
+          "isActive": true,
+          "order": 3
+        }
+      ]
+    },
+    "mixed-milk-options": {
+      "name": "Milk",
+      "description": null,
+      "isRequired": false,
+      "maxSelections": null,
+      "order": 3,
+      "options": [
+        {
+          "name": "Full Fat",
+          "description": "Full Fat",
+          "additionalPrice": 0,
+          "isActive": false,
+          "order": 1
+        },
+        {
+          "name": "Skim Milk",
+          "description": "skim milk",
+          "additionalPrice": 0,
+          "isActive": false,
+          "order": 2
+        },
+        {
+          "name": "Lactose Free",
+          "description": "Lactose Free",
+          "additionalPrice": 0,
+          "isActive": false,
+          "order": 3
+        },
+        {
+          "name": "Coconut Milk Small",
+          "description": "Coconut Milk Small",
+          "additionalPrice": 130000,
+          "isActive": false,
+          "order": 4
+        },
+        {
+          "name": "Coconut Milk Medium",
+          "description": "Coconut milk Medium",
+          "additionalPrice": 130000,
+          "isActive": false,
+          "order": 5
+        },
+        {
+          "name": "Almond Milk Small",
+          "description": "Almond Milk Small",
+          "additionalPrice": 130000,
+          "isActive": false,
+          "order": 6
+        },
+        {
+          "name": "Almond Milk Medium",
+          "description": "Almond Milk Medium",
+          "additionalPrice": 130000,
+          "isActive": false,
+          "order": 7
+        }
+      ]
+    },
+    "mixed-milk-options-with-large": {
+      "name": "Milk",
+      "description": null,
+      "isRequired": false,
+      "maxSelections": null,
+      "order": 3,
+      "options": [
+        {
+          "name": "Full Fat",
+          "description": "Full Fat",
+          "additionalPrice": 0,
+          "isActive": false,
+          "order": 1
+        },
+        {
+          "name": "Skim Milk",
+          "description": "skim milk",
+          "additionalPrice": 0,
+          "isActive": false,
+          "order": 2
+        },
+        {
+          "name": "Lactose Free",
+          "description": "Lactose Free",
+          "additionalPrice": 0,
+          "isActive": false,
+          "order": 3
+        },
+        {
+          "name": "Coconut Milk Small",
+          "description": "Coconut Milk Small",
+          "additionalPrice": 130000,
+          "isActive": false,
+          "order": 4
+        },
+        {
+          "name": "Coconut Milk Medium",
+          "description": "Coconut milk Medium",
+          "additionalPrice": 130000,
+          "isActive": false,
+          "order": 5
+        },
+        {
+          "name": "Almond Milk Small",
+          "description": "Almond Milk Small",
+          "additionalPrice": 130000,
+          "isActive": false,
+          "order": 6
+        },
+        {
+          "name": "Almond Milk Medium",
+          "description": "Almond Milk Medium",
+          "additionalPrice": 130000,
+          "isActive": false,
+          "order": 7
+        },
+        {
+          "name": "Almond Milk Large",
+          "description": "Almond Milk Large",
+          "additionalPrice": 130000,
+          "isActive": false,
+          "order": 8
+        },
+        {
+          "name": "Coconut Milk Large",
+          "description": "Coconut Milk Large",
+          "additionalPrice": 130000,
+          "isActive": false,
+          "order": 9
+        }
+      ]
+    },
+    "mixed-add-ons": {
       "name": "Add-ons",
       "description": null,
       "isRequired": false,
@@ -1033,6 +1302,93 @@
           "isActive": true,
           "order": 5
         }
+      ]
+    },
+    "sandwich-ingredients-tuna": {
+      "name": "Ingredients",
+      "description": "Customize your Tuna Sub",
+      "isRequired": false,
+      "maxSelections": null,
+      "order": 2,
+      "options": [
+        { "name": "Rocca",          "additionalPrice": 0, "isActive": true, "order": 1 },
+        { "name": "Cheddar Cheese", "additionalPrice": 0, "isActive": true, "order": 2 },
+        { "name": "Onion",          "additionalPrice": 0, "isActive": true, "order": 3 },
+        { "name": "Pepper",         "additionalPrice": 0, "isActive": true, "order": 4 },
+        { "name": "Cherry Tomatoes","additionalPrice": 0, "isActive": true, "order": 5 },
+        { "name": "Jalapeno",       "additionalPrice": 0, "isActive": true, "order": 6 },
+        { "name": "Lettuce",        "additionalPrice": 0, "isActive": true, "order": 7 },
+        { "name": "Olives",         "additionalPrice": 0, "isActive": true, "order": 8 },
+        { "name": "Pickles",        "additionalPrice": 0, "isActive": true, "order": 9 }
+      ]
+    },
+    "sandwich-ingredients-chicken": {
+      "name": "Ingredients",
+      "description": "Customize your Chicken Teriyaki",
+      "isRequired": false,
+      "maxSelections": null,
+      "order": 2,
+      "options": [
+        { "name": "Rocca",          "additionalPrice": 0, "isActive": true, "order": 1 },
+        { "name": "Cheddar Cheese", "additionalPrice": 0, "isActive": true, "order": 2 },
+        { "name": "Onion",          "additionalPrice": 0, "isActive": true, "order": 3 },
+        { "name": "Pepper",         "additionalPrice": 0, "isActive": true, "order": 4 },
+        { "name": "Cherry Tomatoes","additionalPrice": 0, "isActive": true, "order": 5 },
+        { "name": "Jalapeno",       "additionalPrice": 0, "isActive": true, "order": 6 },
+        { "name": "Lettuce",        "additionalPrice": 0, "isActive": true, "order": 7 },
+        { "name": "Olives",         "additionalPrice": 0, "isActive": true, "order": 8 },
+        { "name": "Pickles",        "additionalPrice": 0, "isActive": true, "order": 9 }
+      ]
+    },
+    "sandwich-ingredients-turkey": {
+      "name": "Ingredients",
+      "description": "Customize your Turkey & Cheese",
+      "isRequired": false,
+      "maxSelections": null,
+      "order": 2,
+      "options": [
+        { "name": "Cheddar Cheese", "additionalPrice": 0, "isActive": true, "order": 1 },
+        { "name": "Rocca",          "additionalPrice": 0, "isActive": true, "order": 2 },
+        { "name": "Mint",           "additionalPrice": 0, "isActive": true, "order": 3 },
+        { "name": "Onion",          "additionalPrice": 0, "isActive": true, "order": 4 },
+        { "name": "Pepper",         "additionalPrice": 0, "isActive": true, "order": 5 },
+        { "name": "Cherry Tomatoes","additionalPrice": 0, "isActive": true, "order": 6 },
+        { "name": "Jalapeno",       "additionalPrice": 0, "isActive": true, "order": 7 },
+        { "name": "Lettuce",        "additionalPrice": 0, "isActive": true, "order": 8 },
+        { "name": "Olives",         "additionalPrice": 0, "isActive": true, "order": 9 },
+        { "name": "Pickles",        "additionalPrice": 0, "isActive": true, "order": 10 }
+      ]
+    },
+    "sandwich-ingredients-labneh": {
+      "name": "Ingredients",
+      "description": "Customize your Labneh",
+      "isRequired": false,
+      "maxSelections": null,
+      "order": 2,
+      "options": [
+        { "name": "Mint",           "additionalPrice": 0, "isActive": true, "order": 1 },
+        { "name": "Rocca",          "additionalPrice": 0, "isActive": true, "order": 2 },
+        { "name": "Olives",         "additionalPrice": 0, "isActive": true, "order": 3 },
+        { "name": "Cherry Tomatoes","additionalPrice": 0, "isActive": true, "order": 4 },
+        { "name": "Onion",          "additionalPrice": 0, "isActive": true, "order": 5 },
+        { "name": "Jalapeno",       "additionalPrice": 0, "isActive": true, "order": 6 },
+        { "name": "Pickles",        "additionalPrice": 0, "isActive": true, "order": 7 }
+      ]
+    },
+    "sandwich-ingredients-halloumi": {
+      "name": "Ingredients",
+      "description": "Customize your Halloumi Pesto",
+      "isRequired": false,
+      "maxSelections": null,
+      "order": 2,
+      "options": [
+        { "name": "Rocca",          "additionalPrice": 0, "isActive": true, "order": 1 },
+        { "name": "Cherry Tomatoes","additionalPrice": 0, "isActive": true, "order": 2 },
+        { "name": "Onion",          "additionalPrice": 0, "isActive": true, "order": 3 },
+        { "name": "Pepper",         "additionalPrice": 0, "isActive": true, "order": 4 },
+        { "name": "Jalapeno",       "additionalPrice": 0, "isActive": true, "order": 5 },
+        { "name": "Lettuce",        "additionalPrice": 0, "isActive": true, "order": 6 },
+        { "name": "Olives",         "additionalPrice": 0, "isActive": true, "order": 7 }
       ]
     }
   }

@@ -48,10 +48,12 @@ const menuItemSchema = new mongoose.Schema(
     },
     image: {
       type: String,
-      required: true,
+      required: false,
+      default: "",
     },
     category: {
-      type: String,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
       required: true,
     },
     subcategory: {
@@ -75,15 +77,8 @@ const menuItemSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    // NEW: Reference to variant groups instead of storing them directly
+    // Ordered list of canonical variant group refs attached to this item
     variantGroups: [
-      {
-        type: String,
-        required: false,
-      },
-    ],
-    // Optional: Store order of variant groups if needed
-    variantGroupOrder: [
       {
         type: String,
         required: false,

@@ -3,62 +3,166 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 import { connectDB } from "../config/db.js";
+import { Category } from "../models/Category.js";
 import { MenuItem } from "../models/MenuItem.js";
 import { VariantGroup } from "../models/VariantGroup.js";
+import { generateVariantGroupRefId } from "../utils/variantGroupRefs.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Function to convert old data to new schema
-function convertToNewSchema(oldItem, index) {
-  return {
-    id: oldItem.id || index + 1,
-    slug: oldItem.slug || oldItem.name.toLowerCase().replace(/\s+/g, "-"),
-    name: oldItem.name || "Unknown Item",
-    description: oldItem.description || "No description available",
-    basePrice: oldItem.basePrice || oldItem.price || 0,
-    category: oldItem.category || "Uncategorized",
-    subcategory: oldItem.subcategory || null,
-    image: oldItem.image || "/images/default.png",
-    isAvailable: oldItem.isAvailable !== false,
-    isFeatured: oldItem.isFeatured || false,
-    variantGroups: oldItem.variantGroups || [],
-  };
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function toSlug(str) {
+  return str
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
 }
+
+// Maps variant group ID prefixes → category name.
+// Must mirror the same table in migrateCategories.js.
+// Order matters — more-specific prefixes first.
+const GROUP_PREFIX_MAP = [
+  { prefix: "yogurt-",   category: "Yogurts"    },
+  { prefix: "coffee-",   category: "Coffee"     },
+  { prefix: "mixed-",    category: "Mixed Beverages" },
+  { prefix: "matcha-",   category: "Coffee"     }, // Matcha Latte lives in Coffee
+  { prefix: "tea-",      category: "Tea"        },
+  { prefix: "pastry-",   category: "Pastries"   },
+  { prefix: "sandwich-", category: "Sandwiches" },
+  { prefix: "water-",    category: "Soft Drinks"},
+];
+
+function inferCategoryForGroup(groupId) {
+  for (const { prefix, category } of GROUP_PREFIX_MAP) {
+    if (groupId.startsWith(prefix)) return category;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Seed
+// ---------------------------------------------------------------------------
 
 async function seed() {
   await connectDB();
 
-  // 1. Seed variant groups
-  const variantTemplatesPath = path.join(__dirname, "variant-templates.json");
-  if (fs.existsSync(variantTemplatesPath)) {
-    const templatesRaw = fs.readFileSync(variantTemplatesPath, "utf-8");
-    const templates = JSON.parse(templatesRaw);
+  // ── 1. Wipe existing data ──────────────────────────────────────────────────
+  await Category.deleteMany({});
+  await VariantGroup.deleteMany({});
+  await MenuItem.deleteMany({});
+  console.log("🗑  Cleared Category, VariantGroup, MenuItem collections");
 
-    const variantGroupsArray = Object.entries(templates.variantGroups).map(
-      ([groupId, group]) => ({
-        groupId,
-        ...group,
-      }),
-    );
+  // ── 2. Derive and seed Category documents ─────────────────────────────────
+  const menuItemsPath = path.join(__dirname, "menu.seed.json");
+  const menuItems = JSON.parse(fs.readFileSync(menuItemsPath, "utf-8"));
 
-    await VariantGroup.deleteMany({});
-    await VariantGroup.insertMany(variantGroupsArray);
-    console.log(`✅ Seeded variant groups: ${variantGroupsArray.length}`);
+  const distinctNames = [
+    ...new Set(menuItems.map((i) => i.category).filter(Boolean)),
+  ].sort();
+
+  const categoryDocs = [];
+  for (let i = 0; i < distinctNames.length; i++) {
+    const name = distinctNames[i];
+    const doc = await Category.create({
+      name,
+      slug: toSlug(name),
+      image: "",
+      isActive: true,
+      order: i,
+      subcategories: [],
+    });
+    categoryDocs.push(doc);
   }
 
-  // 2. Seed menu items
-  const menuItemsPath = path.join(__dirname, "menu.seed.json");
-  const raw = fs.readFileSync(menuItemsPath, "utf-8");
-  const items = JSON.parse(raw);
+  // name (lowercase) → ObjectId
+  const categoryByName = new Map(
+    categoryDocs.map((d) => [d.name.toLowerCase(), d._id]),
+  );
 
-  // Convert to new schema and ensure IDs
-  const convertedItems = items.map((item, idx) => convertToNewSchema(item, idx));
+  console.log(`✅ Seeded ${categoryDocs.length} categories:`);
+  categoryDocs.forEach((d) =>
+    console.log(`   • "${d.name}" (${d._id}, slug: "${d.slug}")`),
+  );
 
-  await MenuItem.deleteMany({});
+  // ── 3. Seed VariantGroup documents (with categoryId) ──────────────────────
+  const variantTemplatesPath = path.join(__dirname, "variant-templates.json");
+  const templates = JSON.parse(fs.readFileSync(variantTemplatesPath, "utf-8"));
+
+  const variantGroupsArray = Object.entries(templates.variantGroups).map(
+    ([groupId, group]) => {
+      const refId = generateVariantGroupRefId();
+      const inferredCategoryName = inferCategoryForGroup(groupId);
+      const categoryId = inferredCategoryName
+        ? categoryByName.get(inferredCategoryName.toLowerCase()) ?? null
+        : null;
+
+      if (!categoryId) {
+        console.warn(
+          `  ⚠  variant group "${groupId}" — could not map to a category. categoryId will be null.`,
+        );
+      }
+
+      return {
+        ...group,
+        groupId,
+        adminName: group.adminName || group.name,
+        customerLabel: group.customerLabel || "",
+        name: group.name,
+        refId,
+        categoryId,
+        ctagId: categoryId,
+      };
+    },
+  );
+
+  const variantGroupRefByLegacyId = new Map(
+    variantGroupsArray.map((group) => [group.groupId, group.refId || group.groupId]),
+  );
+
+  await VariantGroup.insertMany(variantGroupsArray);
+  const mapped = variantGroupsArray.filter((g) => g.categoryId).length;
+  const unmapped = variantGroupsArray.length - mapped;
+  console.log(
+    `✅ Seeded ${variantGroupsArray.length} variant groups (${mapped} with categoryId, ${unmapped} without)`,
+  );
+
+  // ── 4. Seed MenuItem documents (category as ObjectId ref) ─────────────────
+  const convertedItems = menuItems.map((item, idx) => {
+    const catId = item.category
+      ? categoryByName.get(item.category.toLowerCase())
+      : null;
+
+    if (!catId) {
+      console.warn(
+        `  ⚠  item id=${item.id || idx + 1} "${item.name}" — unknown category "${item.category}". category will be null.`,
+      );
+    }
+
+    return {
+      id: item.id || idx + 1,
+      slug: item.slug || toSlug(item.name),
+      name: item.name || "Unknown Item",
+      description: item.description || "No description available",
+      basePrice: item.basePrice || item.price || 0,
+      category: catId || null,
+      subcategory: item.subcategory || null,
+      image: item.image || "",
+      isAvailable: item.isAvailable !== false,
+      isFeatured: item.isFeatured || false,
+      variantGroups: (item.variantGroups || []).map(
+        (groupRef) => variantGroupRefByLegacyId.get(groupRef) || groupRef,
+      ),
+    };
+  });
+
   await MenuItem.insertMany(convertedItems);
+  console.log(`✅ Seeded ${convertedItems.length} menu items`);
 
-  console.log(`✅ Seeded menu items: ${convertedItems.length}`);
   process.exit(0);
 }
 

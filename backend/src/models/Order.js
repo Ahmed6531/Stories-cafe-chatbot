@@ -4,6 +4,9 @@ const SelectedOptionSchema = new mongoose.Schema(
   {
     optionName: { type: String, required: true, trim: true },
     suboptionName: { type: String, trim: true, default: undefined },
+    // Which variant group this option came from. Optional for backward
+    // compatibility with orders placed before this field was added.
+    groupId: { type: String, trim: true, default: undefined },
   },
   { _id: false },
 );
