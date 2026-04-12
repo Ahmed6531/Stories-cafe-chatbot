@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
 import axios from 'axios'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
+import Portal from '@mui/material/Portal'
 import VoiceInput from '../VoiceInput'
 import { MIC_MODE, useVoiceSession } from '../../hooks/useVoiceSession'
 import { normalizeTranscriptForRouting, normalizeTranscriptForUi } from '../../utils/voiceTranscript'
@@ -254,7 +255,7 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
     })
   }
 
-  const groupedChecklistSuggestions = useMemo(() => {
+  const groupedChecklistSuggestions = (() => {
     if (!isChecklistSuggestions) return []
     const groups = new Map()
     for (const suggestion of msg.suggestions) {
@@ -264,7 +265,7 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
       groups.set(groupName, list)
     }
     return Array.from(groups.entries())
-  }, [isChecklistSuggestions, msg.suggestions])
+  })()
 
   const selectedChecklistValues = useMemo(() => {
     if (!isChecklistSuggestions) return []
@@ -275,7 +276,7 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
       }
       return []
     })
-  }, [isChecklistSuggestions, msg.suggestions, selectedChecklist])
+  }, [isChecklistSuggestions, selectedChecklist])
 
   const applyChecklistSelections = () => {
     if (!selectedChecklistValues.length) return
@@ -484,7 +485,6 @@ export default function ChatWidget({
       flushPartial()
       return
     }
-                      {getGroupMaxSelections(groupName) > 1 ? ` (choose up to ${getGroupMaxSelections(groupName)})` : ''}
     if (partialTranscriptTimeoutRef.current) {
       window.clearTimeout(partialTranscriptTimeoutRef.current)
     }
@@ -935,11 +935,13 @@ export default function ChatWidget({
           </aside>
         </div>
       </div>
-      <Snackbar open={Boolean(voice.voiceError)} autoHideDuration={3800} onClose={() => voice.dismissError()} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
-        <Alert onClose={() => voice.dismissError()} severity="error" variant="filled" sx={{ width: '100%' }}>
-          {voice.voiceError}
-        </Alert>
-      </Snackbar>
+      <Portal>
+        <Snackbar open={Boolean(voice.voiceError)} autoHideDuration={3800} onClose={() => voice.dismissError()} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+          <Alert onClose={() => voice.dismissError()} severity="error" variant="filled" sx={{ width: '100%' }}>
+            {voice.voiceError}
+          </Alert>
+        </Snackbar>
+      </Portal>
     </>
   )
 }
