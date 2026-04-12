@@ -3,6 +3,7 @@ import { normalizeVariantGroupIds } from "../utils/variantGroups"
 
 let categoriesCache = null
 let categoriesRequest = null
+
 /**
  * Transform backend menu item to frontend format
  */
@@ -66,6 +67,11 @@ export async function fetchMenuCategories() {
   }
 
   return categoriesRequest
+}
+
+export function invalidateCategoriesCache() {
+  categoriesCache = null
+  categoriesRequest = null
 }
 
 /**

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * submitMenuItem
  *
  * Orchestrates the create/edit flow including image upload:

@@ -11,6 +11,7 @@ import healthRoutes from "./routes/health.routes.js";
 import menuRoutes from "./routes/menu.routes.js";
 import ordersRoutes from "./routes/orders.routes.js";
 import cartRoutes from "./routes/cart.routes.js";
+import comboAnalyticsRoutes from "./routes/comboAnalytics.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import variantGroupRoutes from "./routes/variantGroup.routes.js";
@@ -72,6 +73,7 @@ export function createApp() {
   app.use("/menu", menuRoutes);
   app.use("/orders", ordersRoutes);
   app.use("/cart", cartRoutes);
+  app.use("/analytics", comboAnalyticsRoutes);
   app.use("/auth", authRoutes);
   app.use("/admin", adminRoutes);
   app.use("/variant-groups", variantGroupRoutes);

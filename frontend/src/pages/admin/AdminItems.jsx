@@ -418,6 +418,8 @@ function ItemFormSkeleton() {
   )
 }
 
+// ── Component ──────────────────────────────────────────────────────────────────
+
 export default function AdminItems() {
   const [items, setItems] = useState([])
   const [categories, setCategories] = useState([])
@@ -652,6 +654,16 @@ export default function AdminItems() {
     borderColor: "#d67b73",
     boxShadow: "0 0 0 2px rgba(192,57,43,0.08)",
   }
+
+  const subcategoryOptions = [...new Set(
+    items.map((i) => i.subcategory).filter(Boolean)
+  )].sort()
+
+  const imagePickerLabel = imageFile
+    ? imageFile.name
+    : imagePreview
+    ? "Click to replace image"
+    : "Click to choose image…"
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
