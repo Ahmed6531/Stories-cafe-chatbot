@@ -50,7 +50,35 @@ _GENERIC_PAIR_FUN_FACTS = [
 
 
 def _safe_lower(value: Any) -> str:
-    return str(value).lower() if value else ""
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        for key in ("name", "title", "label", "slug"):
+            text = value.get(key)
+            if isinstance(text, str) and text.strip():
+                return text.strip().lower()
+        return ""
+    if isinstance(value, list):
+        parts = [_safe_lower(part) for part in value]
+        return " ".join(part for part in parts if part)
+    return str(value).lower()
+
+
+def _normalize_id(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _item_id(item: dict[str, Any] | None) -> str | None:
+    if not isinstance(item, dict):
+        return None
+    for key in ("id", "_id", "menuItemId"):
+        resolved = _normalize_id(item.get(key))
+        if resolved is not None:
+            return resolved
+    return None
 
 
 def _is_drink_item(item: dict[str, Any] | None) -> bool:
@@ -205,14 +233,14 @@ def _pick_diverse_random(
     # Pass 2: fill any remaining slots regardless of category.
     if len(selected) < limit:
         selected_ids = {
-            int(item.get("id"))
+            _item_id(item)
             for item in selected
-            if isinstance(item, dict) and item.get("id") is not None
+            if _item_id(item) is not None
         }
         for item in shuffled:
             if len(selected) >= limit:
                 break
-            item_id = int(item.get("id")) if isinstance(item, dict) and item.get("id") is not None else None
+            item_id = _item_id(item)
             if item_id is not None and item_id in selected_ids:
                 continue
             selected.append(item)
@@ -252,28 +280,20 @@ async def suggest_upsell_items(
     anchor_menu_item: dict | None = None,
 ) -> list[dict]:
     menu_by_id = {
-        int(item.get("id")): item
+        _item_id(item): item
         for item in menu_items
-        if item.get("id") is not None
+        if _item_id(item) is not None
     }
     cart_names = {_safe_lower(i.get("name")) for i in cart_items}
     cart_menu_item_ids = {
-        int(i.get("menuItemId"))
+        _item_id(i)
         for i in cart_items
-        if i.get("menuItemId") is not None
+        if _item_id(i) is not None
     }
     cart_categories = {_safe_lower(i.get("category")) for i in cart_items}
     # Use the explicitly provided anchor (just-added item) rather than the last cart item.
     recent_item = anchor_menu_item if anchor_menu_item is not None else (cart_items[-1] if cart_items else None)
-    recent_menu_item_id = (
-        int(recent_item.get("id"))
-        if isinstance(recent_item, dict) and recent_item.get("id") is not None
-        else (
-            int(recent_item.get("menuItemId"))
-            if isinstance(recent_item, dict) and recent_item.get("menuItemId") is not None
-            else None
-        )
-    )
+    recent_menu_item_id = _item_id(recent_item)
     recent_is_drink = _is_drink_item(recent_item)
     recent_is_food = _is_food_item(recent_item)
 
@@ -307,7 +327,9 @@ async def suggest_upsell_items(
         if combo_count < 1:
             continue
 
-        suggested_id = int(suggested_menu_item_id)
+        suggested_id = _normalize_id(suggested_menu_item_id)
+        if suggested_id is None:
+            continue
         item = menu_by_id.get(suggested_id)
         if not item:
             continue
@@ -317,7 +339,7 @@ async def suggest_upsell_items(
             continue
 
         anchor_menu_item_id = combo.get("anchorMenuItemId")
-        anchor_item = menu_by_id.get(int(anchor_menu_item_id)) if anchor_menu_item_id is not None else None
+        anchor_item = menu_by_id.get(_normalize_id(anchor_menu_item_id)) if anchor_menu_item_id is not None else None
         is_complementary = _is_complementary_pair(anchor_item, item)
         fun_fact = _build_combo_fun_fact(anchor_item, item)
         existing = combo_ranked_by_id.get(suggested_id)
@@ -333,7 +355,7 @@ async def suggest_upsell_items(
                 "item": item,
                 "is_complementary": is_complementary,
                 "fun_fact": fun_fact,
-                "anchor_menu_item_id": int(anchor_menu_item_id) if anchor_menu_item_id is not None else None,
+                "anchor_menu_item_id": _normalize_id(anchor_menu_item_id) if anchor_menu_item_id is not None else None,
             }
             if fun_fact:
                 combo_fun_facts_by_id[suggested_id] = fun_fact
@@ -451,13 +473,13 @@ async def suggest_upsell_items(
     # Stage 2: if we still need slots, fill with diverse random candidates.
     if len(selected) < limit:
         selected_ids = {
-            int(item.get("id"))
+            _item_id(item)
             for item in selected
-            if item.get("id") is not None
+            if _item_id(item) is not None
         }
         random_pool = [
             item for item in merged_candidates
-            if item.get("id") is not None and int(item.get("id")) not in selected_ids
+            if _item_id(item) is not None and _item_id(item) not in selected_ids
         ]
         used_categories = {_category_key(item) for item in selected}
         selected.extend(
@@ -465,20 +487,20 @@ async def suggest_upsell_items(
         )
 
     combo_candidate_ids = {
-        int(item.get("id"))
+        _item_id(item)
         for item in combo_items_ordered
-        if item.get("id") is not None
+        if _item_id(item) is not None
     }
 
     return [
         {
             "type": "upsell",
             "item_name": item["name"],
-            "menu_item_id": item.get("id"),
-            "upsell_source": "combo" if item.get("id") in combo_candidate_ids else "fallback",
+            "menu_item_id": item.get("id") or item.get("_id") or item.get("menuItemId"),
+            "upsell_source": "combo" if _item_id(item) in combo_candidate_ids else "fallback",
             "fun_fact": (
-                combo_fun_facts_by_id.get(int(item.get("id")))
-                if item.get("id") in combo_candidate_ids and item.get("id") is not None
+                combo_fun_facts_by_id.get(_item_id(item))
+                if _item_id(item) in combo_candidate_ids and _item_id(item) is not None
                 else _build_combo_fun_fact(
                     anchor_menu_item if anchor_menu_item is not None else (cart_items[-1] if cart_items else None),
                     item,

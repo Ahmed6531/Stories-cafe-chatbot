@@ -979,6 +979,7 @@ async def process_chat_message(
         suggest_complementary_items,
         suggest_popular_items,
         extract_recommendation_category,
+        extract_recommendation_query_terms,
         filter_by_category,
     )
     from app.services.http_client import ExpressAPIError
@@ -1092,22 +1093,8 @@ async def process_chat_message(
         intent = "add_items"
 
     if (
-        interpretation.get("intent") == "unknown"
-        and interpretation.get("fallback_needed", False)
-        and any(
-            phrase in normalized_message
-            for phrase in [
-                "recommend",
-                "suggest",
-                "suggestions",
-                "recommendations",
-                "what's good",
-                "whats good",
-                "popular",
-                "surprise me",
-                "what should i get",
-            ]
-        )
+        intent in {"unknown", "describe_item"}
+        and re.search(r"\b(suggest|recommend)\b", normalized_message)
     ):
         interpretation["intent"] = "recommendation_query"
         intent = "recommendation_query"
@@ -1393,6 +1380,30 @@ async def process_chat_message(
                 if cart_summary:
                     reply_text += f"\n\nYour cart now contains:\n{cart_summary}"
 
+                # Keep upsell behavior consistent with regular add flow.
+                menu_items = await fetch_menu_items()
+                upsell_candidates = await get_upsell_suggestions(
+                    session_id=session_id,
+                    intent="add_items",
+                    cart_items=cart_result.get("cart", []),
+                    menu_items=menu_items,
+                    anchor_menu_item=matched_item if isinstance(matched_item, dict) else (menu_det if isinstance(menu_det, dict) else None),
+                )
+                upsell_pick = next(
+                    (
+                        s
+                        for s in upsell_candidates
+                        if s.get("type") == "upsell"
+                        and s.get("item_name")
+                    ),
+                    None,
+                )
+                if upsell_pick:
+                    reply_text += f"\n\nWould you like to add {upsell_pick.get('item_name')}?"
+                    if upsell_pick.get("fun_fact"):
+                        reply_text += f"\n{upsell_pick.get('fun_fact')}"
+                upsell_response_suggestions = [upsell_pick] if upsell_pick else []
+
                 session["pending_clarification"] = None
                 set_session_stage(session_id, None)
                 session["last_items"] = [base_item]
@@ -1407,7 +1418,7 @@ async def process_chat_message(
                     cart_updated=True,
                     cart_id=resolved_cart_id,
                     defaults_used=[],
-                    suggestions=[],
+                    suggestions=upsell_response_suggestions,
                     metadata={
                         "normalized_message": normalized_message,
                         "requested_items": [base_item],
@@ -1664,6 +1675,7 @@ async def process_chat_message(
 
             # Extract any category hint from the message ("drinks", "food", etc.)
             rec_category = extract_recommendation_category(normalized_message)
+            rec_query_terms = extract_recommendation_query_terms(normalized_message)
             menu_items_by_name = {
                 (item.get("name") or "").lower(): item
                 for item in menu_items
@@ -1684,11 +1696,80 @@ async def process_chat_message(
                 anchor_menu_item=cart_items[-1] if cart_items else None,
             )
 
-            all_suggestions = popular + complementary + upsell
+            raw_suggestions = popular + complementary + upsell
+            all_suggestions = raw_suggestions
+            used_broad_category_fallback = False
+            used_term_only_fallback = False
 
-            # Filter by requested category when specified
-            if rec_category:
-                all_suggestions = filter_by_category(all_suggestions, rec_category, menu_items_by_name)
+            # Filter by requested category and explicit query terms when specified
+            if rec_category or rec_query_terms:
+                all_suggestions = filter_by_category(
+                    all_suggestions,
+                    rec_category,
+                    menu_items_by_name,
+                    rec_query_terms,
+                )
+
+                # If strict term filtering yields nothing within the suggestions
+                # pool (popular/complementary/upsell), search ALL menu items
+                # by those terms before falling back to generic category.
+                if not all_suggestions and rec_query_terms and rec_category:
+                    all_menu_suggestions = [
+                        {
+                            "type": "menu_search",
+                            "item_name": item.get("name"),
+                            "menu_item_id": item.get("id"),
+                        }
+                        for item in menu_items
+                        if isinstance(item, dict) and item.get("name")
+                    ]
+                    all_suggestions = filter_by_category(
+                        all_menu_suggestions,
+                        rec_category,
+                        menu_items_by_name,
+                        rec_query_terms,
+                    )
+                    if not all_suggestions:
+                        # Last resort: category-only from suggestion pool.
+                        all_suggestions = filter_by_category(
+                            raw_suggestions,
+                            rec_category,
+                            menu_items_by_name,
+                            [],
+                        )
+                        used_broad_category_fallback = bool(all_suggestions)
+
+            # If user asked for a specific thing (e.g. "ice cream") but no
+            # category was detected, still provide related picks instead of
+            # a generic cart-dependent fallback.
+            if not all_suggestions and rec_query_terms and not rec_category:
+                # Search all menu items by term first.
+                all_menu_suggestions = [
+                    {
+                        "type": "menu_search",
+                        "item_name": item.get("name"),
+                        "menu_item_id": item.get("id"),
+                    }
+                    for item in menu_items
+                    if isinstance(item, dict) and item.get("name")
+                ]
+                all_suggestions = filter_by_category(
+                    all_menu_suggestions,
+                    None,
+                    menu_items_by_name,
+                    rec_query_terms,
+                )
+                if all_suggestions:
+                    used_term_only_fallback = True
+                else:
+                    all_suggestions = filter_by_category(
+                        raw_suggestions,
+                        "food",
+                        menu_items_by_name,
+                        [],
+                    )
+                    if all_suggestions:
+                        used_term_only_fallback = True
 
             seen_names: set[str] = set()
             filtered_suggestions = []
@@ -1707,14 +1788,40 @@ async def process_chat_message(
             suggestion_lines = [f"- {s['item_name']}" for s in filtered_suggestions]
             if suggestion_lines:
                 if rec_category:
-                    cat_label = "drinks" if rec_category == "drink" else "food"
-                    reply_text = f"Here are some {cat_label} you might like:\n" + "\n".join(suggestion_lines)
+                    if rec_category == "drink":
+                        cat_label = "drinks"
+                    elif rec_category == "yogurt":
+                        cat_label = "yogurt items"
+                    else:
+                        cat_label = "food"
+                    if used_broad_category_fallback and rec_query_terms:
+                        requested = " ".join(rec_query_terms)
+                        reply_text = (
+                            f"I couldn't find specific {requested} right now, but here are some {cat_label} you might like:\n"
+                            + "\n".join(suggestion_lines)
+                        )
+                    else:
+                        reply_text = f"Here are some {cat_label} you might like:\n" + "\n".join(suggestion_lines)
+                elif used_term_only_fallback and rec_query_terms:
+                    requested = " ".join(rec_query_terms)
+                    reply_text = (
+                        f"I couldn't find exact matches for {requested}, but here are items you might like:\n"
+                        + "\n".join(suggestion_lines)
+                    )
                 else:
                     reply_text = "Here are some picks you might like:\n" + "\n".join(suggestion_lines)
             else:
                 if rec_category:
-                    cat_label = "drinks" if rec_category == "drink" else "food items"
+                    if rec_category == "drink":
+                        cat_label = "drinks"
+                    elif rec_category == "yogurt":
+                        cat_label = "yogurt items"
+                    else:
+                        cat_label = "food items"
                     reply_text = f"I don't have specific {cat_label} to suggest right now — try browsing the menu!"
+                elif rec_query_terms:
+                    requested = " ".join(rec_query_terms)
+                    reply_text = f"I couldn't find specific matches for {requested} right now — try another item name from the menu."
                 else:
                     reply_text = "I can help with suggestions once you add an item to your cart."
 
@@ -1730,6 +1837,9 @@ async def process_chat_message(
                 metadata={
                     "normalized_message": normalized_message,
                     "recommendation_category": rec_category,
+                    "recommendation_query_terms": rec_query_terms,
+                    "used_broad_category_fallback": used_broad_category_fallback,
+                    "used_term_only_fallback": used_term_only_fallback,
                     "pipeline_stage": "recommendation_done",
                 },
             )
@@ -2732,10 +2842,36 @@ async def process_chat_message(
                 if len(filtered_suggestions) == 2:
                     break
 
-            for name in filtered_names:
-                if name not in upsell_history:
-                    upsell_shown.append(name)
-                    upsell_history.add(name)
+            # Pick upsell directly from upsell candidates so response caps on
+            # generic suggestions do not hide upsell opportunities.
+            upsell_pick = next(
+                (
+                    s
+                    for s in upsell
+                    if s.get("type") == "upsell"
+                    and s.get("item_name")
+                    and (s.get("item_name") or "").strip().lower() not in added_item_names
+                    and (s.get("item_name") or "").strip().lower() not in upsell_history
+                ),
+                None,
+            )
+            if not upsell_pick:
+                upsell_pick = next(
+                    (
+                        s
+                        for s in filtered_suggestions
+                        if s.get("type") == "upsell"
+                        and s.get("item_name")
+                    ),
+                    None,
+                )
+
+            # Track only shown upsell names (not popular/complementary names).
+            if upsell_pick:
+                shown_name = (upsell_pick.get("item_name") or "").strip().lower()
+                if shown_name and shown_name not in upsell_history:
+                    upsell_shown.append(shown_name)
+                    upsell_history.add(shown_name)
 
             cart_summary = build_cart_summary(cart_result["cart"])
             suggestion_lines = [f"- {s['item_name']}" for s in filtered_suggestions]
@@ -2818,16 +2954,6 @@ async def process_chat_message(
                     reply_parts.append(f"Your cart now contains:\n{cart_summary}")
 
                 reply_text = "\n\n".join(reply_parts)
-
-            upsell_pick = next(
-                (
-                    s
-                    for s in filtered_suggestions
-                    if s.get("type") == "upsell"
-                    and s.get("item_name")
-                ),
-                None,
-            )
 
             if upsell_pick and last_matched_item:
                 context_name = (
