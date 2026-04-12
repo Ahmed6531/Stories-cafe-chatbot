@@ -257,7 +257,7 @@ export default function CartSummary({
                   const displayOptionSummary = formatSelections(item.selectedOptions)
 
                   return (
-                    <Box key={item.lineId || index}>
+                    <Box key={item.lineId || index} data-testid="cart-line">
                       <Stack
                         direction="row"
                         alignItems="center"
@@ -380,12 +380,13 @@ export default function CartSummary({
                             </IconButton>
                           </Stack>
                           <IconButton
-    onClick={() => navigate(`/item/${item.menuItemId}?edit=${item.lineId}`)}
-    sx={{ color: brand.textSecondary, width: { xs: 24, sm: 28 }, height: { xs: 24, sm: 28 } }}
-    size="small"
-  >
-    <EditOutlinedIcon fontSize="small" />
-  </IconButton>
+                            onClick={() => navigate(`/item/${item.menuItemId}?edit=${item.lineId}`)}
+                            sx={{ color: brand.textSecondary, width: { xs: 24, sm: 28 }, height: { xs: 24, sm: 28 } }}
+                            aria-label="Edit item"
+                            size="small"
+                          >
+                            <EditOutlinedIcon fontSize="small" />
+                          </IconButton>
                           <IconButton
                             onClick={() => handleRemove(item.lineId)}
                             disabled={pendingRemove.has(item.lineId)}
