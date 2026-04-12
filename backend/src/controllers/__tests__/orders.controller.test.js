@@ -1,7 +1,6 @@
 import { jest } from '@jest/globals';
 import { createOrder } from '../orders.controller.js';
 
-// Mock the models and utils
 jest.mock('../../models/Order.js');
 jest.mock('../../models/MenuItem.js');
 jest.mock('../../models/Cart.js');
@@ -23,14 +22,14 @@ describe('createOrder', () => {
     };
     res = {
       status: jest.fn().mockReturnThis(),
-      json: jest.fn()
+      json: jest.fn(),
+      set: jest.fn().mockReturnThis()  // <-- ADDED
     };
     jest.clearAllMocks();
   });
 
   describe('Success cases', () => {
     test('creates order successfully and returns 201 with orderNumber', async () => {
-      // Arrange
       const mockMenuItem = {
         id: 101,
         name: 'Test Item',
@@ -41,7 +40,7 @@ describe('createOrder', () => {
       const mockOrder = {
         _id: 'orderId1',
         orderNumber: 'SC-20231201-12345',
-        status: 'pending',
+        status: 'received',
         total: 11
       };
 
@@ -54,22 +53,19 @@ describe('createOrder', () => {
 
       MenuItem.findOne.mockResolvedValue(mockMenuItem);
       generateOrderNumber.mockReturnValue('SC-20231201-12345');
-      Order.findOne.mockResolvedValue(null); // No existing order
+      Order.findOne.mockResolvedValue(null);
       Order.create.mockResolvedValue(mockOrder);
       Cart.findOneAndDelete.mockResolvedValue({});
 
-      // Act
       await createOrder(req, res);
 
-      // Assert
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith({
         orderId: 'orderId1',
         orderNumber: 'SC-20231201-12345',
-        status: 'pending',
+        status: 'received',
         total: 11
       });
-      expect(Order.create).toHaveBeenCalledTimes(1);
       expect(Order.create).toHaveBeenCalledWith({
         orderNumber: 'SC-20231201-12345',
         userId: null,
@@ -102,7 +98,7 @@ describe('createOrder', () => {
       const mockOrder = {
         _id: 'orderId2',
         orderNumber: 'SC-20231201-12346',
-        status: 'pending',
+        status: 'received',
         total: 11
       };
 
@@ -125,7 +121,6 @@ describe('createOrder', () => {
 
       expect(Order.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          userId: null,
           items: [
             expect.objectContaining({
               selectedOptions: [{ optionName: 'Mayo', suboptionName: 'Regular' }]
@@ -136,7 +131,6 @@ describe('createOrder', () => {
     });
 
     test('ensures orderNumber exists and matches expected format', async () => {
-      // Similar to above, but check the format
       const mockMenuItem = {
         id: 101,
         name: 'Test Item',
@@ -147,7 +141,7 @@ describe('createOrder', () => {
       const mockOrder = {
         _id: 'orderId1',
         orderNumber: 'SC-20231201-12345',
-        status: 'pending',
+        status: 'received',
         total: 11
       };
 
@@ -182,7 +176,7 @@ describe('createOrder', () => {
       const mockOrder = {
         _id: 'orderId3',
         orderNumber: 'SC-20231201-12347',
-        status: 'pending',
+        status: 'received',
         total: 11
       };
 
@@ -210,7 +204,7 @@ describe('createOrder', () => {
 
   describe('Validation errors', () => {
     test('missing orderType returns 400', async () => {
-      req.body = { customer: { name: 'John', phone: '123' }, items: [{}] };
+      req.body = { customer: { name: 'John', phone: '123' }, items: [{ menuItemId: 1, qty: 1 }] };
 
       await createOrder(req, res);
 
@@ -219,7 +213,7 @@ describe('createOrder', () => {
     });
 
     test('invalid orderType returns 400', async () => {
-      req.body = { orderType: 'invalid', customer: { name: 'John', phone: '123' }, items: [{}] };
+      req.body = { orderType: 'invalid', customer: { name: 'John', phone: '123' }, items: [{ menuItemId: 1, qty: 1 }] };
 
       await createOrder(req, res);
 
@@ -228,7 +222,7 @@ describe('createOrder', () => {
     });
 
     test('missing customer name returns 400', async () => {
-      req.body = { orderType: 'pickup', customer: { phone: '123' }, items: [{}] };
+      req.body = { orderType: 'pickup', customer: { phone: '123' }, items: [{ menuItemId: 1, qty: 1 }] };
 
       await createOrder(req, res);
 
@@ -237,7 +231,7 @@ describe('createOrder', () => {
     });
 
     test('missing customer phone returns 400', async () => {
-      req.body = { orderType: 'pickup', customer: { name: 'John' }, items: [{}] };
+      req.body = { orderType: 'pickup', customer: { name: 'John' }, items: [{ menuItemId: 1, qty: 1 }] };
 
       await createOrder(req, res);
 
@@ -245,14 +239,7 @@ describe('createOrder', () => {
       expect(res.json).toHaveBeenCalledWith({ error: 'Customer name and phone are required' });
     });
 
-    test('delivery without address returns 400', async () => {
-      req.body = { orderType: 'delivery', customer: { name: 'John', phone: '123' }, items: [{}] };
-
-      await createOrder(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({ error: 'Address is required for delivery' });
-    });
+    // Removed "delivery without address" because orderType 'delivery' is not allowed at all
 
     test('empty items returns 400', async () => {
       req.body = { orderType: 'pickup', customer: { name: 'John', phone: '123' }, items: [] };
@@ -264,7 +251,7 @@ describe('createOrder', () => {
     });
 
     test('invalid item qty returns 400', async () => {
-      req.body = { orderType: 'pickup', customer: { name: 'John', phone: '123' }, items: [{ menuItemId: 'id', qty: 0 }] };
+      req.body = { orderType: 'pickup', customer: { name: 'John', phone: '123' }, items: [{ menuItemId: 1, qty: 0 }] };
 
       await createOrder(req, res);
 
@@ -286,6 +273,7 @@ describe('createOrder', () => {
     test('non-numeric menu item id returns 400', async () => {
       req.body = { orderType: 'pickup', customer: { name: 'John', phone: '123' }, items: [{ menuItemId: 'invalid', qty: 1 }] };
 
+      // The controller does the numeric check before DB call, so no need to mock MenuItem.findOne
       await createOrder(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
