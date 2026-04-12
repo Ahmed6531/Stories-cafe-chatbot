@@ -548,11 +548,25 @@ def _generate_gemini_content(prompt: str) -> str | None:
 
 def try_interpret_message(message: str, context=None) -> Optional[Dict[str, Any]]:
     try:
+        history_block = ""
+        if context and isinstance(context, list):
+            recent = context[-10:]  # last 5 exchanges
+            lines = []
+            for turn in recent:
+                role = turn.get("role", "")
+                text = turn.get("text", "")
+                if role == "user":
+                    lines.append(f"User: {text}")
+                elif role == "bot":
+                    lines.append(f"Bot: {text}")
+            if lines:
+                history_block = "\nConversation so far:\n" + "\n".join(lines) + "\n"
+
         prompt = f"""
 You are an ordering-intent parser for a cafe chatbot.
 
 Your job is to extract structured data from the user's message with high accuracy.
-
+{history_block}
 Return ONLY valid JSON.
 Do not add markdown.
 Do not add explanations.

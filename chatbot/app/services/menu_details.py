@@ -190,7 +190,13 @@ def _is_confident_availability_match(item_query: str, matched_item: dict | None)
 
     if query == matched_name:
         return True
-    if query in matched_name or matched_name in query:
+
+    # All words the user typed must appear in the matched item's name.
+    # e.g. query="latte" → "iced latte" ✓ (subset)
+    # but query="matcha latte" → "latte" ✗ ("matcha" missing)
+    query_words = set(query.split())
+    matched_words = set(matched_name.split())
+    if query_words.issubset(matched_words):
         return True
 
     return SequenceMatcher(None, query, matched_name).ratio() >= 0.84
@@ -345,6 +351,25 @@ async def process_describe_item(
     matched_item = await find_menu_item_by_name(menu_items, item_name)
     if is_availability_query and matched_item and not _is_confident_availability_match(item_name, matched_item):
         matched_item = None
+
+    # Item exists but is marked unavailable/out of stock
+    if is_availability_query and matched_item and matched_item.get("isAvailable") is False:
+        display_name = (matched_item.get("name") or item_name).strip()
+        return ChatMessageResponse(
+            session_id=session_id,
+            status="ok",
+            reply=f"Sorry, {display_name} is currently out of stock.",
+            intent=intent,
+            cart_updated=False,
+            cart_id=cart_id,
+            defaults_used=[],
+            suggestions=[],
+            metadata={
+                "normalized_message": normalized_message,
+                "item_query": item_name,
+                "pipeline_stage": "describe_item_unavailable",
+            },
+        )
 
     if not matched_item:
         if is_availability_query:

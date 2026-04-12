@@ -10,6 +10,7 @@ class Session(TypedDict):
     stage: str | None
     checkout_initiated: bool
     pending_clarification: dict[str, Any] | None
+    history: list
 
 
 sessions: dict[str, Session] = {}
@@ -21,6 +22,7 @@ def get_session(session_id: str) -> Session:
         session.setdefault("stage", None)
         session.setdefault("checkout_initiated", False)
         session.setdefault("pending_clarification", None)
+        session.setdefault("history", [])
         return session
 
     new_session: Session = {
@@ -31,6 +33,7 @@ def get_session(session_id: str) -> Session:
         "stage": None,
         "checkout_initiated": False,
         "pending_clarification": None,
+        "history": [],
     }
     sessions[session_id] = new_session
     return new_session

@@ -42,6 +42,13 @@ async def send_message(payload: ChatMessageRequest) -> ChatMessageResponse:
         ):
             session["last_items"] = requested_items
 
+    # Keep last 10 turns (5 user + 5 bot) in session memory only
+    history: list = session.setdefault("history", [])
+    history.append({"role": "user", "text": payload.message})
+    history.append({"role": "bot", "text": response.reply})
+    if len(history) > 20:
+        session["history"] = history[-20:]
+
     audio = await tts_service.synthesize(response.reply)
     response.audio_base64 = audio
     return response

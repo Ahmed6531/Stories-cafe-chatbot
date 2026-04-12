@@ -436,6 +436,11 @@ def collect_missing_variant_groups(requested_item: dict[str, Any], menu_detail: 
         if not isinstance(group, dict):
             continue
 
+        # If a group has only one available choice, do not block on clarification.
+        # The add flow will auto-select that option when building selected_options.
+        if len(_active_option_names(group)) <= 1:
+            continue
+
         label = _normalize_text(_group_label(group))
         is_required = bool(group.get("isRequired"))
         tracked = any(
