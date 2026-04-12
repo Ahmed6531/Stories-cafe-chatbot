@@ -38,7 +38,7 @@ function transformMenuItem(item) {
     isFeatured: item.isFeatured || false,
     options: item.options || [],
     variantGroups: normalizeVariantGroupIds(item.variantGroups),
-    variants: (item.variants || []).map(v => ({
+    variantGroupDetails: (item.variantGroupDetails || []).map(v => ({
       ...v,
       id: v.refId || v.groupId || v.id
     })).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)),
@@ -67,11 +67,6 @@ export async function fetchMenuCategories() {
   }
 
   return categoriesRequest
-}
-
-export function invalidateCategoriesCache() {
-  categoriesCache = null
-  categoriesRequest = null
 }
 
 /**

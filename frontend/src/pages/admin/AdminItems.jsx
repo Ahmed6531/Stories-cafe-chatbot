@@ -655,11 +655,9 @@ export default function AdminItems() {
     boxShadow: "0 0 0 2px rgba(192,57,43,0.08)",
   }
 
-  const subcategoryOptions = [...new Set(
-    items.map((i) => i.subcategory).filter(Boolean)
-  )].sort()
+  const _legacySubcategoryOptions = null
 
-  const imagePickerLabel = imageFile
+  const _legacyImagePickerLabel = imageFile
     ? imageFile.name
     : imagePreview
     ? "Click to replace image"

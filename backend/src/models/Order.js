@@ -28,7 +28,6 @@ const OrderSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     orderNumber: { type: String, required: true, unique: true },
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false },
     status: {
       type: String,
       enum: ["received", "in_progress", "completed", "cancelled"],

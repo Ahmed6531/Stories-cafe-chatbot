@@ -3,8 +3,6 @@ import { Category } from "../models/Category.js";
 import { MenuItem } from "../models/MenuItem.js";
 import { generateVariantGroupRefId } from "../utils/variantGroupRefs.js";
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
 function buildScopedGroupFilter(groupRef, categoryId) {
   const refFilter = {
     $or: [
@@ -20,12 +18,7 @@ function buildScopedGroupFilter(groupRef, categoryId) {
   return {
     $and: [
       refFilter,
-      {
-        $or: [
-          { categoryId },
-          { ctagId: categoryId },
-        ],
-      },
+      { categoryId },
     ],
   };
 }
@@ -35,25 +28,6 @@ function getGroupRefs(group) {
     .filter((value) => typeof value === "string" && value.trim())
     .map((value) => value.trim());
 }
-
-// ─── GET /variant-groups ──────────────────────────────────────────────────────
-// Global flat list — kept for backward compat with the legacy admin page.
-// Prefer GET /categories/:categoryId/variant-groups for scoped access.
-
-export async function getVariantGroups(req, res) {
-  try {
-    const groups = await VariantGroup.find({ isActive: { $ne: false } })
-      .sort({ adminName: 1 })
-      .lean();
-    res.status(200).json({ success: true, groups });
-  } catch (error) {
-    console.error("Failed to fetch variant groups:", error.message);
-    res.status(500).json({ success: false, error: "Failed to load variant groups." });
-  }
-}
-
-// ─── POST /variant-groups  (or nested: POST /categories/:categoryId/variant-groups) ──
-// categoryId is read from req.params first (nested route), then req.body (flat route).
 
 export async function createVariantGroup(req, res) {
   try {
@@ -65,8 +39,7 @@ export async function createVariantGroup(req, res) {
       options = [],
     } = req.body;
 
-    // Resolve categoryId: nested route provides it via params, flat route via body
-    const categoryId = req.params.categoryId || req.body.categoryId;
+    const categoryId = req.params.categoryId;
 
     if (!adminName || !adminName.trim()) {
       return res.status(400).json({ success: false, error: "adminName is required." });
@@ -103,7 +76,6 @@ export async function createVariantGroup(req, res) {
       refId,
       groupId,
       categoryId: categoryDoc._id,
-      ctagId: categoryDoc._id,
       adminName: adminName.trim(),
       customerLabel: customerLabel.trim(),
       name: customerLabel.trim() || adminName.trim(),
@@ -119,8 +91,6 @@ export async function createVariantGroup(req, res) {
     res.status(400).json({ success: false, error: error.message || "Failed to create variant group." });
   }
 }
-
-// ─── PATCH /variant-groups/:groupId ──────────────────────────────────────────
 
 export async function updateVariantGroup(req, res) {
   try {
@@ -143,7 +113,6 @@ export async function updateVariantGroup(req, res) {
       updateData.customerLabel = customerLabel.trim();
     }
 
-    // Keep name in sync with customerLabel || adminName
     const resolvedAdminName = updateData.adminName ?? existing.adminName;
     const resolvedCustomerLabel = updateData.customerLabel !== undefined
       ? updateData.customerLabel
@@ -185,9 +154,6 @@ export async function updateVariantGroup(req, res) {
     res.status(400).json({ success: false, error: error.message || "Failed to update variant group." });
   }
 }
-
-// ─── DELETE /variant-groups/:groupId ─────────────────────────────────────────
-// Soft delete — sets isActive: false. Never hard-deletes VariantGroup docs.
 
 export async function deleteVariantGroup(req, res) {
   try {

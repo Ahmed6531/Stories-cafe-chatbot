@@ -84,7 +84,7 @@ function findVariantGroupByRef(groupRef, groupsByRef) {
 }
 
 function getVariantGroupCategoryId(group) {
-  return group?.categoryId || group?.ctagId || null;
+  return group?.categoryId || null;
 }
 
 async function validateVariantGroupsForCategory({ categoryId, variantGroups, context }) {
@@ -107,7 +107,7 @@ async function validateVariantGroupsForCategory({ categoryId, variantGroups, con
       { refId: { $in: normalizedRefs } },
     ],
   })
-    .select("refId groupId adminName name categoryId ctagId isActive")
+    .select("refId groupId adminName name categoryId isActive")
     .lean();
 
   const groupsByRef = createVariantGroupRefMap(matchedGroups);
@@ -148,7 +148,6 @@ async function validateVariantGroupsForCategory({ categoryId, variantGroups, con
       refId: group.refId ? String(group.refId) : null,
       groupId: group.groupId,
       categoryId: group.categoryId ? String(group.categoryId) : null,
-      ctagId: group.ctagId ? String(group.ctagId) : null,
       isActive: group.isActive !== false,
     })),
     invalidGroups,
@@ -218,7 +217,7 @@ export async function getMenuItem(req, res) {
         isActive: { $ne: false },
       });
       const groupsByRef = createVariantGroupRefMap(variantGroups);
-      itemResponse.variants = menuItem.variantGroups
+      itemResponse.variantGroupDetails = menuItem.variantGroups
         .map((groupRef) => {
           const group = findVariantGroupByRef(groupRef, groupsByRef);
           return group ? group.toObject() : null;
@@ -226,7 +225,7 @@ export async function getMenuItem(req, res) {
         .filter(Boolean);
     }
     console.log(
-      `📤 Returning menu item "${menuItem.name}" with ${itemResponse.variants?.length || 0} variant groups`
+      `📤 Returning menu item "${menuItem.name}" with ${itemResponse.variantGroupDetails?.length || 0} variant groups`
     );
     res.status(200).json({ success: true, item: itemResponse });
   } catch (error) {

@@ -14,7 +14,6 @@ import cartRoutes from "./routes/cart.routes.js";
 import comboAnalyticsRoutes from "./routes/comboAnalytics.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import adminRoutes from "./routes/adminRoutes.js";
-import variantGroupRoutes from "./routes/variantGroup.routes.js";
 import categoryRoutes from "./routes/category.routes.js";
 import { setUploadedImageHeaders } from "./utils/imageHeaders.js";
 import { errorHandler } from "./utils/error.js";
@@ -76,7 +75,6 @@ export function createApp() {
   app.use("/analytics", comboAnalyticsRoutes);
   app.use("/auth", authRoutes);
   app.use("/admin", adminRoutes);
-  app.use("/variant-groups", variantGroupRoutes);
   app.use("/categories", categoryRoutes);
 
   app.use((_req, res) => res.status(404).json({ error: "Not Found" }));

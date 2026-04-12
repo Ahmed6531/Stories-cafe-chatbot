@@ -14,12 +14,7 @@ function toSlug(str) {
 }
 
 function buildVariantGroupCategoryFilter(categoryId) {
-  return {
-    $or: [
-      { categoryId },
-      { ctagId: categoryId },
-    ],
-  };
+  return { categoryId };
 }
 
 function getVariantGroupRefs(group) {
@@ -297,7 +292,6 @@ export async function getVariantGroupsByCategory(req, res) {
         refId: group.refId || null,
         groupId: group.groupId,
         categoryId: group.categoryId ? String(group.categoryId) : null,
-        ctagId: group.ctagId ? String(group.ctagId) : null,
       })),
     });
 

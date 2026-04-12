@@ -115,7 +115,6 @@ async function seed() {
         name: group.name,
         refId,
         categoryId,
-        ctagId: categoryId,
       };
     },
   );

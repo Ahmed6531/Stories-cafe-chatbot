@@ -638,8 +638,8 @@ const editLineId = searchParams.get('edit') || null
   }, [item?.id])
 
   const groups = useMemo(() => {
-    if (!item?.variants || item.variants.length === 0) return []
-    return item.variants.map((v) => ({
+    if (!item?.variantGroupDetails || item.variantGroupDetails.length === 0) return []
+    return item.variantGroupDetails.map((v) => ({
       ...v,
       id: v.id || v.refId || v.groupId,
       options: Array.isArray(v.options) ? v.options : [],
