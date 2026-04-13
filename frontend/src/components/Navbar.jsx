@@ -1,5 +1,6 @@
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
+import MiniCartPopup from '../components/MiniCartPopup'
 import { useCart } from '../state/useCart'
 import { useSession } from '../hooks/useSession'
 import { styled, keyframes, useTheme } from '@mui/material/styles'
@@ -73,25 +74,28 @@ const TopNavLink = styled(Link, {
 const TopPillBtn = styled('button', {
   shouldForwardProp: (prop) => prop !== 'isAuth',
 })(({ theme, isAuth }) => ({
-  backgroundColor: 'transparent',
-  border: `1.5px solid ${theme.brand.primary}`,
-  color: theme.brand.primary,
-  borderRadius: '20px',
-  height: '32px',
+  backgroundColor: '#ffffff',
+  border: '0.5px solid rgba(0,0,0,0.15)',
+  color: '#111111',
+  borderRadius: '18px',
+  height: '36px',
   display: 'flex',
   flexDirection: 'row',
   alignItems: 'center',
-  padding: '0 14px',
+  padding: '0 16px',
   gap: '6px',
   fontSize: '13px',
   fontFamily: theme.brand.fontBase,
-  fontWeight: 600,
+  fontWeight: 500,
   cursor: 'pointer',
-  transition: 'all 0.2s ease',
+  lineHeight: 1.4,
+  boxShadow: 'none',
+  transition: 'background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease',
   ...(isAuth && { marginLeft: 'auto' }),
   '&:hover': {
-    transform: 'translateY(-1px)',
-    backgroundColor: 'rgba(0, 112, 74, 0.08)',
+    backgroundColor: 'rgba(0,112,74,0.06)',
+    borderColor: 'rgba(0,112,74,0.18)',
+    color: theme.brand.primary,
   },
 }))
 
@@ -139,6 +143,7 @@ const HamburgerBtn = styled('button')(() => ({
     cursor: 'pointer',
     borderRadius: '8px',
     padding: 0,
+
     flexShrink: 0,
     '&:hover': { background: 'rgba(0,0,0,0.05)' },
   },
@@ -229,9 +234,13 @@ export default function Navbar() {
   const pageRef = useRef(null)
   const pendingCheckoutRef = useRef(false)
 
-  const { cartCount, refreshCart, resetCart } = useCart()
+  const { cartCount, lastAddedItem, refreshCart, resetCart, clearLastAddedItem } = useCart()
+  const cartBtnRef = useRef(null)
   const location = useLocation()
   const navigate = useNavigate()
+
+  const onCart = location.pathname === '/cart' || location.pathname === '/checkout'
+  const miniCartOpen = !!lastAddedItem && !onCart
 
   const isAuthed = !sessionLoading && !!user
   const showGuestActions = !sessionLoading && !user
@@ -249,7 +258,6 @@ export default function Navbar() {
   const handleLogout = async () => {
     await logout()
     localStorage.removeItem('cartId')
-    sessionStorage.removeItem('chatSessionId')
     localStorage.removeItem('chatSessionId')
     localStorage.removeItem(CHAT_STORAGE_KEY)
     localStorage.removeItem(CHAT_STORAGE_TS_KEY)
@@ -340,6 +348,8 @@ export default function Navbar() {
 
   return (
     <div className="app-shell">
+
+
       <div className="content-shell">
         <main className="main">
           {!isSuccessRoute && (
@@ -364,6 +374,7 @@ export default function Navbar() {
                 </TopbarNavWrap>
               </TopbarLeft>
 
+
               <TopbarActionsWrap>
                 {isAuthed ? (
                   <TopPillBtn isAuth type="button" onClick={handleLogout}>Logout</TopPillBtn>
@@ -377,7 +388,7 @@ export default function Navbar() {
                   </TopPillBtn>
                 ) : null}
 
-                <TopPillBtn type="button" onClick={() => navigate('/cart')}>
+                <TopPillBtn ref={cartBtnRef} type="button" onClick={() => navigate('/cart')}>
                   <Box component="span" aria-hidden="true" sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <circle cx="9" cy="21" r="1" />
@@ -414,6 +425,14 @@ export default function Navbar() {
               </HamburgerBtn>
             </Topbar>
           )}
+
+          <MiniCartPopup
+            open={miniCartOpen}
+            onClose={clearLastAddedItem}
+            anchorRef={cartBtnRef}
+            lastAddedItem={lastAddedItem}
+            chatOpen={chatOpen}
+          />
 
           <div ref={pageRef} className="page">
             <div className={isSuccessRoute ? undefined : 'page-content'}>

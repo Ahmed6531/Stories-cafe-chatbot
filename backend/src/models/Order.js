@@ -4,6 +4,9 @@ const SelectedOptionSchema = new mongoose.Schema(
   {
     optionName: { type: String, required: true, trim: true },
     suboptionName: { type: String, trim: true, default: undefined },
+    // Which variant group this option came from. Optional for backward
+    // compatibility with orders placed before this field was added.
+    groupId: { type: String, trim: true, default: undefined },
   },
   { _id: false },
 );
@@ -25,7 +28,6 @@ const OrderSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     orderNumber: { type: String, required: true, unique: true },
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false },
     status: {
       type: String,
       enum: ["received", "in_progress", "completed", "cancelled"],

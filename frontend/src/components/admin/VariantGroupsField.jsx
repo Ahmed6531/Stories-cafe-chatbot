@@ -1,23 +1,176 @@
+import { useEffect, useState } from "react"
 import Box from "@mui/material/Box"
+import FormControl from "@mui/material/FormControl"
+import MenuItem from "@mui/material/MenuItem"
+import Select from "@mui/material/Select"
+import Skeleton from "@mui/material/Skeleton"
 import Typography from "@mui/material/Typography"
+import { fetchVariantGroupsByCategory } from "../../API/variantGroupApi"
+
+function getVariantGroupId(groupRef) {
+  if (typeof groupRef === "string") {
+    return groupRef.trim()
+  }
+
+  if (!groupRef || typeof groupRef !== "object") {
+    return ""
+  }
+
+  const rawId = groupRef.refId || groupRef.groupId || groupRef.id
+  return typeof rawId === "string" ? rawId.trim() : ""
+}
+
+function sanitizeVariantGroupIds(variantGroups) {
+  if (!Array.isArray(variantGroups)) {
+    return []
+  }
+
+  const seen = new Set()
+  return variantGroups.reduce((groupIds, groupRef) => {
+    const groupId = getVariantGroupId(groupRef)
+    if (!groupId || seen.has(groupId)) {
+      return groupIds
+    }
+
+    seen.add(groupId)
+    groupIds.push(groupId)
+    return groupIds
+  }, [])
+}
 
 export default function VariantGroupsField({
-  allGroups,
+  categoryId,          // ObjectId string of the selected category
   attachedGroups,
   setAttachedGroups,
   dragSrcId,
   setDragSrcId,
 }) {
-  const pinned = attachedGroups.filter(
-    (id) => allGroups.find((g) => g.groupId === id)?.isRequired
+  const attachSelectSx = {
+    mt: 0.25,
+    "& .MuiOutlinedInput-notchedOutline": {
+      border: "0.5px solid rgba(0,0,0,0.15)",
+    },
+    "& .MuiSelect-select": {
+      padding: "8px 34px 8px 10px",
+      fontSize: 12,
+      color: "#111111",
+      backgroundColor: "#f8f9f8",
+      borderRadius: "8px",
+    },
+    "& .MuiSvgIcon-root": {
+      color: "#9e9e9e",
+      right: 10,
+    },
+    "& .Mui-focused .MuiOutlinedInput-notchedOutline": {
+      borderColor: "#00704a",
+      boxShadow: "0 0 0 2px rgba(0,112,74,0.10)",
+    },
+  }
+
+  const attachMenuProps = {
+    PaperProps: {
+      sx: {
+        mt: 0.5,
+        borderRadius: "10px",
+        border: "0.5px solid rgba(0,0,0,0.10)",
+        boxShadow: "0 10px 24px rgba(15,23,42,0.08)",
+        "& .MuiMenuItem-root": {
+          fontSize: 12,
+          minHeight: 34,
+        },
+      },
+    },
+  }
+
+  const [allGroups, setAllGroups] = useState([])
+  const [loading, setLoading] = useState(Boolean(categoryId))
+
+  // Re-fetch variant groups whenever the category changes. The parent keys this
+  // component by categoryId, so the local list resets on category switches; the
+  // cleanup guard keeps an outdated request from overwriting a newer one.
+  useEffect(() => {
+    console.debug("[AdminItems] category changed", {
+      categoryId,
+    })
+    if (!categoryId) return
+    let cancelled = false
+    setLoading(true)
+    setAllGroups([])
+    fetchVariantGroupsByCategory(categoryId)
+      .then((groups) => {
+        if (cancelled) return
+        setAllGroups(groups)
+        setLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setAllGroups([])
+        setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [categoryId])
+
+  useEffect(() => {
+    const sanitized = sanitizeVariantGroupIds(attachedGroups)
+    const isAlreadySanitized =
+      Array.isArray(attachedGroups) &&
+      sanitized.length === attachedGroups.length &&
+      attachedGroups.every(
+        (groupId, index) =>
+          typeof groupId === "string" && groupId.trim() === sanitized[index],
+      )
+    if (isAlreadySanitized) return
+
+    console.warn("[AdminItems] removing blank variant-group ids", {
+      categoryId,
+      attachedGroupIds: attachedGroups,
+      sanitizedGroupIds: sanitized,
+    })
+    setAttachedGroups(sanitized)
+  }, [attachedGroups, categoryId, setAttachedGroups])
+
+  useEffect(() => {
+    if (!categoryId || loading) return
+
+    const allowedIds = new Set(allGroups.map((group) => getVariantGroupId(group)).filter(Boolean))
+    const staleIds = sanitizeVariantGroupIds(attachedGroups).filter((groupId) => !allowedIds.has(groupId))
+
+    console.debug("[AdminItems] variant group scope resolved", {
+      categoryId,
+      allowedGroupIds: allGroups.map((group) => getVariantGroupId(group)).filter(Boolean),
+      attachedGroupIds: sanitizeVariantGroupIds(attachedGroups),
+      staleGroupIds: staleIds,
+    })
+
+    if (staleIds.length === 0) return
+
+    console.warn("[AdminItems] dropping stale variant-group selections", {
+      categoryId,
+      staleGroupIds: staleIds,
+    })
+    setAttachedGroups((prev) => sanitizeVariantGroupIds(prev).filter((groupId) => allowedIds.has(groupId)))
+  }, [allGroups, attachedGroups, categoryId, loading, setAttachedGroups])
+
+  const normalizedAttachedGroups = sanitizeVariantGroupIds(attachedGroups)
+  const normalizedAllGroups = allGroups
+    .map((group) => {
+      const groupId = getVariantGroupId(group)
+      return groupId ? { ...group, groupId } : null
+    })
+    .filter(Boolean)
+  const pinned = normalizedAttachedGroups.filter(
+    (id) => normalizedAllGroups.find((g) => g.groupId === id)?.isRequired
   )
-  const optional = attachedGroups.filter(
-    (id) => !allGroups.find((g) => g.groupId === id)?.isRequired
+  const optional = normalizedAttachedGroups.filter(
+    (id) => !normalizedAllGroups.find((g) => g.groupId === id)?.isRequired
   )
-  const available = allGroups.filter((g) => !attachedGroups.includes(g.groupId))
+  const available = normalizedAllGroups.filter((g) => !normalizedAttachedGroups.includes(g.groupId))
 
   function removeGroup(id) {
-    setAttachedGroups((prev) => prev.filter((x) => x !== id))
+    console.debug("[AdminItems] remove variant group", { categoryId, groupId: id })
+    setAttachedGroups((prev) => sanitizeVariantGroupIds(prev).filter((groupId) => groupId !== id))
   }
 
   function handleDragStart(e, id) {
@@ -48,15 +201,20 @@ export default function VariantGroupsField({
   }
 
   function handleAttach(e) {
-    if (!e.target.value) return
-    setAttachedGroups((prev) => [...prev, e.target.value])
-    e.target.value = ""
+    const groupId = getVariantGroupId(e.target.value)
+    if (!groupId) return
+    console.debug("[AdminItems] attach variant group", {
+      categoryId,
+      groupId,
+      allowedGroupIds: normalizedAllGroups.map((group) => group.groupId),
+    })
+    setAttachedGroups((prev) => sanitizeVariantGroupIds([...prev, groupId]))
   }
 
-  const hasAny = attachedGroups.length > 0
+  const hasAny = normalizedAttachedGroups.length > 0
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
 
       {/* ── Section label ─────────────────────────────────────────────────── */}
       <Typography sx={{
@@ -68,16 +226,23 @@ export default function VariantGroupsField({
         Variant Groups
       </Typography>
 
-      {/* ── Empty state ───────────────────────────────────────────────────── */}
-      {!hasAny && (
+      {/* ── No category selected ─────────────────────────────────────────── */}
+      {!categoryId && (
         <Typography sx={{ fontSize: 13, color: "text.secondary", py: 1 }}>
-          No variant groups attached yet.
+          Select a category above to see available variant groups.
+        </Typography>
+      )}
+
+      {/* ── Empty state (category selected, nothing attached) ────────────── */}
+      {categoryId && !hasAny && (
+        <Typography sx={{ fontSize: 13, color: "text.secondary", py: 1 }}>
+          {loading ? "Loading variant groups..." : "No variant groups attached yet."}
         </Typography>
       )}
 
       {/* ── Pinned (required) ─────────────────────────────────────────────── */}
       {pinned.map((id) => {
-        const g = allGroups.find((x) => x.groupId === id)
+        const g = normalizedAllGroups.find((x) => x.groupId === id)
         if (!g) return null
         return (
           <Box key={id} sx={{
@@ -131,10 +296,31 @@ export default function VariantGroupsField({
 
       {/* ── Optional (draggable) ──────────────────────────────────────────── */}
       {optional.map((id) => {
-        const g = allGroups.find((x) => x.groupId === id)
+        const g = normalizedAllGroups.find((x) => x.groupId === id)
 
         // Stale reference
         if (!g) {
+          if (loading) {
+            return (
+              <Box key={id} sx={{
+                display: "flex", alignItems: "center", gap: "10px",
+                padding: "9px 12px", borderRadius: 8,
+                border: "1px solid #e5e7eb", background: "#fff",
+              }}>
+                <Box sx={{ display: "flex", flexDirection: "column", gap: "3px", flexShrink: 0, opacity: 0.18 }}>
+                  {[0,1,2].map((i) => (
+                    <Box key={i} sx={{ width: 14, height: "1.5px", background: "#374151", borderRadius: 2 }} />
+                  ))}
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Skeleton animation="wave" variant="text" width="42%" height={22} />
+                  <Skeleton animation="wave" variant="text" width="28%" height={16} />
+                </Box>
+                <Skeleton animation="wave" variant="rounded" width={58} height={24} sx={{ borderRadius: "6px" }} />
+              </Box>
+            )
+          }
+
           return (
             <Box key={id} sx={{
               display: "flex", alignItems: "center", gap: "10px",
@@ -221,32 +407,30 @@ export default function VariantGroupsField({
       })}
 
       {/* ── Attach select — always shown ──────────────────────────────────── */}
-      <select
-        value=""
-        onChange={handleAttach}
-        style={{
-          fontFamily: "inherit",
-          fontSize: 13,
-          padding: "9px 10px",
-          borderRadius: 8,
-          border: "1px dashed #d1d5db",
-          background: "#fff",
-          color: available.length === 0 ? "#9ca3af" : "#374151",
-          cursor: available.length === 0 ? "default" : "pointer",
-          width: "100%",
-          marginTop: 2,
-        }}
-        disabled={available.length === 0}
-      >
-        <option value="">
-          {available.length === 0 ? "All groups attached" : "+ Attach a variant group…"}
-        </option>
-        {available.map((g) => (
-          <option key={g.groupId} value={g.groupId}>
-            {g.adminName || g.name}
-          </option>
-        ))}
-      </select>
+      <FormControl size="small" fullWidth sx={attachSelectSx}>
+        <Select
+          value=""
+          displayEmpty
+          onChange={handleAttach}
+          MenuProps={attachMenuProps}
+          disabled={loading || available.length === 0}
+        >
+          <MenuItem value="">
+            <em>
+              {loading
+                ? "Loading variant groups..."
+                : available.length === 0
+                ? "All groups attached"
+                : "Attach a variant group"}
+            </em>
+          </MenuItem>
+          {available.map((g) => (
+            <MenuItem key={g.groupId} value={g.groupId}>
+              {g.adminName || g.name}
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
 
     </Box>
   )

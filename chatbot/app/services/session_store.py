@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import Any, TypedDict
 import uuid
 
 
@@ -9,6 +9,8 @@ class Session(TypedDict):
     last_intent: str | None
     stage: str | None
     checkout_initiated: bool
+    pending_clarification: dict[str, Any] | None
+    history: list
     guided_order_item_id: int | str | None
     guided_order_item_name: str | None
     guided_order_phase: int
@@ -28,6 +30,8 @@ def get_session(session_id: str) -> Session:
         session = sessions[session_id]
         session.setdefault("stage", None)
         session.setdefault("checkout_initiated", False)
+        session.setdefault("pending_clarification", None)
+        session.setdefault("history", [])
         session.setdefault("guided_order_item_id", None)
         session.setdefault("guided_order_item_name", None)
         session.setdefault("guided_order_phase", 1)
@@ -46,6 +50,8 @@ def get_session(session_id: str) -> Session:
         "last_intent": None,
         "stage": None,
         "checkout_initiated": False,
+        "pending_clarification": None,
+        "history": [],
         "guided_order_item_id": None,
         "guided_order_item_name": None,
         "guided_order_phase": 1,
@@ -63,6 +69,12 @@ def get_session(session_id: str) -> Session:
 def get_or_create_session(session_id: str | None) -> tuple[str, str | None]:
     if session_id and session_id in sessions:
         return session_id, sessions[session_id]["cart_id"]
+
+    # If caller provides a session ID that doesn't exist yet, initialize that
+    # same ID so multi-turn context is preserved on the client side.
+    if session_id:
+        session = get_session(session_id)
+        return session_id, session["cart_id"]
 
     new_session_id = str(uuid.uuid4())
     session = get_session(new_session_id)

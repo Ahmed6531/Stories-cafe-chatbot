@@ -181,3 +181,36 @@ async def find_menu_item_by_name(menu_items, item_query):
         return menu_name_map[matches[0]]
 
     return None
+
+
+# ------------------ ANALYTICS (UPSELL) ------------------
+
+async def observe_combo(anchor_menu_item_ids, suggested_menu_item_id, source="cart_add"):
+    try:
+        client = ExpressHttpClient()
+        payload = {
+            "anchorMenuItemIds": anchor_menu_item_ids or [],
+            "suggestedMenuItemId": suggested_menu_item_id,
+            "source": source,
+        }
+        data, _ = await client.post("/analytics/combos/observe", json=payload)
+        return {
+            "success": bool(data.get("success")),
+            "observed": data.get("observed", 0),
+        }
+    except ExpressAPIError:
+        return {"success": False, "observed": 0}
+
+
+async def fetch_combo_suggestions(anchor_menu_item_ids, exclude_menu_item_ids=None, limit=5):
+    try:
+        client = ExpressHttpClient()
+        params = {
+            "anchorMenuItemIds": ",".join(str(i) for i in (anchor_menu_item_ids or [])),
+            "excludeMenuItemIds": ",".join(str(i) for i in (exclude_menu_item_ids or [])),
+            "limit": limit,
+        }
+        data, _ = await client.get("/analytics/combos", params=params)
+        return data.get("combos", [])
+    except ExpressAPIError:
+        return []

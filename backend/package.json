@@ -7,6 +7,8 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "seed:menu": "node src/seed/seedMenu.js",
+    "backfill:combos": "node src/seed/backfillComboAnalytics.js",
+    "migrate:categories": "node scripts/migrateCategories.js",
     "test": "jest"
   },
   "keywords": [],
@@ -14,6 +16,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@google-cloud/storage": "^7.19.0",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
@@ -27,7 +30,8 @@
     "mongoose": "^9.1.5",
     "multer": "^2.1.1",
     "nodemailer": "^8.0.1",
-    "resend": "^6.9.3"
+    "resend": "^6.9.3",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",

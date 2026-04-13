@@ -5,7 +5,6 @@ import { VariantGroup } from "../models/VariantGroup.js";
 import {
   calculateSelectedOptionsDelta,
   createVariantGroupMap,
-  enrichSelectedOptionsWithGroupMetadata,
   resolveVariantGroupsForMenuItem,
   sanitizeSelectedOptions,
   sameSelectedOptions,
@@ -133,7 +132,10 @@ async function buildCartResponse(cart) {
   });
 
   const variantGroups = await VariantGroup.find({
-    groupId: { $in: Array.from(allVariantGroupIds) }
+    $or: [
+      { groupId: { $in: Array.from(allVariantGroupIds) } },
+      { refId: { $in: Array.from(allVariantGroupIds) } },
+    ],
   });
   const variantGroupsById = createVariantGroupMap(variantGroups);
 
@@ -163,11 +165,9 @@ async function buildCartResponse(cart) {
       image: menuItem.image,
       qty: line.qty,
       price: price,
-      selectedOptions: enrichSelectedOptionsWithGroupMetadata(
-        sortSelectedOptionsForDisplay(line.selectedOptions, resolvedVariantGroups),
-        resolvedVariantGroups,
-      ).map((selection) => ({
-        ...(selection.toObject?.() ?? selection),
+      selectedOptions: sortSelectedOptionsForDisplay(line.selectedOptions, resolvedVariantGroups).map((s) => ({
+        ...(s.toObject?.() ?? s),
+        groupName: variantGroupsById.get(s.groupId)?.name ?? null,
       })),
       instructions: line.instructions || "",
       isAvailable: !!menuItem.isAvailable,
@@ -343,11 +343,9 @@ export async function removeFromCart(req, res) {
 export async function clearCart(req, res) {
   try {
     const { cart, cartId } = await getExistingCart(req);
-    if (!cart) {
-      return res.json(emptyCartResponse());
-    }
-
+    if (!cart) return res.json(emptyCartResponse());
     await Cart.findOneAndDelete({ cartId });
+    res.set("x-cart-id", cartId);
     res.set("Cache-Control", "no-store");
     res.json(emptyCartResponse());
   } catch (err) {

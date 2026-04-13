@@ -7,244 +7,50 @@ import {
   uploadMenuItemImage,
   invalidateCategoriesCache,
 } from "../../API/menuApi"
-import { fetchVariantGroups } from "../../API/variantGroupApi"
+import { fetchCategories } from "../../API/categoryApi"
 import { submitMenuItem } from "../../components/admin/submitMenuItem"
-import VariantGroupsField from "../../components/admin/variantGroupsField"
-import { styled } from "@mui/material/styles"
+import CategoryPicker from "../../components/admin/CategoryPicker"
+import VariantGroupsField from "../../components/admin/VariantGroupsField"
+import { normalizeVariantGroupIds } from "../../utils/variantGroups"
 import Box from "@mui/material/Box"
+import Button from "@mui/material/Button"
+import Checkbox from "@mui/material/Checkbox"
+import Divider from "@mui/material/Divider"
+import FormControl from "@mui/material/FormControl"
+import FormControlLabel from "@mui/material/FormControlLabel"
+import MenuItem from "@mui/material/MenuItem"
+import Select from "@mui/material/Select"
+import Skeleton from "@mui/material/Skeleton"
+import Table from "@mui/material/Table"
+import TableBody from "@mui/material/TableBody"
+import TableCell from "@mui/material/TableCell"
+import TableHead from "@mui/material/TableHead"
+import TableRow from "@mui/material/TableRow"
 import Typography from "@mui/material/Typography"
-// ── Styled components ──────────────────────────────────────────────────────────
+import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined"
+import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined"
+import { formatLL } from "../../utils/currency"
+import {
+  adminBadgeOptionalSx,
+  adminBodySx,
+  adminCardSx,
+  adminDangerGhostButtonSx,
+  adminGhostButtonSx,
+  adminHintSx,
+  adminInputSx,
+  adminLabelSx,
+  adminPageTitleSx,
+  adminPalette,
+  adminPrimaryButtonSx,
+  adminSectionLabelSx,
+  adminSelectSx,
+  adminSmallButtonSx,
+  adminTableWrapSx,
+} from "../../components/admin/adminUi"
 
-const PageWrap = styled(Box)(() => ({
-  display: "flex",
-  flexDirection: "column",
-  gap: 28,
-}))
-
-const FormCard = styled(Box)(({ theme }) => ({
-  maxWidth: 560,
-  display: "flex",
-  flexDirection: "column",
-  gap: 12,
-  padding: "24px",
-  borderRadius: 16,
-  border: `1px solid ${theme.brand.borderCard}`,
-  background: theme.brand.bgLight,
-}))
-
-const FieldInput = styled("input")(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontSize: 14,
-  fontWeight: 500,
-  color: theme.brand.textPrimary,
-  background: "#fff",
-  border: `1px solid ${theme.brand.border}`,
-  borderRadius: 10,
-  padding: "10px 12px",
-  outline: "none",
-  width: "100%",
-  boxSizing: "border-box",
-  transition: "border-color 0.2s",
-  "&:focus": { borderColor: theme.brand.primary },
-  "&::placeholder": { color: theme.brand.radioInactive },
-}))
-
-const FieldTextarea = styled("textarea")(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontSize: 14,
-  fontWeight: 500,
-  color: theme.brand.textPrimary,
-  background: "#fff",
-  border: `1px solid ${theme.brand.border}`,
-  borderRadius: 10,
-  padding: "10px 12px",
-  outline: "none",
-  width: "100%",
-  boxSizing: "border-box",
-  resize: "vertical",
-  transition: "border-color 0.2s",
-  "&:focus": { borderColor: theme.brand.primary },
-  "&::placeholder": { color: theme.brand.radioInactive },
-}))
-
-const CheckRow = styled("label")(({ theme }) => ({
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  fontFamily: theme.brand.fontBase,
-  fontSize: 14,
-  fontWeight: 500,
-  color: theme.brand.textPrimary,
-  cursor: "pointer",
-  userSelect: "none",
-}))
-
-const BtnRow = styled(Box)(() => ({
-  display: "flex",
-  gap: 10,
-  marginTop: 4,
-}))
-
-const PrimaryBtn = styled("button")(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontWeight: 700,
-  fontSize: 14,
-  padding: "10px 20px",
-  borderRadius: 10,
-  border: "none",
-  background: theme.brand.primary,
-  color: "#fff",
-  cursor: "pointer",
-  transition: "background 0.2s",
-  "&:hover:not(:disabled)": { background: theme.brand.primaryHover },
-  "&:disabled": { opacity: 0.6, cursor: "not-allowed" },
-}))
-
-const GhostBtn = styled("button")(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontWeight: 600,
-  fontSize: 14,
-  padding: "10px 16px",
-  borderRadius: 10,
-  border: `1.5px solid ${theme.brand.border}`,
-  background: "#fff",
-  color: theme.brand.textPrimary,
-  cursor: "pointer",
-  transition: "border-color 0.2s, color 0.2s",
-  "&:hover": { borderColor: theme.brand.primary, color: theme.brand.primary },
-}))
-
-const DangerBtn = styled("button")(() => ({
-  fontFamily: "inherit",
-  fontWeight: 600,
-  fontSize: 13,
-  padding: "6px 12px",
-  borderRadius: 8,
-  border: "1.5px solid #fca5a5",
-  background: "#fff",
-  color: "#dc2626",
-  cursor: "pointer",
-  transition: "background 0.2s, border-color 0.2s",
-  "&:hover": { background: "#fef2f2", borderColor: "#dc2626" },
-}))
-
-const EditBtn = styled("button")(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontWeight: 600,
-  fontSize: 13,
-  padding: "6px 12px",
-  borderRadius: 8,
-  border: `1.5px solid ${theme.brand.border}`,
-  background: "#fff",
-  color: theme.brand.primary,
-  cursor: "pointer",
-  transition: "background 0.2s, border-color 0.2s",
-  "&:hover": {
-    background: "rgba(0,112,74,0.06)",
-    borderColor: theme.brand.primary,
-  },
-}))
-
-const StyledTable = styled("table")(({ theme }) => ({
-  width: "100%",
-  borderCollapse: "collapse",
-  fontFamily: theme.brand.fontBase,
-  fontSize: 14,
-}))
-
-const Th = styled("th")(({ theme }) => ({
-  textAlign: "left",
-  padding: "10px 14px",
-  fontWeight: 700,
-  fontSize: 13,
-  color: theme.brand.textSecondary,
-  borderBottom: `2px solid ${theme.brand.borderCard}`,
-  whiteSpace: "nowrap",
-}))
-
-const Td = styled("td")(({ theme }) => ({
-  padding: "10px 14px",
-  borderBottom: `1px solid ${theme.brand.borderLight}`,
-  color: theme.brand.textPrimary,
-  verticalAlign: "middle",
-}))
-
-const ErrorMsg = styled(Typography)(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontSize: 13,
-  fontWeight: 500,
-  color: theme.brand.error,
-  padding: "8px 12px",
-  background: "#fff5f5",
-  borderRadius: 8,
-  border: "1px solid #fecaca",
-}))
-
-const UploadZone = styled("label")(({ theme, $hasFile }) => ({
-  display: "flex",
-  alignItems: "center",
-  gap: 12,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: `1.5px dashed ${$hasFile ? theme.brand.primary : theme.brand.border}`,
-  background: $hasFile ? "rgba(0,112,74,0.04)" : "#fff",
-  cursor: "pointer",
-  transition: "border-color 0.2s, background 0.2s",
-  "&:hover": {
-    borderColor: theme.brand.primary,
-    background: "rgba(0,112,74,0.04)",
-  },
-}))
-
-const UploadLabel = styled(Typography)(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontSize: 13,
-  fontWeight: 500,
-  color: theme.brand.textSecondary,
-  flex: 1,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-}))
-
-const ImagePreview = styled("img")(() => ({
-  width: 48,
-  height: 48,
-  objectFit: "cover",
-  borderRadius: 8,
-  flexShrink: 0,
-  border: "1px solid #e5e7eb",
-}))
-
-const FieldGroup = styled(Box)(() => ({
-  display: "flex",
-  flexDirection: "column",
-  gap: 6,
-}))
-
-const FieldLabel = styled("label")(({ theme }) => ({
-  fontFamily: theme.brand.fontBase,
-  fontSize: 13,
-  fontWeight: 600,
-  color: theme.brand.textPrimary,
-}))
-
-const Badge = styled("span")(({ $yes }) => ({
-  display: "inline-block",
-  padding: "2px 8px",
-  borderRadius: 6,
-  fontSize: 12,
-  fontWeight: 600,
-  background: $yes ? "#dcfce7" : "#f3f4f6",
-  color: $yes ? "#166534" : "#6b7280",
-}))
-
-// ── Form state ─────────────────────────────────────────────────────────────────
-
-// slug intentionally excluded — auto-generated by the backend from name
 const EMPTY_FORM = {
   name: "",
-  category: "",
+  categoryId: null,
   subcategory: "",
   basePrice: "",
   description: "",
@@ -252,10 +58,371 @@ const EMPTY_FORM = {
   isFeatured: false,
 }
 
+const tableHeadCellSx = {
+  py: "11px",
+  px: "14px",
+  fontSize: 13,
+  fontWeight: 500,
+  color: adminPalette.textSecondary,
+  borderBottom: `0.5px solid ${adminPalette.borderRow}`,
+  backgroundColor: adminPalette.surfaceSoft,
+  whiteSpace: "nowrap",
+}
+
+const tableBodyCellSx = {
+  py: "11px",
+  px: "14px",
+  fontSize: 13,
+  color: adminPalette.textPrimary,
+  borderBottom: `0.5px solid ${adminPalette.borderRow}`,
+  verticalAlign: "middle",
+}
+
+function getBooleanBadgeSx(isActive) {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    borderRadius: "6px",
+    px: 1,
+    py: "2px",
+    fontSize: 11,
+    fontWeight: 500,
+    backgroundColor: isActive ? adminPalette.infoBg : adminPalette.pageBg,
+    color: isActive ? adminPalette.infoText : adminPalette.textSecondary,
+  }
+}
+
+const pickerOverridesSx = {
+  "& select": {
+    ...adminSelectSx,
+    fontFamily: "inherit",
+  },
+  "& input": {
+    ...adminInputSx,
+    fontFamily: "inherit",
+  },
+  "& button": {
+    ...adminGhostButtonSx,
+    fontFamily: "inherit",
+  },
+}
+
+const variantGroupsOverridesSx = {
+  "& > div > .MuiTypography-root:first-of-type": {
+    display: "none",
+  },
+  "& select": {
+    ...adminSelectSx,
+    borderStyle: "solid",
+  },
+  "& button": {
+    borderRadius: "8px",
+    fontFamily: "inherit",
+  },
+}
+
+const itemFormLabelSx = {
+  ...adminLabelSx,
+  color: "#525252",
+  fontWeight: 600,
+}
+
+const itemFormHintSx = {
+  ...adminHintSx,
+  color: "#848484",
+}
+
+const itemFormErrorSx = {
+  ...adminHintSx,
+  color: adminPalette.danger,
+  fontWeight: 500,
+}
+
+const itemInputTightSx = {
+  ...adminInputSx,
+  border: "0.5px solid rgba(0,0,0,0.18)",
+  padding: "7px 10px",
+}
+
+const requiredAsteriskSx = {
+  color: adminPalette.warningText,
+  fontWeight: 600,
+}
+
+const dropdownMenuProps = {
+  PaperProps: {
+    sx: {
+      mt: 0.5,
+      borderRadius: "10px",
+      border: "0.5px solid rgba(0,0,0,0.10)",
+      boxShadow: "0 10px 24px rgba(15,23,42,0.08)",
+      "& .MuiMenuItem-root": {
+        fontSize: 12,
+        minHeight: 34,
+      },
+    },
+  },
+}
+
+const itemSelectFieldSx = {
+  "& .MuiOutlinedInput-notchedOutline": {
+    border: "0.5px solid rgba(0,0,0,0.15)",
+  },
+  "& .MuiSelect-select": {
+    padding: "8px 34px 8px 10px",
+    fontSize: 12,
+    color: adminPalette.textPrimary,
+    backgroundColor: adminPalette.pageBg,
+    borderRadius: "8px",
+  },
+  "& .MuiSvgIcon-root": {
+    color: adminPalette.textTertiary,
+    right: 10,
+  },
+  "& .Mui-focused .MuiOutlinedInput-notchedOutline": {
+    borderColor: adminPalette.brandPrimary,
+    boxShadow: "0 0 0 2px rgba(0,112,74,0.10)",
+  },
+}
+
+function normalizeSubcategoryKey(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase()
+}
+
+function canonicalizeSubcategoryValue(value, options = []) {
+  const trimmedValue = String(value || "").trim().replace(/\s+/g, " ")
+  if (!trimmedValue) return ""
+
+  const normalizedValue = normalizeSubcategoryKey(trimmedValue)
+  const matchedOption = options.find((option) => normalizeSubcategoryKey(option) === normalizedValue)
+  return matchedOption || trimmedValue
+}
+
+function AdminImagePlaceholder({ size = 48, radius = "8px", iconSize = 18 }) {
+  return (
+    <Box
+      sx={{
+        width: size,
+        height: size,
+        borderRadius: radius,
+        backgroundColor: adminPalette.pageBg,
+        border: "0.5px solid rgba(0,0,0,0.10)",
+        color: adminPalette.textTertiary,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      <ImageOutlinedIcon sx={{ fontSize: iconSize }} />
+    </Box>
+  )
+}
+
+const skeletonCardSx = {
+  border: "1px solid #e0e0e0",
+  borderRadius: "12px",
+  backgroundColor: "#fff",
+  boxShadow: "0 0 6px rgba(0,0,0,0.06)",
+  overflow: "hidden",
+}
+
+function ItemsTableSkeleton() {
+  const rows = Array.from({ length: 6 })
+
+  return (
+    <Box sx={{ ...skeletonCardSx, overflowX: "auto" }} aria-hidden="true">
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: "minmax(180px, 1.4fr) 150px 110px 130px 110px 110px 150px",
+          backgroundColor: adminPalette.surfaceSoft,
+          borderBottom: "0.5px solid rgba(0,0,0,0.07)",
+          minWidth: 940,
+        }}
+      >
+        {["Name", "Category", "Image", "Base price", "Available", "Featured", "Actions"].map((key) => (
+          <Box key={key} sx={{ px: "14px", py: "11px" }}>
+            <Skeleton
+              animation="wave"
+              variant="text"
+              width={key === "Name" ? "54%" : "62%"}
+              height={18}
+              sx={{ bgcolor: "#eceff1" }}
+            />
+          </Box>
+        ))}
+      </Box>
+
+      <Box sx={{ minWidth: 940 }}>
+        {rows.map((_, index) => (
+          <Box
+            key={`items-skeleton-row-${index}`}
+            sx={{
+              display: "grid",
+              gridTemplateColumns: "minmax(180px, 1.4fr) 150px 110px 130px 110px 110px 150px",
+              borderBottom: index === rows.length - 1 ? "none" : "0.5px solid rgba(0,0,0,0.07)",
+              backgroundColor: adminPalette.surface,
+            }}
+          >
+            <Box sx={{ px: "14px", py: "14px" }}>
+              <Skeleton animation="wave" variant="text" width="72%" height={22} sx={{ bgcolor: "#eceff1" }} />
+            </Box>
+            <Box sx={{ px: "14px", py: "14px" }}>
+              <Skeleton animation="wave" variant="text" width="80%" height={22} sx={{ bgcolor: "#eceff1" }} />
+            </Box>
+            <Box sx={{ px: "14px", py: "12px" }}>
+              <Skeleton
+                animation="wave"
+                variant="rounded"
+                width={48}
+                height={48}
+                sx={{ borderRadius: "8px", bgcolor: "#eceff1" }}
+              />
+            </Box>
+            <Box sx={{ px: "14px", py: "14px" }}>
+              <Skeleton animation="wave" variant="text" width="78%" height={22} sx={{ bgcolor: "#eceff1" }} />
+            </Box>
+            <Box sx={{ px: "14px", py: "14px" }}>
+              <Skeleton
+                animation="wave"
+                variant="rounded"
+                width={42}
+                height={24}
+                sx={{ borderRadius: "6px", bgcolor: "#eceff1" }}
+              />
+            </Box>
+            <Box sx={{ px: "14px", py: "14px" }}>
+              <Skeleton
+                animation="wave"
+                variant="rounded"
+                width={42}
+                height={24}
+                sx={{ borderRadius: "6px", bgcolor: "#eceff1" }}
+              />
+            </Box>
+            <Box sx={{ px: "14px", py: "12px", display: "flex", gap: 8, alignItems: "center" }}>
+              <Skeleton
+                animation="wave"
+                variant="rounded"
+                width={58}
+                height={30}
+                sx={{ borderRadius: "8px", bgcolor: "#eceff1" }}
+              />
+              <Skeleton
+                animation="wave"
+                variant="rounded"
+                width={66}
+                height={30}
+                sx={{ borderRadius: "8px", bgcolor: "#eceff1" }}
+              />
+            </Box>
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  )
+}
+
+function ItemFormSkeleton() {
+  return (
+    <Box sx={{ ...skeletonCardSx, p: { xs: 2, md: "16px 20px" } }} aria-hidden="true">
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1.75 }}>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 2, flexWrap: "wrap" }}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            <Skeleton animation="wave" variant="text" width={84} height={18} sx={{ bgcolor: "#eceff1" }} />
+            <Skeleton animation="wave" variant="text" width={168} height={24} sx={{ bgcolor: "#eceff1" }} />
+            <Skeleton animation="wave" variant="text" width={250} height={18} sx={{ bgcolor: "#eceff1" }} />
+          </Box>
+          <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+            <Skeleton animation="wave" variant="rounded" width={126} height={38} sx={{ borderRadius: "8px", bgcolor: "#eceff1" }} />
+          </Box>
+        </Box>
+
+        <Box
+          sx={{
+            display: "grid",
+            gap: 1.5,
+            gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
+          }}
+        >
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Box key={`item-form-field-${index}`} sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+              <Skeleton animation="wave" variant="text" width={90} height={18} sx={{ bgcolor: "#eceff1" }} />
+              <Skeleton animation="wave" variant="rounded" width="100%" height={40} sx={{ borderRadius: "8px", bgcolor: "#eceff1" }} />
+              {index === 3 && (
+                <Skeleton animation="wave" variant="text" width="76%" height={16} sx={{ bgcolor: "#eceff1" }} />
+              )}
+            </Box>
+          ))}
+        </Box>
+
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+          <Skeleton animation="wave" variant="text" width={80} height={18} sx={{ bgcolor: "#eceff1" }} />
+          <Skeleton animation="wave" variant="rounded" width="100%" height={104} sx={{ borderRadius: "8px", bgcolor: "#eceff1" }} />
+          <Skeleton animation="wave" variant="text" width="34%" height={16} sx={{ bgcolor: "#eceff1" }} />
+        </Box>
+
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+          <Skeleton animation="wave" variant="text" width={44} height={18} sx={{ bgcolor: "#eceff1" }} />
+          <Box
+            sx={{
+              borderRadius: "12px",
+              border: "1px dashed #e0e0e0",
+              backgroundColor: adminPalette.surfaceSoft,
+              p: 2,
+              display: "flex",
+              alignItems: "center",
+              gap: 2,
+            }}
+          >
+            <Skeleton animation="wave" variant="rounded" width={64} height={64} sx={{ borderRadius: "10px", bgcolor: "#eceff1" }} />
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, flex: 1 }}>
+              <Skeleton animation="wave" variant="text" width={110} height={20} sx={{ bgcolor: "#eceff1" }} />
+              <Skeleton animation="wave" variant="text" width={180} height={18} sx={{ bgcolor: "#eceff1" }} />
+            </Box>
+            <Skeleton animation="wave" variant="circular" width={34} height={34} sx={{ bgcolor: "#eceff1" }} />
+          </Box>
+          <Skeleton animation="wave" variant="text" width={220} height={16} sx={{ bgcolor: "#eceff1", mx: "auto" }} />
+        </Box>
+
+        <Box sx={{ borderTop: "0.5px solid rgba(0,0,0,0.08)" }} />
+
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+            <Skeleton animation="wave" variant="text" width={70} height={18} sx={{ bgcolor: "#eceff1" }} />
+            <Skeleton animation="wave" variant="rounded" width={72} height={24} sx={{ borderRadius: "6px", bgcolor: "#eceff1" }} />
+          </Box>
+          <Skeleton animation="wave" variant="rounded" width="100%" height={76} sx={{ borderRadius: "12px", bgcolor: "#eceff1" }} />
+        </Box>
+
+        <Box
+          sx={{
+            display: "grid",
+            gap: 1,
+            gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
+          }}
+        >
+          {Array.from({ length: 2 }).map((_, index) => (
+            <Box key={`item-checkbox-${index}`} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Skeleton animation="wave" variant="rounded" width={20} height={20} sx={{ borderRadius: "4px", bgcolor: "#eceff1" }} />
+              <Skeleton animation="wave" variant="text" width={index === 0 ? 64 : 138} height={18} sx={{ bgcolor: "#eceff1" }} />
+            </Box>
+          ))}
+        </Box>
+      </Box>
+    </Box>
+  )
+}
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function AdminItems() {
   const [items, setItems] = useState([])
+  const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [editingId, setEditingId] = useState(null)
@@ -266,12 +433,14 @@ export default function AdminItems() {
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState("")
   const fileInputRef = useRef(null)
+  const formCardRef = useRef(null)
 
-  const [allGroups, setAllGroups] = useState([])
   const [attachedGroups, setAttachedGroups] = useState([])
   const [dragSrcId, setDragSrcId] = useState(null)
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -282,9 +451,12 @@ export default function AdminItems() {
   async function load() {
     try {
       setLoading(true)
-      const [data, groups] = await Promise.all([fetchMenu(), fetchVariantGroups()])
-      setItems(data.items)
-      setAllGroups(groups)
+      const [menuData, categoryData] = await Promise.all([
+        fetchMenu(),
+        fetchCategories({ includeInactive: true }),
+      ])
+      setItems(menuData.items)
+      setCategories(categoryData)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -312,24 +484,31 @@ export default function AdminItems() {
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
-  function validateForm() {
-    if (!form.name.trim()) return "Name is required"
-    if (!form.category.trim()) return "Category is required"
-    if (!editingId && !imageFile && !imagePreview) return "Please select an image"
-    const priceNum = Number(form.basePrice)
-    if (Number.isNaN(priceNum) || priceNum < 0) return "Base price must be a number ≥ 0"
+  function validateForm(nextForm, subcategoryRequired) {
+    if (!nextForm.name.trim()) return "Name is required"
+    if (!nextForm.categoryId) return "Category is required"
+    if (subcategoryRequired && !nextForm.subcategory.trim()) return "Subcategory is required"
+    const priceNum = Number(nextForm.basePrice)
+    if (Number.isNaN(priceNum) || priceNum < 0) return "Base price must be a number >= 0"
     return ""
   }
 
   async function onSubmit(e) {
     e.preventDefault()
-    const msg = validateForm()
-    if (msg) { setFormError(msg); return }
+    const nextForm = {
+      ...form,
+      subcategory: canonicalizeSubcategoryValue(form.subcategory, subcategoryOptions),
+    }
+    const msg = validateForm(nextForm, subcategoryRequired)
+    if (msg) {
+      setFormError(msg)
+      return
+    }
     setFormError("")
 
     await submitMenuItem({
       editingId,
-      form,
+      form: nextForm,
       variantGroups: attachedGroups,
       imageFile,
       createMenuItem,
@@ -337,12 +516,16 @@ export default function AdminItems() {
       uploadMenuItemImage,
       fetchMenu,
       setItems,
-      resetForm: () => { setForm(EMPTY_FORM); setAttachedGroups([]) },
+      resetForm: () => {
+        setForm(EMPTY_FORM)
+        setAttachedGroups([])
+      },
       resetImage,
       setEditingId,
       setFormError,
       setSaving,
-    })  }
+    })
+  }
 
   async function handleDelete(id) {
     if (!confirm("Delete this item?")) return
@@ -362,17 +545,24 @@ export default function AdminItems() {
     setEditingId(item.id)
     setForm({
       name: item.name || "",
-      category: item.category || "",
+      categoryId: item.category?._id || null,
       subcategory: item.subcategory || "",
       basePrice: item.basePrice ?? "",
       description: item.description || "",
       isAvailable: item.isAvailable ?? true,
       isFeatured: item.isFeatured ?? false,
     })
-    setAttachedGroups(item.variantGroups || [])
+    setAttachedGroups(normalizeVariantGroupIds(item.variantGroups))
     resetImage()
     setImagePreview(item.image || "")
     setFormError("")
+
+    requestAnimationFrame(() => {
+      formCardRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      })
+    })
   }
 
   function cancelEdit() {
@@ -383,200 +573,586 @@ export default function AdminItems() {
     setFormError("")
   }
 
-  if (loading) return <Typography sx={{ p: 2 }}>Loading menu items…</Typography>
-  if (error) return <ErrorMsg>{error}</ErrorMsg>
+  if (loading) {
+    return (
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+          <Typography sx={adminPageTitleSx}>Items</Typography>
+          <Typography sx={{ ...adminBodySx, maxWidth: 760 }}>
+            Maintain menu items, pricing, imagery, and category-scoped variant groups without
+            touching the underlying item workflow.
+          </Typography>
+        </Box>
+        <ItemFormSkeleton />
+        <ItemsTableSkeleton />
+      </Box>
+    )
+  }
 
-  const subcategoryOptions = [...new Set(
-    items.map((i) => i.subcategory).filter(Boolean)
-  )].sort()
+  if (error) {
+    return (
+      <Box
+        sx={{
+          ...adminCardSx,
+          borderColor: "#f5b7b1",
+          backgroundColor: "#fff8f7",
+        }}
+      >
+        <Typography sx={{ fontSize: 13, fontWeight: 500, color: adminPalette.danger }}>
+          {error}
+        </Typography>
+      </Box>
+    )
+  }
+
+  const selectedCategory = form.categoryId
+    ? categories.find((category) => String(category?._id) === String(form.categoryId))
+    : null
+  const categoryItemSubcategories = form.categoryId
+    ? [...new Set(
+      items
+        .filter((item) => String(item.category?._id) === String(form.categoryId))
+        .map((item) => String(item.subcategory || "").trim())
+        .filter(Boolean),
+    )].sort((a, b) => a.localeCompare(b))
+    : []
+  const configuredSubcategories = selectedCategory?.subcategories?.length
+    ? [...selectedCategory.subcategories]
+      .sort((a, b) => (a.order ?? 999) - (b.order ?? 999) || a.name.localeCompare(b.name))
+      .map((subcategory) => subcategory.name)
+    : []
+  const subcategoryOptions = configuredSubcategories.length > 0
+    ? configuredSubcategories
+    : categoryItemSubcategories
+  const subcategoryRequired = configuredSubcategories.length > 0
+  const useSubcategoryDropdown = subcategoryOptions.length > 0
 
   const imagePickerLabel = imageFile
+    ? imageFile.name
+    : imagePreview
+      ? "Click to replace image"
+      : "Click to choose image..."
+  const fieldErrors = {
+    name: formError === "Name is required" ? formError : "",
+    category: formError === "Category is required" ? formError : "",
+    subcategory: formError === "Subcategory is required" ? formError : "",
+    price: formError === "Base price must be a number >= 0" ? formError : "",
+  }
+  const generalFormError =
+    formError &&
+    !fieldErrors.name &&
+    !fieldErrors.category &&
+    !fieldErrors.subcategory &&
+    !fieldErrors.price
+      ? formError
+      : ""
+  const nameInvalid = Boolean(fieldErrors.name)
+  const categoryInvalid = Boolean(fieldErrors.category)
+  const subcategoryInvalid = Boolean(fieldErrors.subcategory)
+  const priceInvalid = Boolean(fieldErrors.price)
+  const invalidFieldSx = {
+    borderColor: "#d67b73",
+    boxShadow: "0 0 0 2px rgba(192,57,43,0.08)",
+  }
+
+  const _legacySubcategoryOptions = null
+
+  const _legacyImagePickerLabel = imageFile
     ? imageFile.name
     : imagePreview
     ? "Click to replace image"
     : "Click to choose image…"
 
   return (
-    <PageWrap>
-      <Typography variant="h5" sx={{ fontWeight: 700 }}>
-        Manage Menu Items
-      </Typography>
-
-      {/* ── Form ─────────────────────────────────────────────────────────────── */}
-      <FormCard component="form" onSubmit={onSubmit}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 0.5 }}>
-          {editingId ? "Edit Item" : "Create New Item"}
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+        <Typography sx={adminPageTitleSx}>Items</Typography>
+        <Typography sx={{ ...adminBodySx, maxWidth: 760 }}>
+          Maintain menu items, pricing, imagery, and category-scoped variant groups without
+          touching the underlying item workflow.
         </Typography>
+      </Box>
 
-        {formError && <ErrorMsg component="p">{formError}</ErrorMsg>}
+      <Box
+        ref={formCardRef}
+        component="form"
+        onSubmit={onSubmit}
+        sx={{
+          ...adminCardSx,
+          display: "flex",
+          flexDirection: "column",
+          gap: 1.75,
+          width: "100%",
+          borderColor: "rgba(0,0,0,0.13)",
+        }}
+      >
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 2, flexWrap: "wrap" }}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            <Typography sx={adminSectionLabelSx}>Item details</Typography>
+            <Typography sx={{ fontSize: 14, fontWeight: 500, color: adminPalette.textPrimary }}>
+              {editingId ? "Edit Menu Item" : "Add Menu Item"}
+            </Typography>
+            <Typography sx={itemFormHintSx}>
+              {editingId
+                ? "Update the details and save your changes."
+                : "Fill in the details below to add it to your menu."}
+            </Typography>
+          </Box>
+          <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+            {editingId && (
+              <Button type="button" onClick={cancelEdit} sx={adminGhostButtonSx}>
+                Cancel
+              </Button>
+            )}
+            <Button type="submit" disabled={saving} sx={adminPrimaryButtonSx}>
+              {saving ? "Saving..." : editingId ? "Save Changes" : "Add Menu Item"}
+            </Button>
+          </Box>
+        </Box>
 
-        <FieldGroup>
-          <FieldLabel htmlFor="item-name">Item name</FieldLabel>
-          <FieldInput
-            id="item-name"
-            name="name"
-            placeholder="e.g. Iced Latte"
-            value={form.name}
-            onChange={onFormChange}
-          />
-        </FieldGroup>
+        {generalFormError && (
+          <Box
+            sx={{
+              borderRadius: "8px",
+              border: "0.5px solid #f5b7b1",
+              backgroundColor: "#fff8f7",
+              px: 1.25,
+              py: 1,
+            }}
+          >
+            <Typography sx={{ fontSize: 12, fontWeight: 500, color: adminPalette.danger }}>
+              {generalFormError}
+            </Typography>
+          </Box>
+        )}
 
-        <FieldGroup>
-          <FieldLabel htmlFor="item-category">Category</FieldLabel>
-          <FieldInput
-            id="item-category"
-            name="category"
-            placeholder="e.g. Coffee, Pastries"
-            value={form.category}
-            onChange={onFormChange}
-          />
-        </FieldGroup>
-
-        <FieldGroup>
-          <FieldLabel htmlFor="item-subcategory">Subcategory</FieldLabel>
-          <datalist id="subcategory-options">
-            {subcategoryOptions.map((s) => <option key={s} value={s} />)}
-          </datalist>
-          <FieldInput
-            id="item-subcategory"
-            name="subcategory"
-            placeholder="e.g. Hot, Iced, Frap"
-            value={form.subcategory}
-            onChange={onFormChange}
-            list="subcategory-options"
-          />
-        </FieldGroup>
-
-        {/* ── Image upload ─────────────────────────────────────────────────── */}
-        <FieldGroup>
-          <span style={{ fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>Image</span>
-          <UploadZone $hasFile={!!imageFile || !!imagePreview}>
-            {imagePreview && <ImagePreview src={imagePreview} alt="preview" />}
-            <UploadLabel>{imagePickerLabel}</UploadLabel>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-              style={{ display: "none" }}
-              onChange={onFileChange}
+        <Box
+          sx={{
+            display: "grid",
+            gap: 1.5,
+            gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
+          }}
+        >
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            <Typography component="label" htmlFor="item-name" sx={itemFormLabelSx}>
+              Name <Box component="span" sx={requiredAsteriskSx}>*</Box>
+            </Typography>
+            <Box
+              component="input"
+              id="item-name"
+              name="name"
+              placeholder="Iced latte"
+              value={form.name}
+              onChange={onFormChange}
+              sx={nameInvalid ? { ...itemInputTightSx, ...invalidFieldSx } : itemInputTightSx}
             />
-          </UploadZone>
-        </FieldGroup>
+            {fieldErrors.name && <Typography sx={itemFormErrorSx}>{fieldErrors.name}</Typography>}
+          </Box>
 
-        <FieldGroup>
-          <FieldLabel htmlFor="item-price">Base price (L.L)</FieldLabel>
-          <FieldInput
-            id="item-price"
-            name="basePrice"
-            placeholder="e.g. 350000"
-            value={form.basePrice}
-            onChange={onFormChange}
-            type="number"
-            step="0.01"
-            min="0"
-          />
-        </FieldGroup>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            <Typography sx={itemFormLabelSx}>
+              Category <Box component="span" sx={requiredAsteriskSx}>*</Box>
+            </Typography>
+            <Box sx={categoryInvalid ? { ...pickerOverridesSx, "& select": { ...adminSelectSx, ...invalidFieldSx, fontFamily: "inherit" } } : pickerOverridesSx}>
+              <CategoryPicker
+                value={form.categoryId}
+                onChange={(id) => {
+                  setAttachedGroups([])
+                  setForm((prev) => ({ ...prev, categoryId: id, subcategory: "" }))
+                }}
+              />
+            </Box>
+            {fieldErrors.category && (
+              <Typography sx={itemFormErrorSx}>{fieldErrors.category}</Typography>
+            )}
+          </Box>
 
-        <FieldGroup>
-          <FieldLabel htmlFor="item-description">Description</FieldLabel>
-          <FieldTextarea
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            <Typography component="label" htmlFor="item-price" sx={itemFormLabelSx}>
+              Price <Box component="span" sx={requiredAsteriskSx}>*</Box>
+            </Typography>
+            <Box
+              component="input"
+              id="item-price"
+              name="basePrice"
+              placeholder="350000"
+              value={form.basePrice}
+              onChange={onFormChange}
+              type="number"
+              step="0.01"
+              min="0"
+              sx={priceInvalid ? { ...itemInputTightSx, ...invalidFieldSx } : itemInputTightSx}
+            />
+            {fieldErrors.price && <Typography sx={itemFormErrorSx}>{fieldErrors.price}</Typography>}
+          </Box>
+
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            <Typography component="label" htmlFor="item-subcategory" sx={itemFormLabelSx}>
+              Subcategory {subcategoryRequired && <Box component="span" sx={requiredAsteriskSx}>*</Box>}
+            </Typography>
+            {useSubcategoryDropdown ? (
+              <FormControl
+                size="small"
+                sx={subcategoryInvalid ? { ...itemSelectFieldSx, ...invalidFieldSx } : itemSelectFieldSx}
+              >
+                <Select
+                  id="item-subcategory"
+                  name="subcategory"
+                  value={form.subcategory}
+                  displayEmpty
+                  onChange={onFormChange}
+                  MenuProps={dropdownMenuProps}
+                >
+                  <MenuItem value="">
+                    <em>Select subcategory</em>
+                  </MenuItem>
+                  {subcategoryOptions.map((subcategory) => (
+                    <MenuItem key={subcategory} value={subcategory}>
+                      {subcategory}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            ) : (
+              <Box
+                component="input"
+                id="item-subcategory"
+                name="subcategory"
+                placeholder="Optional"
+                value={form.subcategory}
+                onChange={onFormChange}
+                sx={subcategoryInvalid ? { ...itemInputTightSx, ...invalidFieldSx } : itemInputTightSx}
+              />
+            )}
+            <Typography sx={subcategoryInvalid ? itemFormErrorSx : itemFormHintSx}>
+              {fieldErrors.subcategory ||
+                (subcategoryRequired
+                  ? "Choose one of the configured subcategories for this category."
+                  : useSubcategoryDropdown
+                  ? "Choose one of the existing subcategories already used in this category, or leave it blank."
+                  : "Optional unless this category already uses subcategories. Matching names are normalized automatically.")}
+            </Typography>
+          </Box>
+        </Box>
+
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+          <Typography component="label" htmlFor="item-description" sx={itemFormLabelSx}>
+            Description
+          </Typography>
+          <Box
+            component="textarea"
             id="item-description"
             name="description"
             placeholder="A short description shown to customers"
             value={form.description}
             onChange={onFormChange}
-            rows={3}
+            rows={4}
+            sx={{
+              ...itemInputTightSx,
+              resize: "vertical",
+              minHeight: 104,
+            }}
           />
-        </FieldGroup>
+          <Typography sx={itemFormHintSx}>
+            Keep the customer-facing description concise and neutral.
+          </Typography>
+        </Box>
 
-        {/* ── Variant groups ───────────────────────────────────────────────── */}
-        <VariantGroupsField
-          allGroups={allGroups}
-          attachedGroups={attachedGroups}
-          setAttachedGroups={setAttachedGroups}
-          dragSrcId={dragSrcId}
-          setDragSrcId={setDragSrcId}
-        />
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+          <Typography sx={itemFormLabelSx}>
+            Image
+          </Typography>
+          <Box
+            component="label"
+            sx={{
+              position: "relative",
+              border: "0.5px dashed rgba(0,0,0,0.18)",
+              borderRadius: "12px",
+              backgroundColor: adminPalette.surfaceSoft,
+              p: 2,
+              display: "flex",
+              alignItems: "center",
+              alignContent: "flex-start",
+              flexWrap: "wrap",
+              gap: 2,
+              cursor: "pointer",
+            }}
+          >
+            {imagePreview ? (
+              <Box
+                component="img"
+                src={imagePreview}
+                alt="Item preview"
+                sx={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: "10px",
+                  objectFit: "cover",
+                  border: "0.5px solid rgba(0,0,0,0.10)",
+                  flexShrink: 0,
+                }}
+              />
+            ) : (
+              <Box
+                sx={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: "10px",
+                  backgroundColor: adminPalette.pageBg,
+                  border: "0.5px solid rgba(0,0,0,0.10)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: adminPalette.textTertiary,
+                  flexShrink: 0,
+                }}
+              >
+                <ImageOutlinedIcon />
+              </Box>
+            )}
 
-        <CheckRow>
-          <input
-            type="checkbox"
-            name="isAvailable"
-            checked={form.isAvailable}
-            onChange={onFormChange}
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, minWidth: 0 }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 500, color: adminPalette.textPrimary }}>
+                Upload image
+              </Typography>
+              <Typography sx={{ ...adminBodySx, color: "#7a7a7a" }}>
+                {imagePickerLabel}
+              </Typography>
+            </Box>
+
+            {imageFile ? (
+              <Box
+                component="button"
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  resetImage()
+                }}
+                sx={{
+                  position: "absolute",
+                  top: 10,
+                  right: 10,
+                  width: 28,
+                  height: 28,
+                  borderRadius: "999px",
+                  border: "0.5px solid rgba(0,0,0,0.12)",
+                  backgroundColor: adminPalette.pageBg,
+                  color: adminPalette.textSecondary,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  fontSize: 16,
+                  lineHeight: 1,
+                  "&:hover": {
+                    backgroundColor: adminPalette.surface,
+                    color: adminPalette.textPrimary,
+                  },
+                }}
+                aria-label="Remove selected image"
+              >
+                ×
+              </Box>
+            ) : (
+              <Box
+                sx={{
+                  ml: "auto",
+                  width: 34,
+                  height: 34,
+                  borderRadius: "999px",
+                  backgroundColor: adminPalette.pageBg,
+                  border: "0.5px solid rgba(0,0,0,0.10)",
+                  color: adminPalette.textPrimary,
+                  display: { xs: "none", sm: "inline-flex" },
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <CloudUploadOutlinedIcon sx={{ fontSize: 18 }} />
+              </Box>
+            )}
+
+            <Box
+              component="input"
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+              sx={{ display: "none" }}
+              onChange={onFileChange}
+            />
+          </Box>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.35 }}>
+            <Typography sx={{ ...itemFormHintSx, fontStyle: "italic", textAlign: "center" }}>
+              Images look best with a transparent background.
+            </Typography>
+          </Box>
+        </Box>
+
+        <Divider sx={{ borderColor: "rgba(0,0,0,0.08)" }} />
+
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 1,
+          }}
+        >
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+            <Typography sx={adminSectionLabelSx}>Options</Typography>
+            <Box sx={adminBadgeOptionalSx}>{attachedGroups.length} attached</Box>
+          </Box>
+          <Box sx={variantGroupsOverridesSx}>
+            <VariantGroupsField
+              key={form.categoryId || "no-category"}
+              categoryId={form.categoryId}
+              attachedGroups={attachedGroups}
+              setAttachedGroups={setAttachedGroups}
+              dragSrcId={dragSrcId}
+              setDragSrcId={setDragSrcId}
+            />
+          </Box>
+        </Box>
+
+        <Box
+          sx={{
+            display: "grid",
+            gap: 1,
+            gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
+          }}
+        >
+          <FormControlLabel
+            control={
+              <Checkbox
+                name="isAvailable"
+                checked={form.isAvailable}
+                onChange={onFormChange}
+                sx={{
+                  color: adminPalette.textTertiary,
+                  "&.Mui-checked": {
+                    color: adminPalette.textPrimary,
+                  },
+                }}
+              />
+            }
+            label={<Typography sx={adminLabelSx}>Available</Typography>}
+            sx={{ m: 0 }}
           />
-          Available
-        </CheckRow>
 
-        <CheckRow>
-          <input
-            type="checkbox"
-            name="isFeatured"
-            checked={form.isFeatured}
-            onChange={onFormChange}
+          <FormControlLabel
+            control={
+              <Checkbox
+                name="isFeatured"
+                checked={form.isFeatured}
+                onChange={onFormChange}
+                sx={{
+                  color: adminPalette.textTertiary,
+                  "&.Mui-checked": {
+                    color: adminPalette.textPrimary,
+                  },
+                }}
+              />
+            }
+            label={<Typography sx={adminLabelSx}>Featured on homepage</Typography>}
+            sx={{ m: 0 }}
           />
-          Featured on homepage
-        </CheckRow>
-
-        <BtnRow>
-          <PrimaryBtn type="submit" disabled={saving}>
-            {saving ? "Saving…" : editingId ? "Save Changes" : "Create"}
-          </PrimaryBtn>
-          {editingId && (
-            <GhostBtn type="button" onClick={cancelEdit}>
-              Cancel
-            </GhostBtn>
-          )}
-        </BtnRow>
-      </FormCard>
-
-      {/* ── Table ────────────────────────────────────────────────────────────── */}
-      <Box sx={{ overflowX: "auto" }}>
-        <StyledTable>
-          <thead>
-            <tr>
-              <Th>Name</Th>
-              <Th>Category</Th>
-              <Th>Image</Th>
-              <Th>Base Price</Th>
-              <Th>Available</Th>
-              <Th>Featured</Th>
-              <Th>Actions</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <tr key={item.id}>
-                <Td>{item.name}</Td>
-                <Td>{item.category}</Td>
-                <Td>
-                  {/* item.image is null (not placeholder path) when no image uploaded */}
-                  {item.image ? (
-                    <img
-                      src={item.image}
-                      alt={item.name}
-                      width={48}
-                      height={48}
-                      style={{ borderRadius: 6, objectFit: "cover", display: "block" }}
-                    />
-                  ) : (
-                    <span style={{ color: "#9ca3af", fontSize: 12 }}>No image</span>
-                  )}
-                </Td>
-                <Td>L.L {item.basePrice?.toLocaleString()}</Td>
-                <Td><Badge $yes={item.isAvailable}>{item.isAvailable ? "Yes" : "No"}</Badge></Td>
-                <Td><Badge $yes={item.isFeatured}>{item.isFeatured ? "Yes" : "No"}</Badge></Td>
-                <Td>
-                  <Box sx={{ display: "flex", gap: 1 }}>
-                    <EditBtn type="button" onClick={() => startEdit(item)}>Edit</EditBtn>
-                    <DangerBtn type="button" onClick={() => handleDelete(item.id)}>Delete</DangerBtn>
-                  </Box>
-                </Td>
-              </tr>
-            ))}
-          </tbody>
-        </StyledTable>
+        </Box>
       </Box>
-    </PageWrap>
+
+      <Box sx={adminTableWrapSx}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell sx={tableHeadCellSx}>Name</TableCell>
+              <TableCell sx={tableHeadCellSx}>Category</TableCell>
+              <TableCell sx={tableHeadCellSx}>Image</TableCell>
+              <TableCell sx={tableHeadCellSx}>Base price</TableCell>
+              <TableCell sx={tableHeadCellSx}>Available</TableCell>
+              <TableCell sx={tableHeadCellSx}>Featured</TableCell>
+              <TableCell sx={tableHeadCellSx}>Actions</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {items.map((item) => (
+              <TableRow
+                key={item.id}
+                sx={{
+                  "&:hover": {
+                    backgroundColor: "#fafaf9",
+                  },
+                  "&:last-of-type td": {
+                    borderBottom: "none",
+                  },
+                }}
+              >
+                <TableCell sx={tableBodyCellSx}>{item.name}</TableCell>
+                <TableCell sx={tableBodyCellSx}>{item.category?.name || "-"}</TableCell>
+                <TableCell sx={tableBodyCellSx}>
+                  {item.image ? (
+                    <Box sx={{ position: "relative", width: 48, height: 48 }}>
+                      <Box
+                        component="img"
+                        src={item.image}
+                        alt={item.name}
+                        sx={{
+                          width: 48,
+                          height: 48,
+                          borderRadius: "8px",
+                          objectFit: "cover",
+                          display: "block",
+                          border: "0.5px solid rgba(0,0,0,0.10)",
+                        }}
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none"
+                          const fallback = e.currentTarget.nextElementSibling
+                          if (fallback instanceof HTMLElement) {
+                            fallback.style.display = "inline-flex"
+                          }
+                        }}
+                      />
+                      <Box sx={{ display: "none", position: "absolute", inset: 0 }}>
+                        <AdminImagePlaceholder />
+                      </Box>
+                    </Box>
+                  ) : (
+                    <AdminImagePlaceholder />
+                  )}
+                </TableCell>
+                <TableCell sx={tableBodyCellSx}>{formatLL(item.basePrice)}</TableCell>
+                <TableCell sx={tableBodyCellSx}>
+                  <Box sx={getBooleanBadgeSx(item.isAvailable)}>
+                    {item.isAvailable ? "Yes" : "No"}
+                  </Box>
+                </TableCell>
+                <TableCell sx={tableBodyCellSx}>
+                  <Box sx={getBooleanBadgeSx(item.isFeatured)}>
+                    {item.isFeatured ? "Yes" : "No"}
+                  </Box>
+                </TableCell>
+                <TableCell sx={tableBodyCellSx}>
+                  <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                    <Button
+                      type="button"
+                      onClick={() => startEdit(item)}
+                      sx={{ ...adminGhostButtonSx, ...adminSmallButtonSx }}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => handleDelete(item.id)}
+                      sx={{ ...adminDangerGhostButtonSx, ...adminSmallButtonSx }}
+                    >
+                      Delete
+                    </Button>
+                  </Box>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Box>
+    </Box>
   )
 }

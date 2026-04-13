@@ -56,7 +56,18 @@ export function sameSelectedOptions(a, b) {
 }
 
 export function createVariantGroupMap(variantGroups = []) {
-  return new Map(variantGroups.map((group) => [String(group.groupId), group]));
+  const groupsByRef = new Map();
+
+  variantGroups.forEach((group) => {
+    [group?.refId, group?.groupId]
+      .map((value) => (typeof value === "string" ? value.trim() : ""))
+      .filter(Boolean)
+      .forEach((ref) => {
+        groupsByRef.set(ref, group);
+      });
+  });
+
+  return groupsByRef;
 }
 
 export function resolveVariantGroupsForMenuItem(menuItem, variantGroupsById) {
@@ -146,32 +157,4 @@ export function sortSelectedOptionsForDisplay(selectedOptions, variantGroups = [
   });
 
   return ordered;
-}
-
-export function enrichSelectedOptionsWithGroupMetadata(selectedOptions, variantGroups = []) {
-  const normalizedSelections = sanitizeSelectedOptions(selectedOptions);
-  const variantGroupsById = createVariantGroupMap(variantGroups);
-
-  return normalizedSelections.map((selection) => {
-    const explicitGroup = selection.groupId
-      ? variantGroupsById.get(String(selection.groupId))
-      : null;
-
-    const inferredGroup = explicitGroup || variantGroups.find((group) => {
-      const options = Array.isArray(group?.options) ? group.options : [];
-      return options.some((option) => option?.name === selection.optionName);
-    }) || null;
-
-    const resolvedGroupId = explicitGroup
-      ? String(selection.groupId)
-      : inferredGroup?.groupId != null
-        ? String(inferredGroup.groupId)
-        : "";
-
-    return {
-      ...selection,
-      ...(resolvedGroupId ? { groupId: resolvedGroupId } : {}),
-      groupName: inferredGroup?.name ?? null,
-    };
-  });
 }

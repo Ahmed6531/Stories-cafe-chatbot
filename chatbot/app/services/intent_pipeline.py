@@ -96,6 +96,8 @@ _VALID_INTENTS: frozenset[str] = frozenset({
     "view_cart",
     "recommendation_query",
     "describe_item",
+    "list_categories",
+    "list_category_items",
     "checkout",
     "confirm_checkout",
     "repeat_order",
@@ -148,6 +150,56 @@ def _extract_explicit_quantity(normalized_message: str) -> int | None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Layer 2 — Regex patterns for menu-data queries
+# These are deterministic but require extraction, so separate from the frozen sets.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# "what's on the menu" / "what do you have" / "what categories" / "show me the menu"
+_RE_LIST_ALL = re.compile(
+    r"^(?:"
+    r"what(?:'s| is| are)?\s+(?:on\s+(?:the\s+|your\s+)?menu|(?:your\s+)?(?:categories|types|options|selections?))"
+    r"|show\s+(?:me\s+)?(?:the\s+|your\s+)?menu"
+    r"|what\s+(?:can\s+i\s+(?:order|get|have)|do\s+you\s+(?:have|serve|offer|sell))"
+    r"|browse\s+(?:the\s+)?menu"
+    r"|menu\s+please"
+    r")(?:\s*\?)?$"
+)
+
+# "what drinks do you have" / "show me your pastries" / "do you have any food"
+_RE_LIST_CATEGORY = re.compile(
+    r"^(?:what|show\s+me|list|see|browse|view)\s+(?:your\s+|the\s+)?(\w+)"
+    r"(?:\s+(?:do\s+you\s+have|you\s+have|you\s+serve|you\s+offer|options?|items?|menu))?(?:\s*\?)?$"
+    r"|^do\s+you\s+have\s+any\s+(\w+)(?:\s*\?)?$"
+)
+
+# "do you have X" / "is X in stock" / "is X available" / "is X on the menu"
+_RE_AVAILABILITY = re.compile(
+    r"^(?:do\s+you\s+(?:have|sell|serve|carry)|have\s+you\s+got|is\s+there|you\s+have)\s+(.+?)(?:\s*\?)?$"
+    r"|^(?:is|are)\s+(.+?)\s+(?:available|in\s+stock|on\s+(?:the\s+|your\s+)?menu|still\s+(?:available|on))(?:\s*\?)?$"
+)
+
+# "how much is X" / "price of X" / "what's the price of X" / "cost of X"
+_RE_PRICE = re.compile(
+    r"^(?:how\s+much\s+(?:is|does|for)\s+(?:the\s+|a\s+|an\s+)?|"
+    r"(?:what(?:'s|\s+is)\s+the\s+)?price\s+(?:of|for)\s+(?:the\s+|a\s+)?|"
+    r"cost\s+of\s+(?:the\s+|a\s+)?)(.+?)(?:\s*\?)?$"
+)
+
+# Category keywords that map to a browsable category (not item names)
+_CATEGORY_KEYWORDS: frozenset[str] = frozenset({
+    "drink", "drinks", "beverage", "beverages",
+    "coffee", "coffees", "tea", "teas",
+    "juice", "juices", "smoothie", "smoothies", "milkshake", "milkshakes",
+    "food", "foods", "eat", "snack", "snacks",
+    "pastry", "pastries", "cake", "cakes",
+    "dessert", "desserts", "sweet", "sweets",
+    "sandwich", "sandwiches", "wrap", "wraps",
+    "salad", "salads", "breakfast", "lunch", "brunch",
+    "meal", "meals", "hot", "cold", "iced",
+})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Layer 2 — Deterministic Router
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -168,6 +220,52 @@ def _layer2_deterministic(normalized: str) -> Optional[dict]:
             source="deterministic",
             reason="deterministic_match:confirm_checkout",
         )
+
+    # ── Regex section ────────────────────────────────────────────────────────
+    # "what's on the menu" / "what categories do you have"
+    if _RE_LIST_ALL.match(normalized):
+        return _make_resolved(
+            intent="list_categories",
+            source="deterministic",
+            reason="deterministic_match:list_categories",
+        )
+
+    # "what drinks do you have" / "show me your pastries"
+    m = _RE_LIST_CATEGORY.match(normalized)
+    if m:
+        candidate = (m.group(1) or m.group(2) or "").strip().lower()
+        if candidate in _CATEGORY_KEYWORDS:
+            return _make_resolved(
+                intent="list_category_items",
+                source="deterministic",
+                reason="deterministic_match:list_category_items",
+                items=[{"category": candidate}],
+            )
+
+    # "do you have X" / "is X in stock" — route to describe_item (handles availability)
+    m = _RE_AVAILABILITY.match(normalized)
+    if m:
+        item_name = (m.group(1) or m.group(2) or "").strip()
+        if item_name and len(item_name) > 1:
+            return _make_resolved(
+                intent="describe_item",
+                source="deterministic",
+                reason="deterministic_match:availability",
+                items=[{"item_name": item_name}],
+            )
+
+    # "how much is X" / "price of X" — route to describe_item
+    m = _RE_PRICE.match(normalized)
+    if m:
+        item_name = (m.group(1) or "").strip()
+        if item_name and len(item_name) > 1:
+            return _make_resolved(
+                intent="describe_item",
+                source="deterministic",
+                reason="deterministic_match:price_query",
+                items=[{"item_name": item_name}],
+            )
+
     return None
 
 

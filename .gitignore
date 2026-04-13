@@ -12,7 +12,9 @@ chatbot/venv_old/
 
 # Python caches and compiled files
 __pycache__/
-chatbot/**/__pycache__/
 *.pyc
+.venv/
+*.pyc"chatbot/gcp-credentials.json" 
+chatbot/**/__pycache__/
 *.pyo
 *.pyd

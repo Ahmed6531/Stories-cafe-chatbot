@@ -508,10 +508,10 @@
     "isAvailable": true,
     "isFeatured": false,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options-with-large",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options-with-large",
+      "mixed-add-ons"
     ],
     "subcategory": "Hot"
   },
@@ -526,10 +526,10 @@
     "isAvailable": true,
     "isFeatured": false,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Iced"
   },
@@ -544,10 +544,10 @@
     "isAvailable": true,
     "isFeatured": false,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Frap"
   },
@@ -562,10 +562,10 @@
     "isAvailable": true,
     "isFeatured": false,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Frap"
   },
@@ -580,10 +580,10 @@
     "isAvailable": true,
     "isFeatured": false,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Frap"
   },
@@ -598,10 +598,10 @@
     "isAvailable": true,
     "isFeatured": false,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Frap"
   },
@@ -616,10 +616,10 @@
     "isAvailable": false,
     "isFeatured": false,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Frap"
   },
@@ -634,10 +634,10 @@
     "isAvailable": true,
     "isFeatured": false,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Frap"
   },
@@ -652,10 +652,10 @@
     "isAvailable": true,
     "isFeatured": false,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Frap"
   },
@@ -670,10 +670,10 @@
     "isAvailable": true,
     "isFeatured": false,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Frap"
   },
@@ -688,10 +688,10 @@
     "isAvailable": true,
     "isFeatured": false,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Frap"
   },
@@ -706,10 +706,10 @@
     "isAvailable": true,
     "isFeatured": false,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Frap"
   },
@@ -724,10 +724,10 @@
     "isAvailable": true,
     "isFeatured": false,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Iced"
   },
@@ -742,10 +742,10 @@
     "isAvailable": true,
     "isFeatured": false,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Iced"
   },
@@ -760,10 +760,10 @@
     "isAvailable": false,
     "isFeatured": false,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Iced"
   },
@@ -778,10 +778,10 @@
     "isAvailable": true,
     "isFeatured": false,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Iced"
   },
@@ -796,9 +796,9 @@
     "isAvailable": true,
     "isFeatured": true,
     "variantGroups": [
-      "coffee-espresso-options",
-      "coffee-milk-options-with-large",
-      "coffee-add-ons"
+      "mixed-espresso-options",
+      "mixed-milk-options-with-large",
+      "mixed-add-ons"
     ],
     "subcategory": "Iced"
   },
@@ -813,10 +813,10 @@
     "isAvailable": true,
     "isFeatured": true,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Frap"
   },
@@ -831,10 +831,10 @@
     "isAvailable": true,
     "isFeatured": true,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Frap"
   },
@@ -849,10 +849,10 @@
     "isAvailable": true,
     "isFeatured": true,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Frap"
   },
@@ -867,10 +867,10 @@
     "isAvailable": true,
     "isFeatured": true,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Iced"
   },
@@ -885,10 +885,10 @@
     "isAvailable": true,
     "isFeatured": true,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Iced"
   },
@@ -903,10 +903,10 @@
     "isAvailable": true,
     "isFeatured": true,
     "variantGroups": [
-      "coffee-size-standard",
-      "coffee-espresso-options",
-      "coffee-milk-options",
-      "coffee-add-ons"
+      "mixed-size-standard",
+      "mixed-espresso-options",
+      "mixed-milk-options",
+      "mixed-add-ons"
     ],
     "subcategory": "Iced"
   },
@@ -979,7 +979,7 @@
     "image": "/images/rim-330ml.jpg",
     "category": "Soft Drinks",
     "description": "Never feel thirsty!",
-    "basePrice": 70000,
+    "basePrice": 330000,
     "isAvailable": true,
     "isFeatured": false,
     "variantGroups": [

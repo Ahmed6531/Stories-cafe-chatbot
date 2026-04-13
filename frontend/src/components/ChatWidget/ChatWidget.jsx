@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
 import axios from 'axios'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
+import Portal from '@mui/material/Portal'
 import VoiceInput from '../VoiceInput'
 import { MIC_MODE, useVoiceSession } from '../../hooks/useVoiceSession'
 import { normalizeTranscriptForRouting, normalizeTranscriptForUi } from '../../utils/voiceTranscript'
@@ -176,6 +177,111 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
   const isUser = msg.role === 'user'
   const showTime = msg.time !== prevTime
   const hasSuggestions = msg.suggestions && msg.suggestions.length > 0
+  const isChecklistSuggestions = hasSuggestions && msg.suggestions.every((s) => s?.type === 'clarification_option')
+  const [selectedChecklist, setSelectedChecklist] = useState({})
+
+  const suggestionText = (suggestion) => {
+    if (typeof suggestion?.input_text === 'string' && suggestion.input_text.trim()) {
+      return suggestion.input_text.trim()
+    }
+    if (typeof suggestion?.item_name === 'string' && suggestion.item_name.trim()) {
+      return `add ${suggestion.item_name.trim()}`
+    }
+    return ''
+  }
+
+  const suggestionLabel = (suggestion) => {
+    if (typeof suggestion?.label === 'string' && suggestion.label.trim()) {
+      return suggestion.label.trim()
+    }
+    if (typeof suggestion?.item_name === 'string' && suggestion.item_name.trim()) {
+      return suggestion.item_name.trim()
+    }
+    return 'Option'
+  }
+
+  const suggestionStyle = (suggestion) => {
+    if (suggestion?.type === 'defaults_confirmation') {
+      if (suggestion?.input_text !== 'change it') {
+        return {
+          base: { background: '#dcfce7', borderColor: '#86efac', color: '#15803d' },
+          hover: { background: '#bbf7d0', borderColor: '#4ade80' },
+        }
+      }
+      return {
+        base: { background: '#f9fafb', borderColor: '#d1d5db', color: '#6b7280' },
+        hover: { background: '#f3f4f6', borderColor: '#9ca3af' },
+      }
+    }
+    return {
+      base: { background: '#f3f4f6', borderColor: '#e5e7eb', color: '#374151' },
+      hover: { background: '#e5e7eb', borderColor: '#d1d5db' },
+    }
+  }
+
+  const isToppingsGroup = (groupName) => {
+    const normalized = (groupName || '').toString().trim().toLowerCase()
+    return normalized.includes('topping') || normalized.includes('flavor')
+  }
+
+  const getGroupMaxSelections = (groupName) => {
+    const suggestions = groupedChecklistSuggestions.find(([name]) => name === groupName)?.[1] || []
+    const rawMax = Number(suggestions[0]?.maxSelections)
+    if (Number.isFinite(rawMax) && rawMax > 0) return rawMax
+    return isToppingsGroup(groupName) ? 2 : 1
+  }
+
+  const selectChecklistOption = (groupName, value) => {
+    if (!value) return
+    setSelectedChecklist((prev) => {
+      const maxSelections = getGroupMaxSelections(groupName)
+      if (maxSelections > 1) {
+        const current = Array.isArray(prev[groupName]) ? prev[groupName] : []
+        const next = current.includes(value)
+          ? current.filter((item) => item !== value)
+          : current.length >= maxSelections
+            ? [...current.slice(1), value]
+            : [...current, value]
+        return {
+          ...prev,
+          [groupName]: next,
+        }
+      }
+
+      return {
+        ...prev,
+        [groupName]: value,
+      }
+    })
+  }
+
+  const groupedChecklistSuggestions = (() => {
+    if (!isChecklistSuggestions) return []
+    const groups = new Map()
+    for (const suggestion of msg.suggestions) {
+      const groupName = (suggestion?.group || 'Options').toString().trim() || 'Options'
+      const list = groups.get(groupName) || []
+      list.push(suggestion)
+      groups.set(groupName, list)
+    }
+    return Array.from(groups.entries())
+  })()
+
+  const selectedChecklistValues = useMemo(() => {
+    if (!isChecklistSuggestions) return []
+    return Object.values(selectedChecklist).flatMap((value) => {
+      if (typeof value === 'string' && value.trim()) return [value.trim()]
+      if (Array.isArray(value)) {
+        return value.filter((item) => typeof item === 'string' && item.trim())
+      }
+      return []
+    })
+  }, [isChecklistSuggestions, selectedChecklist])
+
+  const applyChecklistSelections = () => {
+    if (!selectedChecklistValues.length) return
+    onSuggestionClick(selectedChecklistValues.join(' and '))
+  }
 
   return (
     <div className={`msg-row ${isUser ? 'msg-row-user' : 'msg-row-bot'}`}>
@@ -186,35 +292,113 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
             {i < arr.length - 1 && <br />}
           </span>
         ))}
-        {hasSuggestions && (
+        {hasSuggestions && isChecklistSuggestions && (
+          <div style={{ marginTop: '10px', padding: '10px', border: '1px solid #e5e7eb', borderRadius: '10px', background: '#f9fafb' }}>
+            <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px', fontWeight: 600 }}>
+              Select options, then apply
+            </div>
+            {groupedChecklistSuggestions.map(([groupName, options]) => (
+              <div key={groupName} style={{ marginBottom: '10px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
+                  {groupName}
+                  {getGroupMaxSelections(groupName) > 1 ? ` (choose up to ${getGroupMaxSelections(groupName)})` : ''}
+                </div>
+                <div style={{ display: 'grid', gap: '6px' }}>
+                  {options.map((s, idx) => {
+                    const key = `${s?.group || groupName}:${s?.input_text || s?.item_name || idx}`
+                    const optionValue = suggestionText(s)
+                    const isMulti = getGroupMaxSelections(groupName) > 1
+                    const checked = isMulti
+                      ? Array.isArray(selectedChecklist[groupName]) && selectedChecklist[groupName].includes(optionValue)
+                      : selectedChecklist[groupName] === optionValue
+                    return (
+                      <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#111827', cursor: 'pointer' }}>
+                        <input
+                          type={isMulti ? 'checkbox' : 'radio'}
+                          name={isMulti ? undefined : `variant-group-${groupName}`}
+                          checked={checked}
+                          onChange={() => selectChecklistOption(groupName, optionValue)}
+                          style={{ accentColor: '#1e5631', cursor: 'pointer' }}
+                        />
+                        <span>{suggestionLabel(s)}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+              <button
+                type="button"
+                onClick={applyChecklistSelections}
+                disabled={!selectedChecklistValues.length}
+                style={{
+                  padding: '7px 12px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: selectedChecklistValues.length ? '#1e5631' : '#9ca3af',
+                  color: '#fff',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: selectedChecklistValues.length ? 'pointer' : 'not-allowed',
+                }}
+              >
+                Apply selected options
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedChecklist({})}
+                style={{
+                  padding: '7px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid #d1d5db',
+                  background: '#fff',
+                  color: '#374151',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+        {hasSuggestions && !isChecklistSuggestions && (
           <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {msg.suggestions.map((s, idx) => (
+            {msg.suggestions.map((s, idx) => {
+              const sStyle = suggestionStyle(s)
+              return (
               <button
                 key={idx}
-                onClick={() => onSuggestionClick(`add ${s.item_name}`)}
+                onClick={() => {
+                  const text = suggestionText(s)
+                  if (text) onSuggestionClick(text)
+                }}
                 style={{
                   padding: '6px 12px',
                   borderRadius: '16px',
-                  border: '1px solid #e5e7eb',
-                  background: '#f3f4f6',
-                  color: '#374151',
+                  border: `1px solid ${sStyle.base.borderColor}`,
+                  background: sStyle.base.background,
+                  color: sStyle.base.color,
                   cursor: 'pointer',
                   fontSize: '13px',
                   fontWeight: 500,
                   transition: 'all 0.2s',
                 }}
                 onMouseEnter={(e) => {
-                  e.target.style.background = '#e5e7eb'
-                  e.target.style.borderColor = '#d1d5db'
+                  e.currentTarget.style.background = sStyle.hover.background
+                  e.currentTarget.style.borderColor = sStyle.hover.borderColor
                 }}
                 onMouseLeave={(e) => {
-                  e.target.style.background = '#f3f4f6'
-                  e.target.style.borderColor = '#e5e7eb'
+                  e.currentTarget.style.background = sStyle.base.background
+                  e.currentTarget.style.borderColor = sStyle.base.borderColor
                 }}
               >
-                {s.item_name}
+                {suggestionLabel(s)}
               </button>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
@@ -354,8 +538,6 @@ export default function ChatWidget({
     clearPartials()
     setMessages([])
     setChipsVisible(true)
-    sessionStorage.removeItem('chatSessionId')
-    localStorage.removeItem('chatSessionId')
     localStorage.removeItem(CHAT_STORAGE_KEY)
     localStorage.removeItem(CHAT_STORAGE_TS_KEY)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -490,11 +672,30 @@ export default function ChatWidget({
       if (data.intent === 'confirm_checkout' && data.metadata?.pipeline_stage === 'checkout_redirect') {
         setTimeout(() => onConfirm?.(), 1500)
       }
-    } catch {
+
+      if (data.audio_base64) {
+        try {
+          const audio = new Audio(data.audio_base64)
+          audio.play().catch(() => {})
+        } catch {
+          // never break chat on audio failure
+        }
+      }
+    } catch (error) {
+      if (axios.isCancel(error) || error?.code === 'ERR_CANCELED') {
+        return
+      }
+
+      const backendDetail = error?.response?.data?.detail
+      const fallbackError = error?.message || "Sorry, I couldn't reach the assistant. Please try again."
+      const errorText = typeof backendDetail === 'string' && backendDetail.trim()
+        ? backendDetail.trim()
+        : fallbackError
+
       appendMessage({
         id: Date.now() + 1,
         role: 'bot',
-        text: "Sorry, I couldn't reach the assistant. Please try again.",
+        text: errorText,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       })
     } finally {
@@ -734,11 +935,13 @@ export default function ChatWidget({
           </aside>
         </div>
       </div>
-      <Snackbar open={Boolean(voice.voiceError)} autoHideDuration={3800} onClose={() => voice.dismissError()} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
-        <Alert onClose={() => voice.dismissError()} severity="error" variant="filled" sx={{ width: '100%' }}>
-          {voice.voiceError}
-        </Alert>
-      </Snackbar>
+      <Portal>
+        <Snackbar open={Boolean(voice.voiceError)} autoHideDuration={3800} onClose={() => voice.dismissError()} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+          <Alert onClose={() => voice.dismissError()} severity="error" variant="filled" sx={{ width: '100%' }}>
+            {voice.voiceError}
+          </Alert>
+        </Snackbar>
+      </Portal>
     </>
   )
 }

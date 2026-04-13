@@ -88,6 +88,7 @@ export default function CartSummary({
   items = [],
   mode = 'cartSummary',
   title = 'Order Summary',
+  headerAction,
   action,
   itemsContent,
   sx,
@@ -187,21 +188,29 @@ export default function CartSummary({
           minHeight: isReceipt ? { xs: 250, md: 280 } : 'auto',
         }}
       >
-        <Typography
-          variant="subtitle2"
-          sx={{
-            fontFamily: brand.fontBase,
-            fontWeight: 800,
-            textAlign: isReceipt ? 'center' : 'left',
-            mb: 2.25,
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-            color: isReceipt ? brand.textPrimary : brand.primary,
-            fontSize: '0.74rem',
-          }}
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          spacing={1}
+          sx={{ mb: 2.25 }}
         >
-          {resolvedTitle}
-        </Typography>
+          <Typography
+            variant="subtitle2"
+            sx={{
+              fontFamily: brand.fontBase,
+              fontWeight: 800,
+              textAlign: isReceipt ? 'center' : 'left',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: isReceipt ? brand.textPrimary : brand.primary,
+              fontSize: '0.74rem',
+            }}
+          >
+            {resolvedTitle}
+          </Typography>
+          {!isReceipt && headerAction}
+        </Stack>
 
         {!showSummaryBreakdown ? (
           <Typography

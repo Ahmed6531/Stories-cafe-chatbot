@@ -29,6 +29,7 @@ class Settings(BaseSettings):
 
     tts_enabled: bool = False
     tts_voice: str = "en-US-Journey-F"
+    tts_personality: str = "fun_demo"
 
     model_config = SettingsConfigDict(
         env_file=".env",

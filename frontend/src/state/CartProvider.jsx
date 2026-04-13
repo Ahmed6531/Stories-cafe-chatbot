@@ -51,7 +51,13 @@ export function CartProvider({ children }) {
   const addToCart = useCallback(async (item) => {
     try {
       const data = await addToCartApi(item)
-      dispatch({ type: 'CART_LOADED', payload: normalizeCartPayload(data) })
+      dispatch({
+        type: 'CART_ITEM_ADDED',
+        payload: {
+          cart: normalizeCartPayload(data),
+          lastAddedItem: item.image ? { image: item.image } : null,
+        },
+      })
       return data
     } catch (err) {
       dispatch({ type: 'CART_ERROR', payload: err.message })
@@ -116,20 +122,26 @@ export function CartProvider({ children }) {
     dispatch({ type: 'CART_RESET' })
   }, [])
 
+  const clearLastAddedItem = useCallback(() => {
+    dispatch({ type: 'CLEAR_LAST_ADDED' })
+  }, [])
+
   const value = useMemo(
-  () => ({
-    state,
-    cartCount: state.count,
-    addToCart,
-    updateQty,
-    editCartItem,
-    removeFromCart,
-    clearCart,
-    resetCart,
-    refreshCart: loadCart
-  }),
-  [state, addToCart, updateQty, editCartItem, removeFromCart, clearCart, resetCart, loadCart]
-)
+    () => ({
+      state,
+      cartCount: state.count,
+      lastAddedItem: state.lastAddedItem,
+      addToCart,
+      updateQty,
+      editCartItem,
+      removeFromCart,
+      clearCart,
+      resetCart,
+      clearLastAddedItem,
+      refreshCart: loadCart,
+    }),
+    [state, addToCart, updateQty, editCartItem, removeFromCart, clearCart, resetCart, clearLastAddedItem, loadCart]
+  )
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>
 }
