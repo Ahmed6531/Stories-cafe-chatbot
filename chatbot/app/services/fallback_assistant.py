@@ -81,9 +81,10 @@ def _is_incomplete_reply(text: str) -> bool:
             if last_words[0] in {"is", "are", "do", "does", "can", "could", "would", "will", "shall"}:
                 return True
 
-    # If the reply ends without terminal punctuation and is very short,
-    # it's usually a clipped fragment.
-    if cleaned[-1] not in {".", "!", "?"} and len(cleaned.split()) <= 6:
+    # If the reply ends without terminal punctuation, it's often clipped.
+    # Be stricter for short/medium responses because well-formed assistant
+    # replies should normally terminate cleanly.
+    if cleaned[-1] not in {".", "!", "?"} and len(cleaned.split()) <= 18:
         return True
 
     # Common clipped endings in model output.
@@ -104,8 +105,54 @@ def _is_incomplete_reply(text: str) -> bool:
             "if", "when", "while", "that", "which",
         }:
             return True
+        if trailing_words[-1] in {
+            "other", "another", "more", "different", "various", "several",
+            "many", "some", "those", "these",
+        }:
+            return True
 
     return False
+
+
+def _extract_openai_style_content(data: dict) -> str | None:
+    choices = data.get("choices") if isinstance(data, dict) else None
+    if not isinstance(choices, list) or not choices:
+        return None
+
+    first_choice = choices[0] if isinstance(choices[0], dict) else None
+    if not isinstance(first_choice, dict):
+        return None
+
+    finish_reason = str(first_choice.get("finish_reason") or "").strip().lower()
+    if finish_reason and finish_reason not in {"stop", "end_turn"}:
+        return None
+
+    message = first_choice.get("message")
+    if not isinstance(message, dict):
+        return None
+
+    content = str(message.get("content") or "").strip()
+    return content or None
+
+
+def _extract_gemini_content(response: object) -> str | None:
+    candidates = getattr(response, "candidates", None)
+    if isinstance(candidates, list) and candidates:
+        candidate = candidates[0]
+        finish_reason = getattr(candidate, "finish_reason", None)
+        if finish_reason is None:
+            finish_reason = getattr(candidate, "finishReason", None)
+
+        normalized_reason = str(finish_reason or "").strip().lower()
+        if normalized_reason:
+            # Accept only natural stops. Numeric enum values may surface in some
+            # SDK versions, so allow "1" as the Gemini STOP enum value.
+            if not any(token in normalized_reason for token in {"stop", "unspecified", "1"}):
+                return None
+
+    text = getattr(response, "text", None)
+    content = str(text or "").strip()
+    return content or None
 
 
 async def _generate_complete_reply_once(
@@ -179,8 +226,7 @@ async def _generate_with_azure_openai(user_message: str) -> str | None:
             response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
         data = response.json()
-        content = data["choices"][0]["message"]["content"].strip()
-        return content if content else None
+        return _extract_openai_style_content(data)
     except Exception as exc:
         logger.warning("Azure fallback assistant call failed: %s", exc)
         return None
@@ -210,8 +256,7 @@ async def _generate_with_openai(user_message: str) -> str | None:
             response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
         data = response.json()
-        content = data["choices"][0]["message"]["content"].strip()
-        return content if content else None
+        return _extract_openai_style_content(data)
     except Exception as exc:
         logger.warning("OpenAI fallback assistant call failed: %s", exc)
         return None
@@ -237,9 +282,7 @@ async def _generate_with_gemini(user_message: str) -> str | None:
                     "max_output_tokens": FALLBACK_MAX_TOKENS,
                 },
             )
-            content = response.text.strip() if response.text else None
-
-            return content if content else None
+            return _extract_gemini_content(response)
         except Exception as exc:
             last_error = exc
             logger.warning("Gemini fallback assistant call failed for model %s: %s", model_name, exc)

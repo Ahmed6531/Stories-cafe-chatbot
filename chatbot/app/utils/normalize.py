@@ -48,6 +48,33 @@ def _build_menu_vocab() -> tuple[set[str], set[str]]:
 
 _MENU_VOCAB, _MENU_PHRASES = _build_menu_vocab()
 
+# Extra non-menu words so command-style typos can still be corrected.
+_EXTRA_VOCAB: set[str] = {
+    "clear", "cart", "empty", "reset", "delete", "remove",
+    "checkout", "check", "out", "order", "pay", "confirm",
+    "cancel", "nevermind", "recommend", "suggest", "describe",
+    "available", "because", "please", "thanks",
+}
+
+# High-confidence typo replacements applied before fuzzy matching.
+_FORCE_CORRECTIONS: dict[str, str] = {
+    "cler": "clear",
+    "clera": "clear",
+    "cleer": "clear",
+    "lear": "clear",
+    "crt": "cart",
+    "criossant": "croissant",
+    "croisant": "croissant",
+    "crossant": "croissant",
+    "yougurt": "yogurt",
+    "nevermimd": "nevermind",
+    "neverminf": "nevermind",
+    "nevrmind": "nevermind",
+    "becuase": "because",
+    "reccomend": "recommend",
+    "sugget": "suggest",
+}
+
 # Tokens that should never be autocorrected (common chat words that could
 # accidentally fuzzy-match a menu word).
 _STOP_TOKENS: set[str] = {
@@ -65,6 +92,9 @@ def _autocorrect_token(token: str, vocab: set[str]) -> str:
     otherwise return the token unchanged.
     """
     cleaned = _normalize_lookup_token(token)
+    if cleaned in _FORCE_CORRECTIONS:
+        return _FORCE_CORRECTIONS[cleaned]
+
     if cleaned in _STOP_TOKENS or cleaned in vocab or len(cleaned) < 4:
         return token
 
@@ -87,7 +117,21 @@ def _autocorrect_phrase(message: str) -> str:
     matches = get_close_matches(normalized, _MENU_PHRASES, n=1, cutoff=cutoff)
     if matches:
         candidate = matches[0]
-        if SequenceMatcher(None, normalized, candidate).ratio() >= cutoff:
+        phrase_ratio = SequenceMatcher(None, normalized, candidate).ratio()
+        if phrase_ratio < cutoff:
+            return normalized
+
+        src_tokens = normalized.split()
+        dst_tokens = candidate.split()
+        if len(src_tokens) == len(dst_tokens):
+            # Only allow typo-like token substitutions. This prevents semantic
+            # replacements such as "matcha" -> "mocha" while still allowing
+            # close misspellings (e.g., "cinammon" -> "cinnamon").
+            for src, dst in zip(src_tokens, dst_tokens):
+                if src == dst:
+                    continue
+                if SequenceMatcher(None, src, dst).ratio() < 0.88:
+                    return normalized
             return candidate
     return normalized
 
@@ -97,13 +141,14 @@ def autocorrect_message(message: str) -> str:
     Correct likely menu-word typos in a raw user message without touching
     words that are already correct or are common chat filler.
     """
-    if not _MENU_VOCAB:
+    vocab = _MENU_VOCAB | _EXTRA_VOCAB
+    if not vocab:
         return message  # No vocab loaded — pass through unchanged.
 
     normalized = " ".join(str(message or "").split())
     phrase_corrected = _autocorrect_phrase(normalized)
     tokens = phrase_corrected.split()
-    corrected = [_autocorrect_token(t, _MENU_VOCAB) for t in tokens]
+    corrected = [_autocorrect_token(t, vocab) for t in tokens]
     return " ".join(corrected)
 
 

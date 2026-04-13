@@ -1,6 +1,7 @@
 import logging
 import re
 import httpx
+from difflib import SequenceMatcher
 
 from app.schemas.chat import ChatMessageResponse
 from app.services.fallback_assistant import generate_fallback_reply
@@ -161,8 +162,41 @@ def _is_recordable_combo_pair(anchor_item: dict | None, suggested_item: dict | N
     return (anchor_is_beverage and suggested_is_food) or (anchor_is_food and suggested_is_beverage)
 
 
+def _looks_like_clear_cart_command(message: str) -> bool:
+    """Detect typo variants of clear-cart commands (e.g., 'lear cart')."""
+    normalized = " ".join(str(message or "").lower().split())
+    if not normalized:
+        return False
+
+    tokens = re.findall(r"[a-z0-9]+", normalized)
+    if "cart" not in tokens:
+        return False
+
+    action_words = {"clear", "empty", "reset", "delete", "remove"}
+    ignore = {"cart", "my", "the", "please", "pls"}
+
+    for token in tokens:
+        if token in ignore:
+            continue
+        for action in action_words:
+            if SequenceMatcher(None, token, action).ratio() >= 0.8:
+                return True
+
+    return False
+
+
 def detect_special_command(message: str) -> str | None:
     message = message.lower()
+
+    # Route ice cream queries to describe_item so they can be properly handled
+    # (either with "No ice cream, but frozen yogurt" or availability check)
+    if any(word in message for word in ["add", "get", "order", "want", "i want"]):
+        tokens = message.split()
+        for i, token in enumerate(tokens):
+            if token == "ice" and i + 1 < len(tokens):
+                next_token = tokens[i + 1]
+                if SequenceMatcher(None, next_token, "cream").ratio() >= 0.72:
+                    return "describe_item"
 
     if any(
         phrase in message
@@ -177,7 +211,7 @@ def detect_special_command(message: str) -> str | None:
             "empty my cart",
             "delete cart",
         ]
-    ):
+    ) or _looks_like_clear_cart_command(message):
         return "clear_cart"
     if any(
         phrase in message
@@ -272,6 +306,33 @@ def detect_intent(message: str) -> str:
     return "unknown"
 
 
+def _has_fuzzy_phrase(message: str, phrases: set[str], threshold: float = 0.84) -> bool:
+    """Return True when a phrase is present exactly or as a close typo variant."""
+    msg = " ".join(str(message or "").lower().split())
+    if not msg:
+        return False
+
+    tokens = msg.split()
+    for phrase in phrases:
+        normalized_phrase = " ".join(str(phrase or "").lower().split())
+        if not normalized_phrase:
+            continue
+        if normalized_phrase in msg:
+            return True
+
+        phrase_tokens = normalized_phrase.split()
+        if not phrase_tokens or len(tokens) < len(phrase_tokens):
+            continue
+
+        window_size = len(phrase_tokens)
+        for i in range(len(tokens) - window_size + 1):
+            window = " ".join(tokens[i : i + window_size])
+            if SequenceMatcher(None, window, normalized_phrase).ratio() >= threshold:
+                return True
+
+    return False
+
+
 def extract_item_query(message: str, default_quantity: int | None = 1):
     message = message.lower()
 
@@ -289,12 +350,15 @@ def extract_item_query(message: str, default_quantity: int | None = 1):
         "delete",
         "from",
         "get",
+        "hmm",
         "i",
         "it",
         "make",
         "me",
         "my",
         "only",
+        "okay",
+        "ok",
         "order",
         "please",
         "quantity",
@@ -304,6 +368,8 @@ def extract_item_query(message: str, default_quantity: int | None = 1):
         "to",
         "update",
         "want",
+        "yeah",
+        "yep",
     }
 
     item_words = [
@@ -313,6 +379,33 @@ def extract_item_query(message: str, default_quantity: int | None = 1):
     item_query = " ".join(item_words)
 
     return item_query, quantity
+
+
+def remember_last_item_query(session: Session | None, message: str) -> None:
+    if session is None:
+        return
+
+    item_query, _ = extract_item_query(message, default_quantity=None)
+    item_query = " ".join(str(item_query or "").strip().split())
+    if not item_query:
+        return
+
+    generic_queries = {
+        "menu",
+        "options",
+        "option",
+        "item",
+        "items",
+        "something",
+        "anything",
+        "it",
+        "that",
+        "this",
+    }
+    if item_query in generic_queries:
+        return
+
+    session["last_item_query"] = item_query
 
 
 
@@ -458,7 +551,7 @@ def resolve_add_items_from_session(
     interpretation: dict,
     session: Session | None,
 ) -> list[dict]:
-    if session is None or not interpretation.get("fallback_needed", False):
+    if session is None:
         return requested_items
 
     follow_up_item_names = {
@@ -472,11 +565,52 @@ def resolve_add_items_from_session(
         "that",
         "this",
     }
+    follow_up_filler_words = {
+        "hmm",
+        "hm",
+        "okay",
+        "ok",
+        "yeah",
+        "yep",
+        "yes",
+        "sure",
+        "please",
+        "pls",
+        "add",
+        "get",
+        "order",
+        "want",
+        "to",
+        "me",
+        "a",
+        "an",
+        "the",
+    }
+
+    def _is_follow_up_reference(item_name: str | None) -> bool:
+        normalized_name = (item_name or "").strip().lower()
+        if not normalized_name:
+            return True
+        if normalized_name in follow_up_item_names:
+            return True
+
+        cleaned_tokens = [
+            token for token in normalized_name.split()
+            if token and token not in follow_up_filler_words
+        ]
+        if not cleaned_tokens:
+            return True
+
+        cleaned_name = " ".join(cleaned_tokens)
+        return cleaned_name in follow_up_item_names
 
     if requested_items:
         current_item = requested_items[0]
-        current_item_name = (current_item.get("item_name") or "").strip().lower()
-        if current_item_name and current_item_name not in follow_up_item_names:
+        current_item_name = current_item.get("item_name")
+        current_quantity = current_item.get("quantity")
+        if not _is_follow_up_reference(current_item_name):
+            return requested_items
+        if current_quantity is not None and str(current_item_name or "").strip().lower() not in follow_up_item_names:
             return requested_items
     else:
         raw_items = interpretation.get("items")
@@ -492,16 +626,12 @@ def resolve_add_items_from_session(
                 "instructions": interpretation.get("instructions"),
             }
 
-        current_item_name = (current_item.get("item_name") or "").strip().lower()
+        current_item_name = current_item.get("item_name")
         current_quantity = current_item.get("quantity")
         if current_quantity is None:
             current_quantity = interpretation.get("quantity")
 
-        if (
-            current_item_name
-            and current_item_name not in follow_up_item_names
-            and current_quantity is None
-        ):
+        if not _is_follow_up_reference(current_item_name) and current_quantity is None:
             return requested_items
 
     session_items = session.get("last_items")
@@ -1113,6 +1243,17 @@ async def process_chat_message(
         interpretation["fallback_needed"] = False
         intent = "confirm_checkout"
 
+    # Handle affirmations to recommendation requests
+    if (
+        stripped_message in bare_affirmations
+        and last_stage == "recommendation_requested"
+    ):
+        interpretation["intent"] = "recommendation_query"
+        interpretation["items"] = []
+        interpretation["fallback_needed"] = False
+        intent = "recommendation_query"
+        set_session_stage(session_id, None)
+
     if (
         last_stage == "update_quantity_missing"
         and session is not None
@@ -1155,6 +1296,8 @@ async def process_chat_message(
             "skip",
             "rather",
             "have",
+            "none",
+            "nothing",
         }
         fresh_command_starts = (
             "add ",
@@ -1182,7 +1325,10 @@ async def process_chat_message(
             "recommendation_query",
         }
         explicit_new_command = stripped_message.startswith(fresh_command_starts)
-        has_abandon_phrase = any(phrase in stripped_message for phrase in abandon_phrases)
+        fuzzy_abandon_phrases = {phrase for phrase in abandon_phrases if phrase not in {"have", "rather"}}
+        has_abandon_phrase = _has_fuzzy_phrase(stripped_message, fuzzy_abandon_phrases) or any(
+            phrase in stripped_message for phrase in abandon_phrases
+        )
 
         # Standalone abandon (e.g. "nevermind") should cancel clarification
         # immediately instead of looping back into another customization prompt.
@@ -1676,6 +1822,15 @@ async def process_chat_message(
             # Extract any category hint from the message ("drinks", "food", etc.)
             rec_category = extract_recommendation_category(normalized_message)
             rec_query_terms = extract_recommendation_query_terms(normalized_message)
+            
+            # If the user just said "yes" to a recommendation request, use stored query
+            if not rec_category and not rec_query_terms and session and session.get("last_recommendation_query"):
+                rec_category = session.get("last_recommendation_query")
+                # Normalize "ice cream" queries to "yogurt" since that's what we offer
+                from app.services.menu_details import _looks_like_ice_cream_query
+                if _looks_like_ice_cream_query(rec_category):
+                    rec_category = "yogurt"
+            
             menu_items_by_name = {
                 (item.get("name") or "").lower(): item
                 for item in menu_items
@@ -1825,6 +1980,10 @@ async def process_chat_message(
                 else:
                     reply_text = "I can help with suggestions once you add an item to your cart."
 
+            # Clear the stored recommendation query now that we've generated recommendations
+            if session and "last_recommendation_query" in session:
+                del session["last_recommendation_query"]
+
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
@@ -1859,6 +2018,7 @@ async def process_chat_message(
                 )
                 if isinstance(described_item, str) and described_item.strip():
                     session["last_described_item"] = described_item.strip()
+                    session["last_item_query"] = described_item.strip()
             return describe_response
 
         if intent == "checkout":
@@ -2991,6 +3151,9 @@ async def process_chat_message(
                     "pipeline_stage": "add_items_done",
                 },
             )
+
+        if intent in {"unknown", "recommendation_query"}:
+            remember_last_item_query(session, normalized_message)
 
         fallback_reply = await generate_fallback_reply(normalized_message)
         return ChatMessageResponse(

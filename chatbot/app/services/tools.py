@@ -194,6 +194,42 @@ def _normalize_lookup_text(value: str) -> str:
     return " ".join(normalized.split())
 
 
+_FUZZY_GENERIC_TOKENS = {
+    "iced", "hot", "cold", "small", "medium", "large", "drink", "drinks",
+    "beverage", "beverages", "with", "and", "the", "a", "an",
+}
+
+
+def _is_safe_fuzzy_candidate(item_query: str, candidate: str) -> bool:
+    query_tokens = [t for t in item_query.split() if t]
+    cand_tokens = [t for t in candidate.split() if t]
+
+    if len(query_tokens) < 2:
+        return True
+
+    query_content = [t for t in query_tokens if t not in _FUZZY_GENERIC_TOKENS]
+    cand_content = [t for t in cand_tokens if t not in _FUZZY_GENERIC_TOKENS]
+
+    # If both sides have non-generic tokens, require either direct overlap or
+    # typo-like similarity; this blocks semantic swaps like matcha -> mocha.
+    if query_content and cand_content:
+        if set(query_content) & set(cand_content):
+            return True
+
+        if len(query_content) == len(cand_content):
+            for q_token, c_token in zip(query_content, cand_content):
+                if q_token == c_token:
+                    continue
+                if SequenceMatcher(None, q_token, c_token).ratio() < 0.86:
+                    return False
+            return True
+
+        return False
+
+    # If there's no meaningful content token, avoid aggressive fuzzy picks.
+    return False
+
+
 async def find_menu_item_by_name(menu_items, item_query):
     if not item_query:
         return None
@@ -254,6 +290,7 @@ async def find_menu_item_by_name(menu_items, item_query):
     }
 
     matches = get_close_matches(item_query, menu_name_map.keys(), n=3, cutoff=0.68)
+    matches = [candidate for candidate in matches if _is_safe_fuzzy_candidate(item_query, candidate)]
     if matches:
         best_name = max(
             matches,

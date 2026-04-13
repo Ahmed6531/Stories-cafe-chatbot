@@ -16,6 +16,7 @@ import re
 
 from app.schemas.chat import ChatMessageResponse
 from app.services.item_clarification import get_menu_detail_variants
+from app.utils.normalize import normalize_user_message
 
 
 # ---------------------------------------------------------------------------
@@ -52,8 +53,14 @@ DETAIL_TRIGGER_PHRASES: list[str] = [
     "available in",
     "do you have",
     "do u have",
+    "you have",
+    "u have",
+    "o you have",
+    "o u have",
     "have you got",
     "tell me about",
+    "what about",
+    "how about",
     "describe",
     "what is",
     "what's",
@@ -84,13 +91,13 @@ _STRIP_WORDS = {
     "what", "which", "are", "is", "the", "for", "of", "a", "an",
     "available", "avialable", "availble", "avalable",  # common misspellings
     "do", "you", "have", "can", "tell", "me", "about",
+    "o",
     "describe", "please", "pls", "u", "in", "on", "this", "options",
     "sizes", "size", "flavors", "flavour", "flavours", "flavor",
     "toppings", "topping", "milk", "add-ons", "addons", "add-on",
     "addon", "variants", "variant", "comes", "with", "whats", "s",
     "it",
 }
-
 
 # ---------------------------------------------------------------------------
 # Detection helpers
@@ -122,12 +129,18 @@ def extract_detail_query(message: str) -> tuple[str, str | None]:
     prefixes = [
         "do you have",
         "do u have",
+        "you have",
+        "u have",
+        "o you have",
+        "o u have",
         "have you got",
         "can you describe",
         "can u describe",
         "can you tell me about",
         "can u tell me about",
         "tell me about",
+        "what about",
+        "how about",
         "what sizes are available for",
         "what size is available for",
         "which sizes are available for",
@@ -167,12 +180,31 @@ def extract_detail_query(message: str) -> tuple[str, str | None]:
     return item_name, focus
 
 
+def _normalize_item_query_alias(item_name: str) -> str:
+    normalized = normalize_user_message(str(item_name or "")).strip().lower()
+    return re.sub(r"\s+", " ", normalized)
+
+
+def _looks_like_ice_cream_query(item_name: str) -> bool:
+    normalized = _normalize_item_query_alias(item_name)
+    tokens = normalized.split()
+    if len(tokens) != 2:
+        return False
+
+    first, second = tokens
+    return first == "ice" and SequenceMatcher(None, second, "cream").ratio() >= 0.72
+
+
 def _is_availability_question(message: str) -> bool:
     """Return True for direct availability checks like 'do you have X?'"""
     msg = (message or "").lower().strip()
     return (
         msg.startswith("do you have")
         or msg.startswith("do u have")
+        or msg.startswith("you have")
+        or msg.startswith("u have")
+        or msg.startswith("o you have")
+        or msg.startswith("o u have")
         or msg.startswith("have you got")
         or bool(re.search(r"\bis\s+.+\s+available\b", msg))
     )
@@ -183,8 +215,10 @@ def _is_confident_availability_match(item_query: str, matched_item: dict | None)
     if not item_query or not isinstance(matched_item, dict):
         return False
 
-    query = " ".join(str(item_query).lower().strip().split())
-    matched_name = " ".join(str(matched_item.get("name") or "").lower().strip().split())
+    query = normalize_user_message(str(item_query or ""))
+    matched_name = normalize_user_message(str(matched_item.get("name") or ""))
+    query = " ".join(query.lower().strip().split())
+    matched_name = " ".join(matched_name.lower().strip().split())
     if not query or not matched_name:
         return False
 
@@ -198,6 +232,14 @@ def _is_confident_availability_match(item_query: str, matched_item: dict | None)
     matched_words = set(matched_name.split())
     if query_words.issubset(matched_words):
         return True
+
+    # Single-token typo allowance (e.g. "cappicuno" -> "cappuccino") while
+    # still blocking semantically different words like "matcha" -> "mocha".
+    if len(query_words) == 1 and len(matched_words) == 1:
+        q = next(iter(query_words))
+        m = next(iter(matched_words))
+        if q[:3] == m[:3] and SequenceMatcher(None, q, m).ratio() >= 0.72:
+            return True
 
     return SequenceMatcher(None, query, matched_name).ratio() >= 0.84
 
@@ -315,21 +357,42 @@ async def process_describe_item(
         fetch_menu_item_detail,
         find_menu_item_by_name,
     )
+    from app.services.session_store import get_session, set_session_stage
 
     # Determine query and focus
     item_name, focus = extract_detail_query(normalized_message)
+    item_name = _normalize_item_query_alias(item_name)
     is_availability_query = _is_availability_question(normalized_message)
+    is_ice_cream_query = _looks_like_ice_cream_query(item_name)
 
     # Keep extraction self-contained in this module.
     if not item_name:
         fallback = re.sub(r"[^a-z0-9\s\-]+", " ", (normalized_message or "").lower()).strip()
         fallback = re.sub(
-            r"^(do you have|do u have|have you got|can you describe|can u describe|tell me about|describe|what is|what s|whats)\s+",
+            r"^(do you have|do u have|you have|u have|o you have|o u have|have you got|can you describe|can u describe|tell me about|describe|what is|what s|whats)\s+",
             "",
             fallback,
         ).strip()
         tokens = [t for t in fallback.split() if t and t not in _STRIP_WORDS]
         item_name = " ".join(tokens).strip()
+        item_name = _normalize_item_query_alias(item_name)
+        is_ice_cream_query = _looks_like_ice_cream_query(item_name)
+
+    if not item_name:
+        sess = get_session(session_id)
+        if sess:
+            candidate = (
+                sess.get("last_item_query")
+                or sess.get("last_described_item")
+            )
+            if not candidate:
+                last_items = sess.get("last_items")
+                if isinstance(last_items, list) and last_items and isinstance(last_items[0], dict):
+                    candidate = last_items[0].get("item_name")
+
+            if isinstance(candidate, str) and candidate.strip():
+                item_name = _normalize_item_query_alias(candidate)
+                is_ice_cream_query = _looks_like_ice_cream_query(item_name)
 
     if not item_name:
         return ChatMessageResponse(
@@ -372,10 +435,23 @@ async def process_describe_item(
         )
 
     if not matched_item:
-        if is_availability_query:
+        # Check for ice cream query FIRST, before checking for availability questions
+        # This ensures "add ice cream", "get ice cream", etc. all get the frozen yogurt response
+        if is_ice_cream_query:
+            reply = "No, we don't have ice cream right now, but we do have frozen yogurt."
+        elif is_availability_query:
             reply = f"No, we don't have {item_name} right now."
         else:
             reply = f"I couldn't find \"{item_name}\" on the menu. Want me to recommend something?"
+        
+        # Store the item query in session for follow-up recommendations
+        if not is_availability_query and not is_ice_cream_query and item_name:
+            set_session_stage(session_id, "recommendation_requested")
+            sess = get_session(session_id)
+            if sess:
+                sess["last_recommendation_query"] = item_name
+            sess["last_item_query"] = item_name
+        
         return ChatMessageResponse(
             session_id=session_id,
             status="ok",
@@ -389,12 +465,17 @@ async def process_describe_item(
                 "normalized_message": normalized_message,
                 "item_query": item_name,
                 "pipeline_stage": "describe_item_not_found",
+                "recommendation_category": item_name if not is_ice_cream_query else None,  # Store for recommendation generation  
             },
         )
 
     menu_item_id = matched_item.get("id") or matched_item.get("_id")
     item_detail = await fetch_menu_item_detail(menu_item_id) if menu_item_id is not None else None
     source_item = item_detail if isinstance(item_detail, dict) else matched_item
+
+    sess = get_session(session_id)
+    if sess and item_name:
+        sess["last_item_query"] = item_name
 
     detail_text = build_item_detail_reply(source_item, focus=focus)
     if is_availability_query:
