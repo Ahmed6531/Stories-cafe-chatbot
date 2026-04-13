@@ -741,20 +741,47 @@ def get_menu_detail_variants(menu_detail: dict | None) -> list[dict]:
     if not isinstance(menu_detail, dict):
         return []
 
+    def _is_group_active(group: dict) -> bool:
+        # New structure may carry activity both on the group and nested category.
+        if group.get("isActive") is False:
+            return False
+
+        category = group.get("category")
+        if isinstance(category, dict) and category.get("isActive") is False:
+            return False
+
+        category_model = group.get("categoryModel")
+        if isinstance(category_model, dict) and category_model.get("isActive") is False:
+            return False
+
+        return True
+
     # New structure: backend populates full group objects in variantGroupDetails
     variant_group_details = menu_detail.get("variantGroupDetails")
     if isinstance(variant_group_details, list):
-        return [group for group in variant_group_details if isinstance(group, dict)]
+        return [
+            group
+            for group in variant_group_details
+            if isinstance(group, dict) and _is_group_active(group)
+        ]
 
     # Old structure: variants (if API returned this before)
     variants = menu_detail.get("variants")
     if isinstance(variants, list):
-        return [group for group in variants if isinstance(group, dict)]
+        return [
+            group
+            for group in variants
+            if isinstance(group, dict) and _is_group_active(group)
+        ]
 
     # Fallback: variantGroups might be full objects in legacy payloads
     variant_groups = menu_detail.get("variantGroups")
     if isinstance(variant_groups, list):
-        return [group for group in variant_groups if isinstance(group, dict)]
+        return [
+            group
+            for group in variant_groups
+            if isinstance(group, dict) and _is_group_active(group)
+        ]
 
     return []
 
@@ -833,7 +860,11 @@ def iter_variant_options(menu_detail: dict | None) -> list[tuple[dict, dict]]:
         if not isinstance(options, list):
             continue
         for option in options:
-            if isinstance(option, dict) and option.get("name"):
+            if (
+                isinstance(option, dict)
+                and option.get("name")
+                and option.get("isActive", True) is not False
+            ):
                 variant_options.append((group, option))
 
     return variant_options
@@ -849,6 +880,9 @@ def score_variant_option(
     allow_contains: bool = True,
     enforce_preferred_size: bool = False,
 ) -> int:
+    if option.get("isActive", True) is False:
+        return 0
+
     option_name = normalize_modifier_text(option.get("name"))
     if not option_name:
         return 0
@@ -873,10 +907,6 @@ def score_variant_option(
 
     if score and preferred_size and preferred_size in option_name:
         score += 5
-
-    is_active = option.get("isActive")
-    if score and is_active is False:
-        score -= 2
 
     return score
 

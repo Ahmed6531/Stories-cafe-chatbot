@@ -81,6 +81,30 @@ def _item_id(item: dict[str, Any] | None) -> str | None:
     return None
 
 
+def _is_item_active(item: dict[str, Any] | None) -> bool:
+    if not isinstance(item, dict):
+        return False
+
+    # Keep existing availability gate.
+    if item.get("isAvailable", True) is False:
+        return False
+
+    # New model may expose active status on the item itself.
+    if item.get("isActive") is False:
+        return False
+
+    # Category can be a string or object in newer payloads.
+    category = item.get("category")
+    if isinstance(category, dict) and category.get("isActive") is False:
+        return False
+
+    category_model = item.get("categoryModel")
+    if isinstance(category_model, dict) and category_model.get("isActive") is False:
+        return False
+
+    return True
+
+
 def _is_drink_item(item: dict[str, Any] | None) -> bool:
     if not item:
         return False
@@ -333,7 +357,7 @@ async def suggest_upsell_items(
         item = menu_by_id.get(suggested_id)
         if not item:
             continue
-        if not item.get("isAvailable", True):
+        if not _is_item_active(item):
             continue
         if _safe_lower(item.get("name")) in cart_names:
             continue
@@ -371,7 +395,7 @@ async def suggest_upsell_items(
 
     candidates: list[dict[str, Any]] = []
     for item in menu_items:
-        if not item.get("isAvailable", True):
+        if not _is_item_active(item):
             continue
         name = _safe_lower(item.get("name", ""))
         if name in cart_names:
@@ -461,7 +485,7 @@ async def suggest_upsell_items(
             item
             for item in menu_items
             if isinstance(item, dict)
-            and item.get("isAvailable", True)
+            and _is_item_active(item)
             and _safe_lower(item.get("name")) not in cart_names
         ]
         if not merged_candidates:

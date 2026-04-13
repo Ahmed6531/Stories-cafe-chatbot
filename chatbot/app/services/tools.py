@@ -22,7 +22,51 @@ async def fetch_menu_items():
         })
         data, _ = await client.get("/menu")
         items = data.get("items", []) if isinstance(data, dict) else []
-        return [item for item in items if isinstance(item, dict)]
+        normalized_items = [item for item in items if isinstance(item, dict)]
+
+        # New category model: /menu payload may not include category.isActive.
+        # Cross-check with active categories endpoint to avoid suggesting inactive categories.
+        try:
+            categories_data, _ = await client.get("/menu/categories")
+            categories = categories_data.get("categories", []) if isinstance(categories_data, dict) else []
+
+            active_category_names = {
+                str(category.get("name") or "").strip().lower()
+                for category in categories
+                if isinstance(category, dict) and str(category.get("name") or "").strip()
+            }
+            active_category_slugs = {
+                str(category.get("slug") or "").strip().lower()
+                for category in categories
+                if isinstance(category, dict) and str(category.get("slug") or "").strip()
+            }
+
+            def _item_category_tokens(item: dict) -> set[str]:
+                category = item.get("category")
+                tokens: set[str] = set()
+                if isinstance(category, dict):
+                    for key in ("name", "slug"):
+                        value = str(category.get(key) or "").strip().lower()
+                        if value:
+                            tokens.add(value)
+                elif isinstance(category, str):
+                    value = category.strip().lower()
+                    if value:
+                        tokens.add(value)
+                return tokens
+
+            if active_category_names or active_category_slugs:
+                active_tokens = active_category_names | active_category_slugs
+                normalized_items = [
+                    item
+                    for item in normalized_items
+                    if bool(_item_category_tokens(item) & active_tokens)
+                ]
+        except ExpressAPIError:
+            # Fail open for menu rendering if categories endpoint is unavailable.
+            pass
+
+        return normalized_items
     except ExpressAPIError:
         return []
 

@@ -31,6 +31,8 @@ def _active_option_names(group: dict[str, Any]) -> list[str]:
     for option in options:
         if not isinstance(option, dict):
             continue
+        if option.get("isActive", True) is False:
+            continue
         name = str(option.get("name") or "").strip()
         if name:
             names.append(name)
@@ -83,13 +85,35 @@ def get_menu_detail_variants(menu_detail: dict[str, Any] | None) -> list[dict[st
     if not isinstance(menu_detail, dict):
         return []
 
+    def _is_group_active(group: dict[str, Any]) -> bool:
+        if group.get("isActive") is False:
+            return False
+
+        category = group.get("category")
+        if isinstance(category, dict) and category.get("isActive") is False:
+            return False
+
+        category_model = group.get("categoryModel")
+        if isinstance(category_model, dict) and category_model.get("isActive") is False:
+            return False
+
+        return True
+
     variants = menu_detail.get("variantGroupDetails")
     if isinstance(variants, list):
-        return [group for group in variants if isinstance(group, dict)]
+        return [
+            group
+            for group in variants
+            if isinstance(group, dict) and _is_group_active(group)
+        ]
 
     variants = menu_detail.get("variants")
     if isinstance(variants, list):
-        return [group for group in variants if isinstance(group, dict)]
+        return [
+            group
+            for group in variants
+            if isinstance(group, dict) and _is_group_active(group)
+        ]
 
     return []
 
@@ -544,6 +568,8 @@ def apply_customization_response(
 
         for option in options:
             if not isinstance(option, dict):
+                continue
+            if option.get("isActive", True) is False:
                 continue
             option_name = str(option.get("name") or "").strip()
             if not option_name:
