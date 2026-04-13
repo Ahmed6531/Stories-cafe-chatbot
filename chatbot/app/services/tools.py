@@ -2,6 +2,7 @@
 
 import logging
 import re
+import time
 from difflib import SequenceMatcher, get_close_matches
 
 from app.services.http_client import ExpressHttpClient, ExpressAPIError
@@ -9,10 +10,31 @@ from app.utils.normalize import normalize_user_message
 
 logger = logging.getLogger(__name__)
 
+# ---------- Simple in‑memory cache with TTL ----------
+_cache = {}
+CACHE_TTL_SECONDS = 60  # 1 minute
+
+
+def _cache_get(key: str):
+    entry = _cache.get(key)
+    if entry and entry["expires"] > time.time():
+        return entry["value"]
+    return None
+
+
+def _cache_set(key: str, value):
+    _cache[key] = {"value": value, "expires": time.time() + CACHE_TTL_SECONDS}
+
 
 # ------------------ MENU ------------------
 
 async def fetch_menu_items():
+    cache_key = "menu_items"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        logger.info({"service": "express", "cache_hit": True, "path": "/menu"})
+        return cached
+
     try:
         client = ExpressHttpClient()
         logger.info({
@@ -66,11 +88,19 @@ async def fetch_menu_items():
             # Fail open for menu rendering if categories endpoint is unavailable.
             pass
 
+        _cache_set(cache_key, normalized_items)
         return normalized_items
     except ExpressAPIError:
         return []
 
+
 async def fetch_menu_item_detail(menu_item_id):
+    cache_key = f"menu_item_detail_{menu_item_id}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        logger.info({"service": "express", "cache_hit": True, "path": f"/menu/{menu_item_id}"})
+        return cached
+
     try:
         client = ExpressHttpClient()
         logger.info({
@@ -80,11 +110,20 @@ async def fetch_menu_item_detail(menu_item_id):
             "cart_id": None,
         })
         data, _ = await client.get(f"/menu/{menu_item_id}")
-        return data.get("item")
+        result = data.get("item")
+        _cache_set(cache_key, result)
+        return result
     except ExpressAPIError:
         return None
 
+
 async def fetch_featured_items():
+    cache_key = "featured_items"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        logger.info({"service": "express", "cache_hit": True, "path": "/menu/featured"})
+        return cached
+
     try:
         client = ExpressHttpClient()
         logger.info({
@@ -94,7 +133,9 @@ async def fetch_featured_items():
         })
         data, _ = await client.get("/menu/featured")
         items = data.get("items", []) if isinstance(data, dict) else []
-        return [item for item in items if isinstance(item, dict)]
+        result = [item for item in items if isinstance(item, dict)]
+        _cache_set(cache_key, result)
+        return result
     except ExpressAPIError:
         return []
 
@@ -102,6 +143,7 @@ async def fetch_featured_items():
 # ------------------ CART ------------------
 
 async def get_cart(cart_id=None):
+    # Carts are session‑specific, so we don't cache them.
     try:
         client = ExpressHttpClient()
         headers = {"x-cart-id": cart_id} if cart_id else {}
@@ -172,6 +214,7 @@ async def update_cart_item_quantity(line_id, qty, cart_id):
     except ExpressAPIError:
         return {"cart_id": cart_id, "cart": []}
 
+
 async def remove_item_from_cart(line_id, cart_id):
     try:
         client = ExpressHttpClient()
@@ -185,8 +228,10 @@ async def remove_item_from_cart(line_id, cart_id):
     except ExpressAPIError:
         return {"cart_id": cart_id, "cart": []}
 
+
 async def remove_from_cart(*args, **kwargs):
     return await remove_item_from_cart(*args, **kwargs)
+
 
 async def clear_cart(cart_id):
     try:
@@ -231,6 +276,7 @@ async def fetch_combo_suggestions(anchor_menu_item_ids, exclude_menu_item_ids=No
         return data.get("combos", [])
     except ExpressAPIError:
         return []
+
 
 def _normalize_lookup_text(value: str) -> str:
     normalized = normalize_user_message(str(value or "")).strip().lower()
