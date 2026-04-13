@@ -1,3 +1,5 @@
+# app/services/orchestrator.py
+
 import logging
 import re
 import httpx
@@ -13,6 +15,7 @@ from app.services.session_store import (
     set_session_stage,
     get_checkout_initiated,
     set_checkout_initiated,
+    update_last_action,  # from Task 1
 )
 
 logger = logging.getLogger(__name__)
@@ -1339,6 +1342,162 @@ def build_cart_summary(cart_items: list[dict]) -> str:
     return "\n".join(cart_lines)
 
 
+# ========== Task 1: Handle repeat commands ==========
+async def handle_repeat_command(
+    session_id: str,
+    normalized_message: str,
+    session: Session,
+    cart_id: str | None,
+) -> ChatMessageResponse | None:
+    """
+    Detect and handle repeat commands like "more", "again", "same", "another one".
+    Returns a ChatMessageResponse if handled, otherwise None.
+    """
+    msg_lower = normalized_message.strip().lower()
+    
+    # Define repeat phrases
+    more_phrases = {"more", "another one", "one more", "same again", "another", "duplicate"}
+    again_phrases = {"again", "say that again", "repeat that", "repeat", "once more", "tell me again"}
+    same_phrases = {"same", "same one", "the same", "same item", "same thing"}
+    
+    is_more = any(msg_lower == phrase or msg_lower.startswith(phrase + " ") for phrase in more_phrases)
+    is_again = any(msg_lower == phrase or msg_lower.startswith(phrase + " ") for phrase in again_phrases)
+    is_same = any(msg_lower == phrase or msg_lower.startswith(phrase + " ") for phrase in same_phrases)
+    
+    if not (is_more or is_again or is_same):
+        return None
+    
+    last_action_type = session.get("last_action_type")
+    last_items = session.get("last_items", [])
+    last_bot_response = session.get("last_bot_response")
+    last_matched_items = session.get("last_matched_items", [])
+    
+    # Handle "again" – repeat the last bot response verbatim
+    if is_again:
+        if last_bot_response:
+            return ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply=last_bot_response,
+                intent=session.get("last_intent", "unknown"),
+                cart_updated=False,
+                cart_id=cart_id,
+                defaults_used=[],
+                suggestions=[],
+                metadata={
+                    "normalized_message": normalized_message,
+                    "pipeline_stage": "repeat_command_again",
+                }
+            )
+        else:
+            return ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply="I don't have anything to repeat. What would you like to do?",
+                intent="unknown",
+                cart_updated=False,
+                cart_id=cart_id,
+                defaults_used=[],
+                suggestions=[],
+                metadata={"pipeline_stage": "repeat_command_no_context"}
+            )
+    
+    # Handle "more" / "another one" – add another quantity of the last added item
+    if is_more:
+        if not last_items:
+            return ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply="I'm not sure what you want more of. Please tell me the item name.",
+                intent="unknown",
+                cart_updated=False,
+                cart_id=cart_id,
+                defaults_used=[],
+                suggestions=[],
+                metadata={"pipeline_stage": "repeat_more_no_context"}
+            )
+        
+        # Use the most recent item from last_items
+        last_item = last_items[0] if last_items else None
+        if not last_item or not last_item.get("item_name"):
+            return ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply="I don't remember the last item. Can you say its name again?",
+                intent="unknown",
+                cart_updated=False,
+                cart_id=cart_id,
+                defaults_used=[],
+                suggestions=[],
+                metadata={"pipeline_stage": "repeat_more_item_missing"}
+            )
+        
+        # Reuse the exact same item structure (including customizations)
+        new_item = dict(last_item)
+        # Increase quantity by 1 (or set to 2 if no quantity)
+        current_qty = new_item.get("quantity") or 1
+        new_item["quantity"] = current_qty + 1
+        
+        # Pretend this is a new "add_items" request
+        interpretation = {
+            "intent": "add_items",
+            "items": [new_item],
+            "confidence": 1.0,
+            "fallback_needed": False,
+        }
+        # We'll reuse the existing add_items logic by returning None and letting the main flow handle it
+        # But we need to inject this interpretation into the session so that the normal flow picks it up.
+        # We'll store it as a temporary override.
+        session["_repeat_override"] = interpretation
+        return None  # Let the main orchestrator continue with this override
+    
+    # Handle "same" – add the exact same item (no quantity increase, just add another line)
+    if is_same:
+        if not last_items:
+            return ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply="I don't remember what you ordered. What would you like to add?",
+                intent="unknown",
+                cart_updated=False,
+                cart_id=cart_id,
+                defaults_used=[],
+                suggestions=[],
+                metadata={"pipeline_stage": "repeat_same_no_context"}
+            )
+        
+        last_item = last_items[0] if last_items else None
+        if not last_item or not last_item.get("item_name"):
+            return ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply="I'm not sure which item you mean. Could you say its name?",
+                intent="unknown",
+                cart_updated=False,
+                cart_id=cart_id,
+                defaults_used=[],
+                suggestions=[],
+                metadata={"pipeline_stage": "repeat_same_item_missing"}
+            )
+        
+        # Create a new item with same properties, quantity = 1 (or preserve original quantity? Usually add 1 more)
+        new_item = dict(last_item)
+        # If original had quantity > 1, we still add 1 more (so keep quantity = 1 for the new line)
+        new_item["quantity"] = 1
+        
+        interpretation = {
+            "intent": "add_items",
+            "items": [new_item],
+            "confidence": 1.0,
+            "fallback_needed": False,
+        }
+        session["_repeat_override"] = interpretation
+        return None
+    
+    return None
+# ========== END Task 1 ==========
+
+
 async def process_chat_message(
     session_id: str,
     message: str,
@@ -1401,8 +1560,31 @@ async def process_chat_message(
     record_turn(session_id)
 
     normalized_message = normalize_user_message(message)
-    special_command = detect_special_command(normalized_message)
-    fallback_intent = detect_intent(normalized_message)
+    
+    # ========== Task 1: Handle repeat commands early ==========
+    repeat_response = await handle_repeat_command(session_id, normalized_message, session, cart_id)
+    if repeat_response is not None:
+        # Update last action to avoid infinite loops
+        update_last_action(
+            session_id,
+            normalized_message,
+            repeat_response.reply,
+            repeat_response.intent,
+            action_data={"command": "repeat"}
+        )
+        return repeat_response
+    # If repeat_response is None but there's a _repeat_override, use it
+    repeat_override = session.pop("_repeat_override", None)
+    if repeat_override:
+        interpretation = repeat_override
+        intent = interpretation.get("intent", "unknown")
+        # Skip the normal LLM flow
+        special_command = None
+        fallback_intent = intent
+    else:
+        special_command = detect_special_command(normalized_message)
+        fallback_intent = detect_intent(normalized_message)
+    # ========== END Task 1 ==========
 
     if special_command is not None:
         logger.info(
@@ -1419,7 +1601,7 @@ async def process_chat_message(
             "fallback_needed": False,
         }
         intent = special_command
-    else:
+    elif not repeat_override:  # Only call LLM if we didn't already have an override
         llm_result = try_interpret_message(normalized_message, context=session.get("history", []) if session else [])
 
         if llm_result:
@@ -1463,6 +1645,9 @@ async def process_chat_message(
                 "fallback_needed": True,
             }
             intent = interpretation["intent"]
+    else:
+        # repeat_override already set interpretation and intent
+        pass
 
     if (
         interpretation.get("intent") == "unknown"
@@ -1784,7 +1969,9 @@ async def process_chat_message(
                     or item_display_name
                 )
                 cart_summary = build_cart_summary(cart_result.get("cart", []))
-                reply_text = f"Added {qty} {item_name_for_reply} to your cart."
+                
+                # Improved confirmation message
+                reply_text = f"✅ Added {qty} {item_name_for_reply} to your cart."
                 if cart_summary:
                     reply_text += f"\n\nYour cart now contains:\n{cart_summary}"
 
@@ -1807,9 +1994,7 @@ async def process_chat_message(
                     None,
                 )
                 if upsell_pick:
-                    reply_text += f"\n\nWould you like to add {upsell_pick.get('item_name')}?"
-                    if upsell_pick.get("fun_fact"):
-                        reply_text += f"\n{upsell_pick.get('fun_fact')}"
+                    reply_text += f"\n\nWould you like to add {upsell_pick.get('item_name')}? {upsell_pick.get('fun_fact', '')}"
                 upsell_response_suggestions = [upsell_pick] if upsell_pick else []
 
                 session["pending_clarification"] = None
@@ -1817,6 +2002,15 @@ async def process_chat_message(
                 session["last_items"] = [base_item]
                 session["last_intent"] = "add_items"
                 session["cart_id"] = resolved_cart_id
+
+                update_last_action(
+                    session_id,
+                    normalized_message,
+                    reply_text,
+                    "add_items",
+                    matched_items=[base_item],
+                    action_data={"item_name": item_name_for_reply, "quantity": qty}
+                )
 
                 return ChatMessageResponse(
                     session_id=session_id,
@@ -2034,6 +2228,8 @@ async def process_chat_message(
                 session["pending_clarification"] = None
                 set_session_stage(session_id, None)
 
+            update_last_action(session_id, normalized_message, "Your cart is now empty.", intent, action_data={"cleared": True})
+
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
@@ -2193,6 +2389,8 @@ async def process_chat_message(
                 reply_text = f"Here is your current cart:\n{cart_summary}"
             else:
                 reply_text = "Your cart is empty."
+
+            update_last_action(session_id, normalized_message, reply_text, intent, action_data={"cart_summary": cart_summary})
 
             return ChatMessageResponse(
                 session_id=session_id,
@@ -2387,6 +2585,8 @@ async def process_chat_message(
                     if isinstance(s, dict) and isinstance(s.get("item_name"), str) and s.get("item_name").strip()
                 ]
 
+            update_last_action(session_id, normalized_message, reply_text, intent, action_data={"category": rec_category})
+
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
@@ -2422,6 +2622,7 @@ async def process_chat_message(
                 if isinstance(described_item, str) and described_item.strip():
                     session["last_described_item"] = described_item.strip()
                     session["last_item_query"] = described_item.strip()
+            update_last_action(session_id, normalized_message, describe_response.reply, intent, action_data={"described_item": described_item})
             return describe_response
 
         if intent == "checkout":
@@ -2445,10 +2646,12 @@ async def process_chat_message(
 
             bill = _build_bill(cart_result["cart"])
             set_session_stage(session_id, "checkout_summary")
+            reply_text = "Ready to checkout? Here's your order summary."
+            update_last_action(session_id, normalized_message, reply_text, intent, action_data={"bill": bill})
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
-                reply="Ready to checkout? Here's your order summary.",
+                reply=reply_text,
                 intent=intent,
                 cart_updated=False,
                 cart_id=cart_result["cart_id"],
@@ -2492,6 +2695,7 @@ async def process_chat_message(
                     else "Ready to checkout? Here's your order summary."
                 )
 
+                update_last_action(session_id, normalized_message, reply, intent, action_data={"bill": bill})
                 return ChatMessageResponse(
                     session_id=session_id,
                     status="ok",
@@ -2541,10 +2745,12 @@ async def process_chat_message(
                     if isinstance(item, dict)
                 ]
 
+            reply_text = "Great! Taking you to checkout now."
+            update_last_action(session_id, normalized_message, reply_text, intent, action_data={"checkout": True})
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
-                reply="Great! Taking you to checkout now.",
+                reply=reply_text,
                 intent=intent,
                 cart_updated=False,
                 cart_id=cart_result["cart_id"],
@@ -2701,10 +2907,11 @@ async def process_chat_message(
                 set_session_stage(session_id, None)
 
                 cart_summary = build_cart_summary(updated_cart_result["cart"])
-                reply_text = f"Updated {matched_cart_item.get('name', item_query)} with your new customization."
+                reply_text = f"✅ Updated {matched_cart_item.get('name', item_query)} with your new customization."
                 if cart_summary:
                     reply_text += f"\n\nYour cart now contains:\n{cart_summary}"
 
+                update_last_action(session_id, normalized_message, reply_text, "update_item", matched_items=[target_item], action_data={"item": item_query, "quantity": current_qty})
                 return ChatMessageResponse(
                     session_id=session_id,
                     status="ok",
@@ -2794,11 +3001,12 @@ async def process_chat_message(
             )
             set_session_stage(session_id, None)
             cart_summary = build_cart_summary(updated_cart_result["cart"])
-            reply_text = f"Updated {matched_cart_item.get('name', item_query)} to quantity {quantity}."
+            reply_text = f"✅ Updated {matched_cart_item.get('name', item_query)} to quantity {quantity}."
 
             if cart_summary:
                 reply_text += f"\n\nYour cart now contains:\n{cart_summary}"
 
+            update_last_action(session_id, normalized_message, reply_text, intent, matched_items=[target_item], action_data={"item": item_query, "quantity": quantity})
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
@@ -2930,6 +3138,7 @@ async def process_chat_message(
             else:
                 reply_text += "\n\nYour cart is now empty."
 
+            update_last_action(session_id, normalized_message, reply_text, intent, matched_items=[target_item], action_data={"item": item_query, "quantity_removed": quantity or current_qty})
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
@@ -3533,6 +3742,7 @@ async def process_chat_message(
                     return f"{parts[0]} and {parts[1]}"
                 return ", ".join(parts[:-1]) + f", and {parts[-1]}"
 
+            # Improved confirmation message for single or multiple items
             if len(successful_items) == 1 and not failed_items:
                 added_item = successful_items[0]
                 single_custom_parts = _added_item_customization_parts(added_item)
@@ -3566,14 +3776,14 @@ async def process_chat_message(
                         for item in successful_items
                     ]
                     reply_parts = [
-                        "Added these items to your cart:\n" + "\n".join(added_lines)
+                        "✅ Added these items to your cart:\n" + "\n".join(added_lines)
                     ]
 
                 if failed_items:
                     failed_lines = [_format_failed_item_line(item) for item in failed_items if item]
                     if failed_lines:
                         reply_parts.append(
-                            "I couldn't add these items:\n"
+                            "❌ I couldn't add these items:\n"
                             + "\n".join(failed_lines)
                         )
 
@@ -3583,14 +3793,7 @@ async def process_chat_message(
                 reply_text = "\n\n".join(reply_parts)
 
             if upsell_pick and last_matched_item:
-                context_name = (
-                    (upsell_pick.get("anchor_item_name") or "").strip()
-                    or last_matched_item.get("name")
-                    or successful_items[0]["matched_name"]
-                )
-                reply_text += f"\n\nWould you like to add {upsell_pick.get('item_name')}?"
-                if upsell_pick.get("fun_fact"):
-                    reply_text += f"\n{upsell_pick.get('fun_fact')}"
+                reply_text += f"\n\n✨ Would you like to add {upsell_pick.get('item_name')}? {upsell_pick.get('fun_fact', '')}"
             upsell_response_suggestions = [upsell_pick] if upsell_pick else []
 
             if session is not None:
@@ -3599,6 +3802,16 @@ async def process_chat_message(
                 session["last_intent"] = "add_items"
                 session["pending_clarification"] = None
                 set_session_stage(session_id, None)
+
+            # Update last action for repeat commands (store full item details)
+            update_last_action(
+                session_id,
+                normalized_message,
+                reply_text,
+                "add_items",
+                matched_items=successful_items,
+                action_data={"items_added": len(successful_items), "failed": len(failed_items)}
+            )
 
             return ChatMessageResponse(
                 session_id=session_id,
@@ -3623,7 +3836,7 @@ async def process_chat_message(
             remember_last_item_query(session, normalized_message)
 
         fallback_reply = await generate_fallback_reply(normalized_message)
-        return ChatMessageResponse(
+        response = ChatMessageResponse(
             session_id=session_id,
             status="ok",
             reply=fallback_reply or "I'm not sure how to help with that yet.",
@@ -3638,6 +3851,8 @@ async def process_chat_message(
                 "fallback_source": "llm" if fallback_reply else "static",
             },
         )
+        update_last_action(session_id, normalized_message, response.reply, intent, action_data={"fallback": True})
+        return response
 
     except (ExpressAPIError, httpx.RequestError) as e:
         return ChatMessageResponse(
