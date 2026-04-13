@@ -321,6 +321,15 @@ async def suggest_upsell_items(
     recent_is_drink = _is_drink_item(recent_item)
     recent_is_food = _is_food_item(recent_item)
 
+    def _matches_recent_anchor(item: dict[str, Any] | None) -> bool:
+        if not isinstance(item, dict):
+            return False
+        if recent_is_drink:
+            return _is_food_item(item)
+        if recent_is_food:
+            return _is_drink_item(item)
+        return True
+
     # Try to fetch combos for the most recent item first (primary anchor)
     # to ensure upsell suggestions are anchored to the item just added.
     primary_combo_stats = []
@@ -451,14 +460,13 @@ async def suggest_upsell_items(
     if not priority_combo_records:
         priority_combo_records = scoped_combo_records
 
-    if recent_is_food:
-        preferred = [record for record in priority_combo_records if _is_drink_item(record.get("item"))]
-        if preferred:
-            priority_combo_records = preferred
-    elif recent_is_drink:
-        preferred = [record for record in priority_combo_records if _is_food_item(record.get("item"))]
-        if preferred:
-            priority_combo_records = preferred
+    # Strict anchor matching: only keep combo suggestions that complement
+    # the most recently added item when its type is known.
+    if recent_is_food or recent_is_drink:
+        priority_combo_records = [
+            record for record in priority_combo_records
+            if _matches_recent_anchor(record.get("item"))
+        ]
 
     priority_combo_records.sort(
         key=lambda record: (
@@ -466,13 +474,19 @@ async def suggest_upsell_items(
             not bool(record.get("is_complementary")),
         )
     )
-    combo_items_ordered = [record["item"] for record in priority_combo_records if isinstance(record.get("item"), dict)]
+    combo_items_ordered = [
+        record["item"]
+        for record in priority_combo_records
+        if isinstance(record.get("item"), dict)
+    ]
 
     # Merge candidates while preserving combo priority and avoiding duplicates.
     merged_candidates: list[dict] = []
     seen_names: set[str] = set()
 
     for item in combo_items_ordered + candidates:
+        if not _matches_recent_anchor(item):
+            continue
         name = _safe_lower(item.get("name"))
         if not name or name in seen_names:
             continue
@@ -480,6 +494,9 @@ async def suggest_upsell_items(
         merged_candidates.append(item)
 
     if not merged_candidates:
+        # If we know the latest item type, do not offer unrelated upsells.
+        if recent_is_food or recent_is_drink:
+            return []
         # Ultimate fallback: suggest any available item not already in cart.
         merged_candidates = [
             item
