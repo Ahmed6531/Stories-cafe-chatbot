@@ -500,16 +500,20 @@ def build_customization_suggestions(
     for group in missing_groups:
         label = _group_label(group)
         group_key = _group_key(group)
+        options = _active_option_names(group)[:max_options_per_group]
+
         raw_max = group.get("maxSelections")
         if isinstance(raw_max, int) and raw_max > 0:
             max_selections = raw_max
+        elif raw_max is None:
+            # null means unlimited in backend schema; expose as multi-select in checklist.
+            max_selections = max(1, len(options))
         else:
             max_selections = 1
 
         if group_key == "addons" and "flavor" in _normalize_text(label):
             max_selections = min(max_selections, 2) if max_selections > 1 else 2
 
-        options = _active_option_names(group)[:max_options_per_group]
         for option_name in options:
             input_text = str(option_name).strip()
             key = _normalize_text(input_text)

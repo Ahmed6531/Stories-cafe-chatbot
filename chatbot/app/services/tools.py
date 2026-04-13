@@ -116,6 +116,29 @@ async def fetch_menu_item_detail(menu_item_id):
     except ExpressAPIError:
         return None
 
+async def fetch_my_orders(auth_cookie: str | None = None, limit: int = 20):
+    """Fetch authenticated user's recent orders from backend."""
+    try:
+        client = ExpressHttpClient()
+        headers = {}
+        if isinstance(auth_cookie, str) and auth_cookie.strip():
+            headers["cookie"] = auth_cookie.strip()
+
+        logger.info({
+            "service": "express",
+            "method": "GET",
+            "path": "/orders/my",
+        })
+
+        data, _ = await client.get("/orders/my", headers=headers)
+        orders = data.get("orders", []) if isinstance(data, dict) else []
+        if not isinstance(orders, list):
+            return []
+        if isinstance(limit, int) and limit > 0:
+            return [order for order in orders if isinstance(order, dict)][:limit]
+        return [order for order in orders if isinstance(order, dict)]
+    except ExpressAPIError:
+        return []
 
 async def fetch_featured_items():
     cache_key = "featured_items"

@@ -59,6 +59,8 @@ DETAIL_TRIGGER_PHRASES: list[str] = [
     "o u have",
     "have you got",
     "tell me about",
+    "tell me more",
+    "tell me more about",
     "what about",
     "how about",
     "describe",
@@ -97,6 +99,13 @@ _STRIP_WORDS = {
     "toppings", "topping", "milk", "add-ons", "addons", "add-on",
     "addon", "variants", "variant", "comes", "with", "whats", "s",
     "it",
+}
+
+_DIETARY_ALIASES: dict[str, list[str]] = {
+    "vegan": ["vegan", "plant based", "plant-based", "no dairy", "dairy free", "dairy-free"],
+    "vegetarian": ["vegetarian", "veggie"],
+    "gluten-free": ["gluten free", "gluten-free", "no gluten"],
+    "dairy-free": ["dairy free", "dairy-free", "no dairy", "lactose free", "lactose-free"],
 }
 
 # ---------------------------------------------------------------------------
@@ -210,6 +219,87 @@ def _is_availability_question(message: str) -> bool:
     )
 
 
+def _extract_dietary_preferences(message: str, item_query: str) -> list[str]:
+    """Extract dietary preference keywords from message/query."""
+    hay = f"{(message or '').lower()} {(item_query or '').lower()}"
+    matched: list[str] = []
+    for canonical, aliases in _DIETARY_ALIASES.items():
+        if any(alias in hay for alias in aliases):
+            matched.append(canonical)
+    return matched
+
+
+def _find_dietary_menu_matches(menu_items: list[dict], preferences: list[str], limit: int = 5) -> list[str]:
+    """Find menu items whose text suggests they satisfy requested dietary preferences."""
+    if not preferences:
+        return []
+
+    results: list[str] = []
+    seen: set[str] = set()
+
+    for item in menu_items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("isAvailable", True) is False:
+            continue
+
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+
+        hay = " ".join(
+            [
+                str(item.get("name") or ""),
+                str(item.get("description") or ""),
+                str(item.get("category") or ""),
+                str(item.get("subcategory") or ""),
+            ]
+        ).lower()
+
+        matched_all = True
+        for pref in preferences:
+            aliases = _DIETARY_ALIASES.get(pref, [pref])
+            if not any(alias in hay for alias in aliases):
+                matched_all = False
+                break
+
+        if matched_all:
+            key = name.lower()
+            if key not in seen:
+                seen.add(key)
+                results.append(name)
+            if len(results) >= limit:
+                break
+
+    return results
+
+
+def _resolve_ordinal_reference(message: str, session: dict | None) -> str:
+    """Resolve references like 'the first one' from last recommendation results."""
+    if not isinstance(session, dict):
+        return ""
+
+    candidates = session.get("last_recommendation_items")
+    if not isinstance(candidates, list):
+        return ""
+
+    names = [str(name).strip() for name in candidates if isinstance(name, str) and str(name).strip()]
+    if not names:
+        return ""
+
+    msg = (message or "").lower()
+    if any(phrase in msg for phrase in ["first one", "1st", "number one", "the first"]):
+        return names[0]
+    if len(names) >= 2 and any(phrase in msg for phrase in ["second one", "2nd", "number two", "the second"]):
+        return names[1]
+    if len(names) >= 3 and any(phrase in msg for phrase in ["third one", "3rd", "number three", "the third"]):
+        return names[2]
+    if any(phrase in msg for phrase in ["last one", "the last"]):
+        return names[-1]
+
+    return ""
+
+
 def _is_confident_availability_match(item_query: str, matched_item: dict | None) -> bool:
     """Be stricter for yes/no availability checks to avoid weak fuzzy matches."""
     if not item_query or not isinstance(matched_item, dict):
@@ -252,6 +342,14 @@ def _fmt_price(value) -> str:
     return f"L.L {int(float(value or 0)):,}"
 
 
+def _group_label(group: dict) -> str:
+    return (
+        str(group.get("customerLabel") or "").strip()
+        or str(group.get("name") or "").strip()
+        or str(group.get("adminName") or "").strip()
+    )
+
+
 def _build_variants_text(variants: list[dict], focus: str | None) -> str:
     """Format variant groups into a readable reply section."""
     if not isinstance(variants, list) or not variants:
@@ -262,7 +360,7 @@ def _build_variants_text(variants: list[dict], focus: str | None) -> str:
         if not isinstance(group, dict):
             continue
 
-        group_name: str = (group.get("name") or "").strip()
+        group_name = _group_label(group)
         if not group_name:
             continue
 
@@ -378,8 +476,9 @@ async def process_describe_item(
         item_name = _normalize_item_query_alias(item_name)
         is_ice_cream_query = _looks_like_ice_cream_query(item_name)
 
+    sess = get_session(session_id)
+
     if not item_name:
-        sess = get_session(session_id)
         if sess:
             candidate = (
                 sess.get("last_item_query")
@@ -393,6 +492,15 @@ async def process_describe_item(
             if isinstance(candidate, str) and candidate.strip():
                 item_name = _normalize_item_query_alias(candidate)
                 is_ice_cream_query = _looks_like_ice_cream_query(item_name)
+
+    if sess:
+        ordinal_item = _resolve_ordinal_reference(normalized_message, sess)
+        if ordinal_item:
+            # Ordinal references ("first one", "second one", etc.) should
+            # take precedence over brittle phrase extraction like
+            # "tell me more about the first one" -> "more first one".
+            item_name = _normalize_item_query_alias(ordinal_item)
+            is_ice_cream_query = _looks_like_ice_cream_query(item_name)
 
     if not item_name:
         return ChatMessageResponse(
@@ -411,6 +519,50 @@ async def process_describe_item(
         )
 
     menu_items = await fetch_menu_items()
+
+    dietary_preferences = _extract_dietary_preferences(normalized_message, item_name)
+    if is_availability_query and dietary_preferences:
+        dietary_matches = _find_dietary_menu_matches(menu_items, dietary_preferences)
+        dietary_label = " and ".join(dietary_preferences)
+        if dietary_matches:
+            lines = "\n".join(f"- {name}" for name in dietary_matches)
+            return ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply=f"Yes, we have some {dietary_label} options:\n{lines}",
+                intent=intent,
+                cart_updated=False,
+                cart_id=cart_id,
+                defaults_used=[],
+                suggestions=[],
+                metadata={
+                    "normalized_message": normalized_message,
+                    "item_query": item_name,
+                    "dietary_preferences": dietary_preferences,
+                    "pipeline_stage": "describe_item_dietary_match",
+                },
+            )
+
+        return ChatMessageResponse(
+            session_id=session_id,
+            status="ok",
+            reply=(
+                f"I don't currently see items explicitly labeled {dietary_label}. "
+                "If you'd like, I can suggest customizable drinks and food options."
+            ),
+            intent=intent,
+            cart_updated=False,
+            cart_id=cart_id,
+            defaults_used=[],
+            suggestions=[],
+            metadata={
+                "normalized_message": normalized_message,
+                "item_query": item_name,
+                "dietary_preferences": dietary_preferences,
+                "pipeline_stage": "describe_item_dietary_no_match",
+            },
+        )
+
     matched_item = await find_menu_item_by_name(menu_items, item_name)
     if is_availability_query and matched_item and not _is_confident_availability_match(item_name, matched_item):
         matched_item = None

@@ -1,7 +1,7 @@
 import logging
 from time import perf_counter
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from app.schemas.chat import ChatMessageRequest, ChatMessageResponse
 from app.services.orchestrator import process_chat_message
 from app.services.session_store import get_session
@@ -52,7 +52,7 @@ def _update_session_from_response(session: dict, response: ChatMessageResponse) 
 
 
 @router.post("/message", response_model=ChatMessageResponse)
-async def send_message(payload: ChatMessageRequest) -> ChatMessageResponse:
+async def send_message(payload: ChatMessageRequest, request: Request) -> ChatMessageResponse:
     started_at = perf_counter()
     pipeline_stage = "validation"
     intent = "unknown"
@@ -70,6 +70,7 @@ async def send_message(payload: ChatMessageRequest) -> ChatMessageResponse:
             message=payload.message,
             cart_id=effective_cart_id,
             session=session,
+            auth_cookie=request.headers.get("cookie"),
         )
 
         pipeline_stage = response.metadata.get("pipeline_stage", "unknown")
