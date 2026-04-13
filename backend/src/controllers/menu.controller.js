@@ -184,7 +184,10 @@ export async function getMenuCategories(req, res) {
 export async function getMenu(req, res) {
   try {
     console.log("📥 GET /menu request received");
-    const items = await MenuItem.find({})
+    const activeCategories = await Category.find({ isActive: { $ne: false } }).select("_id");
+    const activeCategoryIds = activeCategories.map((c) => c._id);
+
+    const items = await MenuItem.find({ category: { $in: activeCategoryIds } })
       .populate("category", "name slug image subcategories")
       .select("id name slug image category subcategory description basePrice isAvailable isFeatured variantGroups")
       .sort({ name: 1 });
@@ -238,9 +241,13 @@ export async function getMenuItem(req, res) {
 
 export async function getFeaturedMenu(req, res) {
   try {
+    const activeCategories = await Category.find({ isActive: { $ne: false } }).select("_id");
+    const activeCategoryIds = activeCategories.map((c) => c._id);
+
     const featuredItems = await MenuItem.find({
       isFeatured: true,
       isAvailable: true,
+      category: { $in: activeCategoryIds },
     })
       .populate("category", "name slug image subcategories")
       .select("id name slug image category subcategory description basePrice isAvailable isFeatured");
