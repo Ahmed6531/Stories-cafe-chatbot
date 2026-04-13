@@ -553,9 +553,21 @@ def apply_customization_response(
             normalized_description = _normalize_text(option.get("description"))
             option_aliases = _option_aliases(option_name, group_key)
 
-            if not any(_phrase_matches_message(normalized_message, alias) for alias in option_aliases):
-                if not (normalized_description and _phrase_matches_message(normalized_message, normalized_description)):
+            alias_matched = any(
+                _phrase_matches_message(normalized_message, alias)
+                for alias in option_aliases
+            )
+            description_matched = bool(
+                normalized_description and _phrase_matches_message(normalized_message, normalized_description)
+            )
+
+            # Add-on style groups often share generic descriptions (e.g., "decaf").
+            # Matching by description there can incorrectly select multiple options.
+            if group_key == "addons":
+                if not alias_matched:
                     continue
+            elif not alias_matched and not description_matched:
+                continue
 
             if group_key == "milk" and ("small" in normalized_option or "medium" in normalized_option or "large" in normalized_option):
                 # If the option name includes a size but user didn't mention one,

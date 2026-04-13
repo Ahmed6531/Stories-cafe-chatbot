@@ -733,15 +733,25 @@ def normalize_modifier_text(value: str | None) -> str:
 
 
 def get_menu_detail_variants(menu_detail: dict | None) -> list[dict]:
-    """Return normalized variant groups from a menu detail payload."""
+    """Return normalized variant groups from a menu detail payload.
+    
+    After 'categories became a model', the backend returns variantGroupDetails.
+    Falls back to older structures (variants, variantGroups) for compatibility.
+    """
     if not isinstance(menu_detail, dict):
         return []
 
+    # New structure: backend populates full group objects in variantGroupDetails
+    variant_group_details = menu_detail.get("variantGroupDetails")
+    if isinstance(variant_group_details, list):
+        return [group for group in variant_group_details if isinstance(group, dict)]
+
+    # Old structure: variants (if API returned this before)
     variants = menu_detail.get("variants")
     if isinstance(variants, list):
         return [group for group in variants if isinstance(group, dict)]
 
-    # Backward-compatible fallback for payloads that still expose variantGroups.
+    # Fallback: variantGroups might be full objects in legacy payloads
     variant_groups = menu_detail.get("variantGroups")
     if isinstance(variant_groups, list):
         return [group for group in variant_groups if isinstance(group, dict)]
@@ -1000,6 +1010,9 @@ def map_requested_item_to_selected_options(
 
     addons = requested_item.get("addons")
     if isinstance(addons, list):
+        # Track selections per group to respect maxSelections constraint
+        group_selections: dict[str, list[str]] = {}
+        
         for addon in addons:
             addon_candidates = expand_candidates(addon, ADDON_CANDIDATES)
             matched_addon = find_variant_option(
@@ -1008,7 +1021,36 @@ def map_requested_item_to_selected_options(
                 allow_contains=True,
             )
             if matched_addon:
-                append_selected_option(selected_options, matched_addon.get("name"))
+                # Find which group this option belongs to
+                option_group = None
+                for group in get_menu_detail_variants(menu_detail):
+                    if not isinstance(group, dict):
+                        continue
+                    group_options = group.get("options", [])
+                    if any(opt.get("name") == matched_addon.get("name") for opt in group_options if isinstance(opt, dict)):
+                        option_group = group
+                        break
+                
+                # Check maxSelections constraint
+                max_selections = None
+                if option_group:
+                    max_selections = option_group.get("maxSelections")
+                    group_id = normalize_modifier_text(option_group.get("name") or "")
+                    
+                    # Initialize group tracking if needed
+                    if group_id not in group_selections:
+                        group_selections[group_id] = []
+                    
+                    # Only add if we haven't exceeded maxSelections
+                    if max_selections is None or len(group_selections[group_id]) < max_selections:
+                        append_selected_option(selected_options, matched_addon.get("name"))
+                        group_selections[group_id].append(matched_addon.get("name"))
+                    else:
+                        # Exceeded maxSelections - add to instructions instead
+                        add_unique_phrase(instruction_parts, str(addon))
+                else:
+                    # If we can't find the group, add it (fallback)
+                    append_selected_option(selected_options, matched_addon.get("name"))
             else:
                 add_unique_phrase(instruction_parts, str(addon))
                 unsupported_customizations.append(str(addon).strip())
