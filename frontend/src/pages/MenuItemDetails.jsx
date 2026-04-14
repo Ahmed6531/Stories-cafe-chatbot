@@ -431,7 +431,7 @@ function ItemArtwork({ item, showPlaceholder, onImageError, imageSx }) {
 
 function MenuItemHero({
   item,
-  unitPrice,
+  basePrice,
   qty,
   onDecrease,
   onIncrease,
@@ -520,7 +520,7 @@ function MenuItemHero({
               mb: { xs: 0.75, md: 1.25 },
             }}
           >
-            {formatLL(unitPrice)}
+            {formatLL(basePrice)}
           </Typography>
 
           <QuantitySelector
@@ -588,7 +588,7 @@ function MenuItemHero({
               </Typography>
             )}
             <Typography variant="h6" fontWeight={900} sx={{ mt: 1, fontFamily: theme.brand.fontBase }}>
-              {formatLL(unitPrice)}
+              {formatLL(basePrice)}
             </Typography>
           </Box>
           <QuantitySelector
@@ -1059,7 +1059,7 @@ const isEditMode = Boolean(cartItemToEdit)
 
       <MenuItemHero
         item={item}
-        unitPrice={unitPrice}
+        basePrice={item.basePrice}
         qty={qty}
         onDecrease={decrementQty}
         onIncrease={incrementQty}

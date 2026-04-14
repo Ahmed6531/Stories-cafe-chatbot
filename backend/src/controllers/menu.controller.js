@@ -206,8 +206,11 @@ export async function getMenuItem(req, res) {
     const { id } = req.params;
     console.log(`📥 GET /menu/${id} request received`);
     const menuItem = await MenuItem.findOne({ id: parseInt(id) })
-      .populate("category", "name slug image subcategories");
+      .populate("category", "name slug image subcategories isActive");
     if (!menuItem) {
+      return res.status(404).json({ success: false, error: "Menu item not found" });
+    }
+    if (menuItem.category?.isActive === false) {
       return res.status(404).json({ success: false, error: "Menu item not found" });
     }
     let itemResponse = menuItem.toObject();
