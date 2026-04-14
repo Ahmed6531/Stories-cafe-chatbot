@@ -2,16 +2,10 @@ import { Box, styled } from '@mui/material'
 import { useDragScroll } from '../../hooks/useDragScroll'
 import { categoryChipLayout } from '../../theme/layoutTokens'
 
-const categoryImages = {
-  Coffee: '/images/coffee.png',
-  'Mixed Beverages': '/images/mixedbev.png',
-  Pastries: '/images/pastries.png',
-  Salad: '/images/salad.png',
-  Sandwiches: '/images/sandwiches.png',
-  'Soft Drinks': '/images/soft-drinks.png',
-  Tea: '/images/tea.png',
-  Yogurts: '/images/yogurt.png',
-}
+// Inline SVG fallback shown when a category image is missing or fails to load.
+// A fork-and-knife (utensils) icon in neutral gray — no external file dependency.
+const CATEGORY_FALLBACK_SVG =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2'/%3E%3Cpath d='M7 2v20'/%3E%3Cpath d='M21 15V2a5 5 0 0 0-5 5v6h3.5a1.5 1.5 0 0 1 0 3H16v4'/%3E%3C/svg%3E"
 
 const RailWrap = styled(Box)(({ theme }) => ({
   position: 'relative',
@@ -195,8 +189,8 @@ const EmptyText = styled('span')(({ theme }) => ({
   fontFamily: theme.brand.fontBase,
 }))
 
-function getCategoryLabel(category) {
-  return category === 'Mixed Beverages' ? 'Mixed Bev.' : category
+function getCategoryLabel(name) {
+  return name === 'Mixed Beverages' ? 'Mixed Bev.' : name
 }
 
 export default function CategoryRail({
@@ -217,21 +211,21 @@ export default function CategoryRail({
         <RailInner>
           {categories.map((category) => (
             <RailChip
-              key={category}
+              key={category.slug}
               type="button"
-              isActive={activeCategory === category}
-              onClick={() => onCategorySelect(category)}
+              isActive={activeCategory === category.slug}
+              onClick={() => onCategorySelect(category.slug)}
             >
               <RailChipContent>
                 <RailChipImage
-                  src={categoryImages[category] || '/images/placeholder.png'}
-                  alt={category}
+                  src={category.image || CATEGORY_FALLBACK_SVG}
+                  alt={category.name}
                   draggable={false}
                   onError={(event) => {
-                    event.currentTarget.src = '/images/placeholder.png'
+                    event.currentTarget.src = CATEGORY_FALLBACK_SVG
                   }}
                 />
-                <RailChipText>{getCategoryLabel(category)}</RailChipText>
+                <RailChipText>{getCategoryLabel(category.name)}</RailChipText>
               </RailChipContent>
             </RailChip>
           ))}

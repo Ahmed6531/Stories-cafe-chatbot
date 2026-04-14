@@ -1,30 +1,3 @@
-/*import mongoose from "mongoose";
-
-const OptionSchema = new mongoose.Schema(
-  {
-    label: String,
-    priceDelta: { type: Number, default: 0 }
-  },
-  { _id: false }
-);
-
-const MenuItemSchema = new mongoose.Schema(
-  {
-    id: { type: Number, unique: true },
-    slug: { type: String, unique: true },
-    name: String,
-    description: String,
-    basePrice: Number,
-    category: String,
-    options: [OptionSchema],
-    isFeatured: Boolean,
-    isAvailable: { type: Boolean, default: true }
-  },
-  { timestamps: true }
-);
-
-export const MenuItem = mongoose.model("MenuItem", MenuItemSchema);*/
-
 import mongoose from "mongoose";
 
 const menuItemSchema = new mongoose.Schema(
@@ -48,10 +21,12 @@ const menuItemSchema = new mongoose.Schema(
     },
     image: {
       type: String,
-      required: true,
+      required: false,
+      default: "",
     },
     category: {
-      type: String,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
       required: true,
     },
     subcategory: {
@@ -75,15 +50,8 @@ const menuItemSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    // NEW: Reference to variant groups instead of storing them directly
+    // Ordered list of canonical variant group refs attached to this item
     variantGroups: [
-      {
-        type: String,
-        required: false,
-      },
-    ],
-    // Optional: Store order of variant groups if needed
-    variantGroupOrder: [
       {
         type: String,
         required: false,
