@@ -200,31 +200,28 @@ async def get_cart(cart_id=None):
 
 
 async def add_item_to_cart(menu_item_id, qty, selected_options, instructions, cart_id):
-    try:
-        client = ExpressHttpClient()
-        headers = {"x-cart-id": cart_id} if cart_id else {}
+    client = ExpressHttpClient()
+    headers = {"x-cart-id": cart_id} if cart_id else {}
 
-        payload = {
-            "menuItemId": menu_item_id,
-            "qty": qty,
-            "selectedOptions": selected_options or [],
-            "instructions": instructions or "",
-        }
+    payload = {
+        "menuItemId": menu_item_id,
+        "qty": qty,
+        "selectedOptions": selected_options or [],
+        "instructions": instructions or "",
+    }
 
-        logger.info({
-            "service": "express",
-            "method": "POST",
-            "path": "/cart/items",
-            "cart_id": cart_id,
-        })
+    logger.info({
+        "service": "express",
+        "method": "POST",
+        "path": "/cart/items",
+        "cart_id": cart_id,
+    })
 
-        data, resp_headers = await client.post("/cart/items", json=payload, headers=headers)
-        resolved_cart_id = resp_headers.get("x-cart-id") or cart_id or (data.get("cartId") if isinstance(data, dict) else None)
-        cart_items = data.get("items", []) if isinstance(data, dict) else []
+    data, resp_headers = await client.post("/cart/items", json=payload, headers=headers)
+    resolved_cart_id = resp_headers.get("x-cart-id") or cart_id or (data.get("cartId") if isinstance(data, dict) else None)
+    cart_items = data.get("items", []) if isinstance(data, dict) else []
 
-        return {"cart_id": resolved_cart_id, "cart": [item for item in cart_items if isinstance(item, dict)]}
-    except ExpressAPIError:
-        return {"cart_id": cart_id, "cart": []}
+    return {"cart_id": resolved_cart_id, "cart": [item for item in cart_items if isinstance(item, dict)]}
 
 
 async def update_cart_item_quantity(line_id, qty, cart_id):
