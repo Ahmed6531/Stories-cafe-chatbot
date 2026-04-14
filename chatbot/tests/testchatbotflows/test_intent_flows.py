@@ -56,6 +56,8 @@ REMOVE_ITEM_TARGET = "app.services.tools.remove_item_from_cart"
 ORDERS_TARGET = "app.services.tools.fetch_my_orders"
 FALLBACK_TARGET = "app.services.orchestrator.generate_fallback_reply"
 COMBO_TARGET = "app.services.tools.fetch_combo_suggestions"
+FEATURED_TARGET = "app.services.tools.fetch_featured_items"
+UPSELL_TARGET = "app.services.upsell.get_upsell_suggestions"
 
 
 def _latte_requested_item():
@@ -113,6 +115,8 @@ class TestAddItemsFlow(unittest.IsolatedAsyncioTestCase):
             patch(MENU_DETAIL_TARGET, new=AsyncMock(return_value=fake_menu_item_detail_no_variants("Latte"))),
             patch(ADD_CART_TARGET, new=AsyncMock(return_value=cart_after)),
             patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
+            patch(FEATURED_TARGET, new=AsyncMock(return_value=[])),
+            patch(UPSELL_TARGET, new=AsyncMock(return_value=[])),
         ):
             response = await process_chat_message(
                 session_id="s-add",

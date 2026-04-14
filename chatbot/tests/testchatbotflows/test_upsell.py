@@ -161,11 +161,14 @@ class TestSuggestUpsellItems(unittest.IsolatedAsyncioTestCase):
             results = await suggest_upsell_items(cart, menu, limit=1, anchor_menu_item=_food_item())
 
         self.assertGreater(len(results), 0)
+        menu_by_name = {item["name"]: item for item in menu}
         for r in results:
-            name = r["item_name"].lower()
-            self.assertTrue(
-                "latte" in name or "cappuccino" in name or "water" in name,
-                f"Expected drink item but got: {r['item_name']}"
+            suggested_item = menu_by_name.get(r["item_name"])
+            self.assertIsNotNone(suggested_item, f"Expected menu item but got: {r['item_name']}")
+            self.assertEqual(
+                suggested_item.get("category"),
+                "beverages",
+                f"Expected drink item but got: {r['item_name']}",
             )
 
     async def test_empty_menu_returns_empty(self):

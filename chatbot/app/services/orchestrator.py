@@ -1432,11 +1432,11 @@ async def handle_repeat_command(
                 metadata={"pipeline_stage": "repeat_more_item_missing"}
             )
         
-        # Reuse the exact same item structure (including customizations)
+        # Reuse the exact same item structure (including customizations).
+        # "Another one" means add one more line/unit; Express will merge it
+        # into the existing cart line when options/instructions match.
         new_item = dict(last_item)
-        # Increase quantity by 1 (or set to 2 if no quantity)
-        current_qty = new_item.get("quantity") or 1
-        new_item["quantity"] = current_qty + 1
+        new_item["quantity"] = extract_quantity_value(msg_lower) or 1
         
         # Pretend this is a new "add_items" request
         interpretation = {

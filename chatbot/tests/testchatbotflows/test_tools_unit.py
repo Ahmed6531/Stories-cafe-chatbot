@@ -231,17 +231,15 @@ class TestAddItemToCart(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(payload["qty"], 2)
             self.assertEqual(payload["instructions"], "extra crispy")
 
-    async def test_returns_empty_cart_on_api_error(self):
+    async def test_raises_on_api_error_so_orchestrator_can_report_failure(self):
         from app.services.http_client import ExpressAPIError
         with patch("app.services.tools.ExpressHttpClient") as MockClient:
             instance = MagicMock()
             instance.post = AsyncMock(side_effect=ExpressAPIError("500 Server Error"))
             MockClient.return_value = instance
 
-            result = await add_item_to_cart("item-latte", 1, [], "", "cart-err")
-
-        self.assertEqual(result["cart"], [])
-        self.assertEqual(result["cart_id"], "cart-err")
+            with self.assertRaises(ExpressAPIError):
+                await add_item_to_cart("item-latte", 1, [], "", "cart-err")
 
 
 class TestUpdateCartItemQuantity(unittest.IsolatedAsyncioTestCase):
