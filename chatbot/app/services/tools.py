@@ -94,6 +94,11 @@ async def fetch_menu_items():
         return []
 
 
+def invalidate_menu_cache():
+    _cache.pop("menu_items", None)
+    logger.info("Menu cache invalidated")
+
+
 async def fetch_menu_item_detail(menu_item_id):
     cache_key = f"menu_item_detail_{menu_item_id}"
     cached = _cache_get(cache_key)
