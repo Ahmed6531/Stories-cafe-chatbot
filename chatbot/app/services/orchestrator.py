@@ -1374,13 +1374,32 @@ async def process_chat_message(
         )
 
     if not _skip_resolve:
-        resolved = await resolve_intent(
-            message=normalized_message,
-            session=session or {},
-            cart={},
-            menu=[],
-        )
-        intent = resolved["intent"]
+        try:
+            resolved = await resolve_intent(
+                message=normalized_message,
+                session=session or {},
+                cart={},
+                menu=[],
+            )
+            intent = resolved["intent"]
+        except Exception as _resolve_err:
+            logger.warning({
+                "stage": "resolve_intent_failed",
+                "session_id": session_id,
+                "error": str(_resolve_err),
+            })
+            resolved = {
+                "intent": "unknown",
+                "confidence": 0.0,
+                "items": [],
+                "follow_up_ref": None,
+                "needs_clarification": False,
+                "reason": "resolve_intent_exception",
+                "source": "error",
+                "route_to_fallback": True,
+                "fallback_needed": True,
+            }
+            intent = "unknown"
 
     try:
         if get_session_stage(session_id) == "guided_ordering" and intent != "guided_order_response":
