@@ -22,6 +22,7 @@ from app.services.session_store import (
     set_guided_order_step,
     set_session_stage,
 )
+from app.services.session_store import sessions
 
 
 def build_latte_menu_detail() -> dict:
@@ -809,6 +810,94 @@ class FallbackPromptTests(unittest.TestCase):
     def test_finalize_reply_rejects_flirty_output(self) -> None:
         reply = _finalize_reply("hello", "Hey beautiful, I'd love to chat more with you.")
         self.assertEqual(reply, "Hello! What would you like to order?")
+
+    async def test_add_flow_returns_fresh_suggestions_after_previous_upsells(self) -> None:
+        sessions.clear()
+
+        interpreted = {
+            "intent": "add_items",
+            "items": [
+                {
+                    "item_name": "bluenade",
+                    "quantity": 1,
+                    "size": None,
+                    "options": {},
+                    "addons": [],
+                    "instructions": "",
+                }
+            ],
+            "confidence": 0.95,
+            "fallback_needed": False,
+        }
+        matched_item = {
+            "id": 48,
+            "name": "Bluenade",
+            "category": "Mixed Beverages",
+            "subcategory": "Iced",
+        }
+        add_result = {
+            "cart_id": "cart456",
+            "cart": [{"name": "Bluenade", "qty": 1}],
+        }
+        sessions["session-2"] = {
+            "session_id": "session-2",
+            "cart_id": None,
+            "last_items": [],
+            "last_intent": None,
+            "stage": None,
+            "checkout_initiated": False,
+            "upsell_shown": ["mocha frap", "double chocolate chip walnut"],
+        }
+
+        with patch("app.services.orchestrator.try_interpret_message", return_value=interpreted), \
+             patch("app.services.tools.fetch_menu_items", new=AsyncMock(return_value=[matched_item])), \
+             patch("app.services.tools.find_menu_item_by_name", new=AsyncMock(return_value=matched_item)), \
+             patch("app.services.tools.add_item_to_cart", new=AsyncMock(return_value=add_result)), \
+             patch("app.services.tools.fetch_featured_items", new=AsyncMock(return_value=[])), \
+             patch(
+                 "app.services.suggestions.suggest_popular_items",
+                 return_value=[
+                     {"type": "popular", "item_name": "Mocha Frap", "menu_item_id": 50},
+                     {"type": "popular", "item_name": "Iced Caramel Macchiato", "menu_item_id": 54},
+                 ],
+             ), \
+             patch(
+                 "app.services.suggestions.suggest_complementary_items",
+                 return_value=[
+                     {
+                         "type": "complementary",
+                         "item_name": "Double Chocolate Chip Walnut",
+                         "menu_item_id": 27,
+                     },
+                     {
+                         "type": "complementary",
+                         "item_name": "Strawberry Dried Drops",
+                         "menu_item_id": 31,
+                     },
+                 ],
+             ):
+            response = await process_chat_message(
+                session_id="session-2",
+                message="add bluenade",
+                cart_id=None,
+            )
+
+        self.assertEqual(response.status, "ok")
+        self.assertTrue(response.cart_updated)
+        self.assertEqual(
+            [suggestion["item_name"] for suggestion in response.suggestions],
+            ["Iced Caramel Macchiato", "Strawberry Dried Drops"],
+        )
+        self.assertIn("You might also like:", response.reply)
+        self.assertEqual(
+            sessions["session-2"]["upsell_shown"],
+            [
+                "mocha frap",
+                "double chocolate chip walnut",
+                "iced caramel macchiato",
+                "strawberry dried drops",
+            ],
+        )
 
 
 if __name__ == "__main__":

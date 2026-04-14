@@ -657,6 +657,8 @@ export default function ChatWidget({
         session_id: getChatSessionId(),
         message: routedText,
         cart_id: cartId,
+      }, {
+        withCredentials: true,
       })
       const data = response.data
       if (data.cart_id) localStorage.setItem('cartId', data.cart_id)

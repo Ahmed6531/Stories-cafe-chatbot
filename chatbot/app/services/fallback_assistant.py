@@ -1,6 +1,7 @@
 import logging
 import re
 from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 import httpx
 
@@ -330,9 +331,11 @@ async def _generate_with_azure_openai(user_message: str, system_prompt: str) -> 
 
     try:
         async with httpx.AsyncClient(timeout=FALLBACK_HTTP_TIMEOUT_SECONDS) as client:
+        async with httpx.AsyncClient(timeout=FALLBACK_HTTP_TIMEOUT_SECONDS) as client:
             response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
         data = response.json()
+        return _extract_openai_style_content(data)
         return _extract_openai_style_content(data)
     except Exception as exc:
         logger.warning("Azure fallback assistant call failed: %s", exc)
@@ -360,9 +363,11 @@ async def _generate_with_openai(user_message: str, system_prompt: str) -> str | 
 
     try:
         async with httpx.AsyncClient(timeout=FALLBACK_HTTP_TIMEOUT_SECONDS) as client:
+        async with httpx.AsyncClient(timeout=FALLBACK_HTTP_TIMEOUT_SECONDS) as client:
             response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
         data = response.json()
+        return _extract_openai_style_content(data)
         return _extract_openai_style_content(data)
     except Exception as exc:
         logger.warning("OpenAI fallback assistant call failed: %s", exc)
@@ -389,6 +394,7 @@ async def _generate_with_gemini(user_message: str, system_prompt: str) -> str | 
                     "max_output_tokens": FALLBACK_MAX_TOKENS,
                 },
             )
+            return _extract_gemini_content(response)
             return _extract_gemini_content(response)
         except Exception as exc:
             last_error = exc

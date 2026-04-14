@@ -121,7 +121,6 @@ async def fetch_menu_item_detail(menu_item_id):
     except ExpressAPIError:
         return None
 
-
 async def fetch_my_orders(auth_cookie: str | None = None, limit: int = 20):
     """Fetch authenticated user's recent orders from backend."""
     try:
@@ -145,7 +144,6 @@ async def fetch_my_orders(auth_cookie: str | None = None, limit: int = 20):
         return [order for order in orders if isinstance(order, dict)]
     except ExpressAPIError:
         return []
-
 
 async def fetch_featured_items():
     cache_key = "featured_items"

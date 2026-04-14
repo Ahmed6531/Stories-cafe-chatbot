@@ -3,7 +3,6 @@ import os
 import re
 from difflib import SequenceMatcher, get_close_matches
 
-
 # ---------------------------------------------------------------------------
 # Menu vocabulary (built once at import time from the seed file)
 # ---------------------------------------------------------------------------

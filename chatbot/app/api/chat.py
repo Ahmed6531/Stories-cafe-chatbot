@@ -28,6 +28,7 @@ def _update_session_from_response(session: Session, response: ChatMessageRespons
         session["cart_id"] = response.cart_id
 
     session["last_intent"] = response.intent
+    session["last_intent"] = response.intent
 
     requested_items = response.metadata.get("requested_items")
     if (

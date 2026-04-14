@@ -505,7 +505,6 @@ async def process_describe_item(
             reply = f"No, we don't have {item_name} right now."
         else:
             reply = f"I couldn't find \"{item_name}\" on the menu. Want me to recommend something?"
-
         if not is_availability_query and not is_ice_cream_query and item_name:
             set_session_stage(session_id, "recommendation_requested")
             sess = get_session(session_id)
