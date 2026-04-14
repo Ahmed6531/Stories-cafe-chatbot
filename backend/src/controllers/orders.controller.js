@@ -8,9 +8,70 @@ import {
   createVariantGroupMap,
   resolveVariantGroupsForMenuItem,
   sanitizeSelectedOptions,
+  sortSelectedOptionsForDisplay,
 } from "../utils/variantPricing.js";
 
 const ORDER_TAX_RATE = 0.08;
+
+async function hydrateOrderSelectionLabels(orders = []) {
+  const normalizedOrders = Array.isArray(orders) ? orders : [];
+  const groupIds = new Set();
+
+  normalizedOrders.forEach((order) => {
+    (order?.items || []).forEach((item) => {
+      (item?.selectedOptions || []).forEach((selection) => {
+        const groupId = typeof selection?.groupId === "string" ? selection.groupId.trim() : "";
+        if (groupId) {
+          groupIds.add(groupId);
+        }
+      });
+    });
+  });
+
+  if (groupIds.size === 0) {
+    return normalizedOrders.map((order) => order.toObject?.() ?? order);
+  }
+
+  const variantGroups = await VariantGroup.find({
+    $or: [
+      { groupId: { $in: Array.from(groupIds) } },
+      { refId: { $in: Array.from(groupIds) } },
+    ],
+  })
+    .select("groupId refId name customerLabel adminName options")
+    .lean();
+
+  const variantGroupsById = createVariantGroupMap(variantGroups);
+
+  return normalizedOrders.map((order) => {
+    const plainOrder = order.toObject?.() ?? order;
+
+    return {
+      ...plainOrder,
+      items: (plainOrder.items || []).map((item) => {
+        const resolvedGroups = (item.selectedOptions || [])
+          .map((selection) => {
+            const groupId = typeof selection?.groupId === "string" ? selection.groupId.trim() : "";
+            return groupId ? variantGroupsById.get(groupId) || null : null;
+          })
+          .filter(Boolean);
+
+        return {
+          ...item,
+          selectedOptions: sortSelectedOptionsForDisplay(item.selectedOptions, resolvedGroups).map((selection) => {
+            const plainSelection = selection?.toObject?.() ?? selection;
+            const group = variantGroupsById.get(plainSelection?.groupId);
+
+            return {
+              ...plainSelection,
+              groupName: group?.customerLabel || group?.name || group?.adminName || null,
+            };
+          }),
+        };
+      }),
+    };
+  });
+}
 
 export async function createOrder(req, res) {
   const { orderType, customer, items, notesToBarista } = req.body || {};
@@ -59,7 +120,10 @@ export async function createOrder(req, res) {
     let optionsDelta = 0;
     if (Array.isArray(menuItem.variantGroups) && menuItem.variantGroups.length > 0) {
       const variantGroups = await VariantGroup.find({
-        groupId: { $in: menuItem.variantGroups },
+        $or: [
+          { groupId: { $in: menuItem.variantGroups } },
+          { refId: { $in: menuItem.variantGroups } },
+        ],
       });
       const variantGroupsById = createVariantGroupMap(variantGroups);
       const resolvedVariantGroups = resolveVariantGroupsForMenuItem(menuItem, variantGroupsById);
@@ -152,22 +216,24 @@ export async function listOrders(req, res) {
   const orders = await Order.find(filter)
     .sort({ createdAt: -1 })
     .limit(50);
+  const hydratedOrders = await hydrateOrderSelectionLabels(orders);
 
   res.set("Cache-Control", "no-store");
-  res.json({ orders });
+  res.json({ orders: hydratedOrders });
 }
 
 export async function getMyOrders(req, res) {
   const orders = await Order.find({ userId: req.user.id })
     .sort({ createdAt: -1 })
     .limit(20);
+  const hydratedOrders = await hydrateOrderSelectionLabels(orders);
 
   res.set("Cache-Control", "no-store");
-  res.json({ orders });
+  res.json({ orders: hydratedOrders });
 }
 
 const ALLOWED_TRANSITIONS = {
-  received:    ["in_progress", "cancelled"],
+  received:    ["in_progress", "completed", "cancelled"],
   in_progress: ["completed", "cancelled"],
   completed:   [],
   cancelled:   [],

@@ -96,9 +96,7 @@ function groupMetaText(group) {
 }
 
 function getRenderableOptions(group) {
-  const all = Array.isArray(group?.options) ? group.options : []
-  const active = all.filter((o) => o.isActive !== false)
-  return active.length > 0 ? active : all
+  return Array.isArray(group?.options) ? group.options : []
 }
 
 function createSelectionEntry(optionName, suboptionName = '', groupId = undefined) {
@@ -141,6 +139,11 @@ function getDefaultSuboptionName(option) {
 
   const regular = suboptions.find((suboption) => String(suboption?.name).toLowerCase() === 'regular')
   return regular?.name || suboptions[0]?.name || ''
+}
+
+function getSuboptionLabel(option) {
+  const label = String(option?.suboptionLabel || '').trim()
+  return label || 'Amount'
 }
 
 function createSelectionForOption(group, optionName, existingSelection = null) {
@@ -201,7 +204,7 @@ function validate(groups, selections) {
     const count =
       sel?.type === 'single' ? (sel.value ? 1 : 0) : Array.isArray(sel?.values) ? sel.values.length : 0
 
-    if (g.isRequired && count === 0) errors[g.id] = 'Required'
+    if (g.isRequired && g.isActive !== false && count === 0) errors[g.id] = 'Required'
     if (g.maxSelections != null && g.maxSelections > 0 && count > g.maxSelections) {
       errors[g.id] = `Select up to ${g.maxSelections}`
     }
@@ -269,40 +272,77 @@ function chunkGroups(groups, size) {
 }
 
 function getStableGroupKey(group) {
-  return String(group?.groupId || group?.id || '').toLowerCase()
+  return [
+    group?.name,
+    group?.customerLabel,
+    group?.adminName,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
+function getNormalizedOptionNames(options) {
+  return options.map((option) => String(option?.name || '').trim().toLowerCase()).filter(Boolean)
+}
+
+function hasSuboptions(options) {
+  return options.some((option) => Array.isArray(option?.suboptions) && option.suboptions.length > 0)
 }
 
 function shouldUsePillSelector(group, options) {
   if (group?.maxSelections !== 1) return false
-  return getStableGroupKey(group).includes('size') && options.length <= 4
+  const groupKey = getStableGroupKey(group)
+  const optionNames = getNormalizedOptionNames(options)
+  const sizeOptions = new Set(['small', 'medium', 'large', 'regular'])
+
+  return (
+    options.length <= 4 &&
+    (
+      groupKey.includes('size') ||
+      (optionNames.length > 0 && optionNames.every((optionName) => sizeOptions.has(optionName)))
+    )
+  )
 }
 
 function shouldUseChecklist(group, options) {
   if (group?.maxSelections === 1) return false
-  return getStableGroupKey(group).includes('topping') && options.length <= 8
+  const groupKey = getStableGroupKey(group)
+  return (
+    options.length <= 8 &&
+    (
+      hasSuboptions(options) ||
+      ['topping', 'addon', 'add on', 'extra'].some((keyword) => groupKey.includes(keyword))
+    )
+  )
 }
 
 function OptionGroupSection({ group, showErrors, errors, children }) {
   const theme = useTheme()
   if (!group) return null
 
+  const isGroupInactive = group.isActive === false
   const groupError = showErrors ? errors[group.id] : null
   const metaText = groupMetaText(group)
 
   return (
-    <Box>
-      <Typography
-        variant="h6"
-        fontWeight={800}
-        sx={{
-          mb: 0.75,
-          fontSize: { xs: '0.95rem', md: '1.05rem' },
-          lineHeight: 1.15,
-          fontFamily: theme.brand.fontDisplay,
-        }}
-      >
-        {group.name}
-      </Typography>
+    <Box sx={isGroupInactive ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.75 }}>
+        <Typography
+          variant="h6"
+          fontWeight={800}
+          sx={{
+            fontSize: { xs: '0.95rem', md: '1.05rem' },
+            lineHeight: 1.15,
+            fontFamily: theme.brand.fontDisplay,
+          }}
+        >
+          {group.name}
+        </Typography>
+        {isGroupInactive && (
+          <Chip label="Unavailable" size="small" sx={{ fontSize: '0.68rem', height: 18 }} />
+        )}
+      </Stack>
       {metaText && (
         <Typography
           variant="caption"
@@ -391,7 +431,7 @@ function ItemArtwork({ item, showPlaceholder, onImageError, imageSx }) {
 
 function MenuItemHero({
   item,
-  unitPrice,
+  basePrice,
   qty,
   onDecrease,
   onIncrease,
@@ -480,7 +520,7 @@ function MenuItemHero({
               mb: { xs: 0.75, md: 1.25 },
             }}
           >
-            {formatLL(unitPrice)}
+            {formatLL(basePrice)}
           </Typography>
 
           <QuantitySelector
@@ -548,7 +588,7 @@ function MenuItemHero({
               </Typography>
             )}
             <Typography variant="h6" fontWeight={900} sx={{ mt: 1, fontFamily: theme.brand.fontBase }}>
-              {formatLL(unitPrice)}
+              {formatLL(basePrice)}
             </Typography>
           </Box>
           <QuantitySelector
@@ -601,10 +641,10 @@ const editLineId = searchParams.get('edit') || null
   }, [item?.id])
 
   const groups = useMemo(() => {
-    if (!item?.variants || item.variants.length === 0) return []
-    return item.variants.map((v) => ({
+    if (!item?.variantGroupDetails || item.variantGroupDetails.length === 0) return []
+    return item.variantGroupDetails.map((v) => ({
       ...v,
-      id: v.id || v.groupId,
+      id: v.id || v.refId || v.groupId,
       options: Array.isArray(v.options) ? v.options : [],
     }))
   }, [item])
@@ -670,10 +710,12 @@ const isEditMode = Boolean(cartItemToEdit)
 
     return (
       <FormControl fullWidth size="small" sx={sx}>
-        <InputLabel id={`${group.id}-${optionName}-suboption-label`}>Amount</InputLabel>
+        <InputLabel id={`${group.id}-${optionName}-suboption-label`}>
+          {getSuboptionLabel(option)}
+        </InputLabel>
         <Select
           labelId={`${group.id}-${optionName}-suboption-label`}
-          label="Amount"
+          label={getSuboptionLabel(option)}
           value={normalizedSelection?.suboptionName || getDefaultSuboptionName(option)}
           onChange={(event) => onChange(event.target.value)}
         >
@@ -726,20 +768,28 @@ const isEditMode = Boolean(cartItemToEdit)
               })
             }}
           >
-            {options.map((opt) => (
-              <ToggleButton key={opt.name} value={opt.name} sx={{ px: 2 }}>
-                <Box>
-                  <Typography variant="body2" fontWeight={700}>
-                    {opt.name}
-                  </Typography>
-                  {Number(opt.additionalPrice || 0) > 0 && (
-                    <Typography variant="caption" display="block">
-                      +{formatLL(opt.additionalPrice)}
+            {options.map((opt) => {
+              const isOptInactive = opt.isActive === false
+              return (
+                <ToggleButton
+                  key={opt.name}
+                  value={opt.name}
+                  disabled={isOptInactive}
+                  sx={{ px: 2, ...(isOptInactive ? { opacity: 0.45 } : {}) }}
+                >
+                  <Box>
+                    <Typography variant="body2" fontWeight={700}>
+                      {opt.name}
                     </Typography>
-                  )}
-                </Box>
-              </ToggleButton>
-            ))}
+                    {Number(opt.additionalPrice || 0) > 0 && (
+                      <Typography variant="caption" display="block">
+                        +{formatLL(opt.additionalPrice)}
+                      </Typography>
+                    )}
+                  </Box>
+                </ToggleButton>
+              )
+            })}
           </ToggleButtonGroup>
           {renderSuboptionSelect(group, currentSelection, (suboptionName) =>
             setGroupSelection(group.id, {
@@ -777,9 +827,9 @@ const isEditMode = Boolean(cartItemToEdit)
                 <em>None</em>
               </MuiMenuItem>
               {options.map((opt) => (
-                <MuiMenuItem key={opt.name} value={opt.name}>
+                <MuiMenuItem key={opt.name} value={opt.name} disabled={opt.isActive === false}>
                   {opt.name}
-                  {formatInlineOptionPrice(opt.additionalPrice)}
+                  {opt.isActive === false ? ' (unavailable)' : formatInlineOptionPrice(opt.additionalPrice)}
                 </MuiMenuItem>
               ))}
             </Select>
@@ -836,22 +886,31 @@ const isEditMode = Boolean(cartItemToEdit)
               </Box>
             )}
           >
-            {options.map((opt) => (
-              <MuiMenuItem key={opt.name} value={opt.name} dense>
-                <Checkbox
-                  checked={selectedStrings.includes(opt.name)}
-                  size="small"
-                  sx={{ p: 0.5, mr: 1 }}
-                />
-                <ListItemText
-                  primary={opt.name}
-                  secondary={formatSecondaryOptionPrice(opt.additionalPrice)}
-                  primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
-                  secondaryTypographyProps={{ variant: 'caption' }}
-                  sx={{ m: 0 }}
-                />
-              </MuiMenuItem>
-            ))}
+            {options.map((opt) => {
+              const isOptInactive = opt.isActive === false
+              return (
+                <MuiMenuItem
+                  key={opt.name}
+                  value={opt.name}
+                  dense
+                  disabled={isOptInactive}
+                  sx={isOptInactive ? { opacity: 0.45 } : {}}
+                >
+                  <Checkbox
+                    checked={selectedStrings.includes(opt.name)}
+                    size="small"
+                    sx={{ p: 0.5, mr: 1 }}
+                  />
+                  <ListItemText
+                    primary={isOptInactive ? `${opt.name} (unavailable)` : opt.name}
+                    secondary={isOptInactive ? null : formatSecondaryOptionPrice(opt.additionalPrice)}
+                    primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
+                    secondaryTypographyProps={{ variant: 'caption' }}
+                    sx={{ m: 0 }}
+                  />
+                </MuiMenuItem>
+              )
+            })}
           </Select>
         </FormControl>
       </OptionGroupSection>
@@ -884,21 +943,28 @@ const isEditMode = Boolean(cartItemToEdit)
       <OptionGroupSection group={group} showErrors={showErrors} errors={errors}>
         <Card variant="outlined" sx={{ borderRadius: 2 }}>
           <List disablePadding>
-            {options.map((opt) => (
-              <Box key={opt.name} sx={{ px: 1.5, py: 0.75 }}>
-                <MuiMenuItem onClick={() => handleToggle(opt.name)} dense sx={{ borderRadius: 1 }}>
+            {options.map((opt) => {
+              const isOptInactive = opt.isActive === false
+              return (
+              <Box key={opt.name} sx={{ px: 1.5, py: 0.75, ...(isOptInactive ? { opacity: 0.45 } : {}) }}>
+                <MuiMenuItem
+                  onClick={() => !isOptInactive && handleToggle(opt.name)}
+                  dense
+                  sx={{ borderRadius: 1, ...(isOptInactive ? { pointerEvents: 'none' } : {}) }}
+                >
                   <Checkbox
                     checked={values.some((value) => getSelectionOptionName(value) === opt.name)}
+                    disabled={isOptInactive}
                     size="small"
                     sx={{ p: 0.5, mr: 1 }}
                   />
                   <ListItemText
-                    primary={opt.name}
-                    secondary={formatSecondaryOptionPrice(opt.additionalPrice)}
+                    primary={isOptInactive ? `${opt.name} (unavailable)` : opt.name}
+                    secondary={isOptInactive ? null : formatSecondaryOptionPrice(opt.additionalPrice)}
                     primaryTypographyProps={{ variant: 'body2' }}
                   />
                 </MuiMenuItem>
-                {values.some((value) => getSelectionOptionName(value) === opt.name) && (
+                {!isOptInactive && values.some((value) => getSelectionOptionName(value) === opt.name) && (
                   <Box sx={{ mt: 1, pl: 4.5 }}>
                     {renderSuboptionSelect(
                       group,
@@ -909,7 +975,8 @@ const isEditMode = Boolean(cartItemToEdit)
                   </Box>
                 )}
               </Box>
-            ))}
+              )
+            })}
           </List>
         </Card>
       </OptionGroupSection>
@@ -992,7 +1059,7 @@ const isEditMode = Boolean(cartItemToEdit)
 
       <MenuItemHero
         item={item}
-        unitPrice={unitPrice}
+        basePrice={item.basePrice}
         qty={qty}
         onDecrease={decrementQty}
         onIncrease={incrementQty}

@@ -30,6 +30,12 @@ const variantOptionSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  suboptionLabel: {
+    type: String,
+    required: false,
+    trim: true,
+    default: "",
+  },
   suboptions: {
     type: [suboptionSchema],
     default: [],
@@ -38,6 +44,18 @@ const variantOptionSchema = new mongoose.Schema({
 
 const variantGroupSchema = new mongoose.Schema(
   {
+    categoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      required: false,
+    },
+    refId: {
+      type: String,
+      required: false,
+      unique: true,
+      sparse: true,
+      trim: true,
+    },
     // Unique identifier for referencing (e.g., "coffee-size-standard")
     groupId: {
       type: String,
@@ -45,6 +63,17 @@ const variantGroupSchema = new mongoose.Schema(
       unique: true,
       trim: true,
     },
+    // Admin-facing name — shown only in the dashboard
+    adminName: {
+      type: String,
+      required: true,
+    },
+    // Customer-facing label — shown on the order form; falls back to adminName if empty
+    customerLabel: {
+      type: String,
+      default: "",
+    },
+    // Legacy field — kept for backward compat; mirrors customerLabel || adminName
     name: {
       type: String,
       required: true,
@@ -65,6 +94,11 @@ const variantGroupSchema = new mongoose.Schema(
     order: {
       type: Number,
       default: 0,
+    },
+    // Group-level active flag — soft delete: set false instead of removing the doc.
+    isActive: {
+      type: Boolean,
+      default: true,
     },
     options: [variantOptionSchema],
   },

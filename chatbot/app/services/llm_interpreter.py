@@ -6,7 +6,22 @@ from typing import Optional, Dict, Any
 
 import google.generativeai as genai
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
+
+GEMINI_MODEL_CANDIDATES = (
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+    "gemini-2.5-flash-lite",
+)
+
+
+def _normalize_gemini_model_name(model_name: str | None) -> str:
+    normalized = (model_name or "").strip()
+    if normalized.startswith("models/"):
+        return normalized.split("/", 1)[1]
+    return normalized
 
 WORD_TO_NUMBER = {
     "a": 1,
@@ -478,23 +493,80 @@ def _should_use_heuristic_items(parsed_items: list[Dict[str, Any]], heuristic_it
     return False
 
 
+def _iter_gemini_models(preferred_model: str | None):
+    seen = set()
+    for model_name in (preferred_model, *GEMINI_MODEL_CANDIDATES):
+        normalized = _normalize_gemini_model_name(model_name)
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            yield normalized
+
+
+def _generate_gemini_content(prompt: str) -> str | None:
+    api_key = (settings.gemini_api_key or os.getenv("GEMINI_API_KEY") or "").strip()
+    preferred_model = _normalize_gemini_model_name(
+        settings.gemini_model or os.getenv("GEMINI_MODEL")
+    )
+
+    if not api_key:
+        logger.warning({"stage": "llm_api_key_missing"})
+        return None
+
+    genai.configure(api_key=api_key)
+    last_error = None
+
+    for model_name in _iter_gemini_models(preferred_model):
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
+            return (response.text or "").strip()
+        except Exception as exc:
+            last_error = exc
+            logger.warning(
+                {
+                    "stage": "llm_model_attempt_failed",
+                    "model": model_name,
+                    "error": str(exc),
+                }
+            )
+            error_text = str(exc).lower()
+            if "not found" in error_text or "not supported" in error_text:
+                continue
+            break
+
+    if last_error:
+        logger.warning(
+            {
+                "stage": "llm_all_model_attempts_failed",
+                "preferred_model": preferred_model,
+                "error": str(last_error),
+            }
+        )
+
+    return None
+
+
 def try_interpret_message(message: str, context=None) -> Optional[Dict[str, Any]]:
     try:
-        api_key = os.getenv("GEMINI_API_KEY")
-        model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-
-        if not api_key:
-            logger.warning({"stage": "llm_api_key_missing"})
-            return None
-
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_name)
+        history_block = ""
+        if context and isinstance(context, list):
+            recent = context[-10:]  # last 5 exchanges
+            lines = []
+            for turn in recent:
+                role = turn.get("role", "")
+                text = turn.get("text", "")
+                if role == "user":
+                    lines.append(f"User: {text}")
+                elif role == "bot":
+                    lines.append(f"Bot: {text}")
+            if lines:
+                history_block = "\nConversation so far:\n" + "\n".join(lines) + "\n"
 
         prompt = f"""
 You are an ordering-intent parser for a cafe chatbot.
 
 Your job is to extract structured data from the user's message with high accuracy.
-
+{history_block}
 Return ONLY valid JSON.
 Do not add markdown.
 Do not add explanations.
@@ -553,8 +625,9 @@ User message:
 "{message}"
 """
 
-        response = model.generate_content(prompt)
-        raw_text = (response.text or "").strip()
+        raw_text = _generate_gemini_content(prompt)
+        if not raw_text:
+            return None
 
         logger.info(
             {

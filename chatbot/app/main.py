@@ -1,10 +1,10 @@
-from dotenv import load_dotenv
+﻿from dotenv import load_dotenv
 load_dotenv(override=True)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .api.chat import router as chat_router
-from .api.voice import router as voice_router
-from .core.config import settings
+from app.api.chat import router as chat_router
+from app.api.voice import router as voice_router
+from app.core.config import settings
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
 
