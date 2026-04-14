@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import {
   Box,
+  IconButton,
   Paper,
   TextField,
   Button,
@@ -10,6 +11,8 @@ import {
 } from "@mui/material"
 import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined"
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined"
+import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined"
+import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined"
 import { adminLogin } from "../../API/adminApi"
 import { useSession } from "../../hooks/useSession"
 import {
@@ -23,6 +26,7 @@ import {
 export default function AdminLogin() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
   const navigate = useNavigate()
   const { refreshSession } = useSession()
@@ -144,7 +148,7 @@ export default function AdminLogin() {
 
           <TextField
             label="Password"
-            type="password"
+            type={showPassword ? "text" : "password"}
             fullWidth
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -184,6 +188,23 @@ export default function AdminLogin() {
               startAdornment: (
                 <InputAdornment position="start">
                   <LockOutlinedIcon sx={{ color: adminPalette.textTertiary }} />
+                </InputAdornment>
+              ),
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    onClick={() => setShowPassword((v) => !v)}
+                    edge="end"
+                    size="small"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    sx={{ color: adminPalette.textTertiary, mr: -0.5 }}
+                  >
+                    {showPassword ? (
+                      <VisibilityOffOutlinedIcon sx={{ fontSize: 18 }} />
+                    ) : (
+                      <VisibilityOutlinedIcon sx={{ fontSize: 18 }} />
+                    )}
+                  </IconButton>
                 </InputAdornment>
               ),
             }}

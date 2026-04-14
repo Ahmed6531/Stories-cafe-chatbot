@@ -23,21 +23,35 @@ function formatGroupLabel(groupId) {
 }
 
 function formatSelections(selectedOptions = []) {
-  return selectedOptions
-    .map((selection) => {
-      if (!selection) return ''
-      if (typeof selection === 'string') return selection
+  // Collect values keyed by group label so same-group options are joined together
+  const grouped = new Map()
 
-      const group = selection.groupName || formatGroupLabel(selection.groupId)
-      const option = selection.optionName || selection.name || ''
-      const sub = selection.suboptionName || selection.sub || ''
+  for (const selection of selectedOptions) {
+    if (!selection) continue
 
-      if (!option) return ''
-      const value = sub ? `${option} (${sub})` : option
-      return group ? `${group}: ${value}` : value
-    })
-    .filter(Boolean)
-    .join(' · ')
+    if (typeof selection === 'string') {
+      const key = ''
+      if (!grouped.has(key)) grouped.set(key, [])
+      grouped.get(key).push(selection)
+      continue
+    }
+
+    const group = selection.groupName || formatGroupLabel(selection.groupId)
+    const option = selection.optionName || selection.name || ''
+    const sub = selection.suboptionName || selection.sub || ''
+    if (!option) continue
+
+    const value = sub ? `${option} (${sub})` : option
+    const key = group || ''
+    if (!grouped.has(key)) grouped.set(key, [])
+    grouped.get(key).push(value)
+  }
+
+  const parts = []
+  for (const [group, values] of grouped) {
+    parts.push(group ? `${group}: ${values.join(', ')}` : values.join(', '))
+  }
+  return parts.filter(Boolean).join(' · ')
 }
 
 function SummaryItemImage({ image, name }) {

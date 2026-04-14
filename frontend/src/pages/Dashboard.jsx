@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   Box,
+  Button,
   Card,
   CardContent,
   Chip,
@@ -166,40 +167,31 @@ export default function Dashboard() {
       )}
 
       {!loading && !error && orders.length === 0 && (
-        <Box sx={{ textAlign: 'center', mt: 6 }}>
-          <Typography
-            sx={{
-              fontSize: '1rem',
-              color: theme.brand.textSecondary,
-              fontFamily: theme.brand.fontBase,
-              mb: 2.5,
-            }}
-          >
-            You have no past orders yet.
+        <Stack spacing={2} alignItems="center" textAlign="center" sx={{ py: 8 }}>
+          <Typography variant="h6" fontWeight={800} sx={{ color: theme.brand.textPrimary }}>
+            No past orders yet
           </Typography>
-          <Box
-            component="button"
-            onClick={() => navigate('/menu')}
+          <Typography variant="body2" sx={{ color: theme.brand.textSecondary, maxWidth: 360, mb: 2 }}>
+            You haven't placed any orders yet. Explore our menu to find your favorites.
+          </Typography>
+          <Button
+            component={Link}
+            to="/menu"
+            variant="contained"
             sx={{
-              border: 'none',
+              borderRadius: '10px',
+              px: 5,
+              py: 1.5,
+              fontWeight: 700,
+              textTransform: 'none',
               backgroundColor: theme.brand.primaryDark,
-              color: '#fff',
-              fontWeight: 600,
-              borderRadius: '8px',
-              padding: '12px 28px',
-              cursor: 'pointer',
-              fontSize: '0.95rem',
-              fontFamily: theme.brand.fontBase,
-              transition: 'all 0.2s ease',
-              '&:hover': {
-                backgroundColor: theme.brand.primary,
-                transform: 'translateY(-1px)',
-              },
+              '&:visited': { color: '#fff', backgroundColor: theme.brand.primaryDark },
+              '&:hover': { backgroundColor: '#143d22' },
             }}
           >
             Browse Menu
-          </Box>
-        </Box>
+          </Button>
+        </Stack>
       )}
 
       {!loading &&

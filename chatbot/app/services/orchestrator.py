@@ -5,6 +5,7 @@ import httpx
 from app.schemas.chat import ChatMessageResponse
 from app.services.fallback_assistant import generate_fallback_reply
 from app.services.intent_pipeline import resolve_intent
+from app.services.item_clarification import get_menu_detail_variants
 from app.services.llm_interpreter import _extract_json_object, _generate_gemini_content
 from app.services.session_store import (
     Session,
@@ -17,6 +18,7 @@ from app.services.session_store import (
     get_guided_order_required_groups,
     get_guided_order_selections,
     get_guided_order_step,
+    get_session,
     get_session_stage,
     set_session_stage,
     get_checkout_initiated,
@@ -287,22 +289,26 @@ def requested_item_has_customization(requested_item: dict) -> bool:
     return bool(build_customization_instruction_parts(requested_item))
 
 
+def guided_group_name(group: dict | None) -> str:
+    if not isinstance(group, dict):
+        return ""
+    return str(
+        group.get("customerLabel")
+        or group.get("name")
+        or group.get("adminName")
+        or ""
+    ).strip()
+
+
 def iter_variant_options(menu_detail: dict | None) -> list[tuple[dict, dict]]:
     if not isinstance(menu_detail, dict):
         return []
 
-    variants = menu_detail.get("variants")
-    if not isinstance(variants, list):
-        return []
-
     variant_options: list[tuple[dict, dict]] = []
-    for group in variants:
+    for group in get_menu_detail_variants(menu_detail):
         if not isinstance(group, dict):
             continue
-        options = group.get("options")
-        if not isinstance(options, list):
-            continue
-        for option in options:
+        for option in active_variant_options(group):
             if isinstance(option, dict) and option.get("name"):
                 variant_options.append((group, option))
 
@@ -523,7 +529,7 @@ def _is_required_guided_group(group: dict) -> bool:
     if group.get("isRequired") is True or group.get("required") is True:
         return True
 
-    group_name = normalize_modifier_text(group.get("name"))
+    group_name = normalize_modifier_text(guided_group_name(group))
     return any(keyword in group_name for keyword in GUIDED_REQUIRED_GROUP_KEYWORDS)
 
 
@@ -576,7 +582,7 @@ def _find_guided_group(groups: list[dict], group_name: str | None) -> dict | Non
     query_tokens = set(normalized_query.split())
 
     for group in groups:
-        candidate_name = normalize_modifier_text(group.get("name"))
+        candidate_name = normalize_modifier_text(guided_group_name(group))
         if not candidate_name:
             continue
         if candidate_name == normalized_query:
@@ -659,7 +665,7 @@ def _match_option_names_for_group(group: dict, user_message: str) -> list[str]:
 
 
 def _set_group_selection(selections: dict, group: dict, option_names: list[str], *, replace: bool) -> list[str]:
-    group_name = group.get("name")
+    group_name = guided_group_name(group)
     if not isinstance(group_name, str) or not group_name.strip():
         return []
 
@@ -751,21 +757,21 @@ def _phase3_heuristic(
             if normalize_modifier_text(option_name) == normalized_msg:
                 return {
                     "action": "select",
-                    "group_name": group.get("name"),
+                    "group_name": guided_group_name(group),
                     "selections": [option_name],
                     "reply_hint": None,
                 }
 
     for group in optional_groups:
-        normalized_group_name = normalize_modifier_text(group.get("name", ""))
+        normalized_group_name = normalize_modifier_text(guided_group_name(group))
         if not normalized_group_name or normalized_group_name not in normalized_msg:
             continue
         if any(token in normalized_msg for token in ("what", "which", "options", "have", "available")):
             return {
                 "action": "query_options",
-                "group_name": group.get("name"),
+                "group_name": guided_group_name(group),
                 "selections": [],
-                "reply_hint": f"For {group.get('name')}: {_build_group_options_text(group)}.",
+                "reply_hint": f"For {guided_group_name(group)}: {_build_group_options_text(group)}.",
             }
 
     return None
@@ -784,11 +790,7 @@ def _guided_group_rank(group_name: str) -> tuple[int, str]:
 
 def build_guided_order_groups(menu_detail: dict | None) -> tuple[list[dict], list[dict]]:
     groups: list[dict] = []
-    variants = menu_detail.get("variants") if isinstance(menu_detail, dict) else None
-    if not isinstance(variants, list):
-        return [], []
-
-    for group in variants:
+    for group in get_menu_detail_variants(menu_detail):
         if not isinstance(group, dict):
             continue
 
@@ -796,19 +798,20 @@ def build_guided_order_groups(menu_detail: dict | None) -> tuple[list[dict], lis
         if len(active_options) < 2:
             continue
 
-        group_name = group.get("name")
+        group_name = guided_group_name(group)
         if not group_name:
             continue
 
         normalized_name = normalize_modifier_text(group_name)
-        if any(normalize_modifier_text(existing.get("name")) == normalized_name for existing in groups):
+        if any(normalize_modifier_text(guided_group_name(existing)) == normalized_name for existing in groups):
             continue
 
         group_copy = dict(group)
+        group_copy["name"] = group_name
         group_copy["options"] = active_options
         groups.append(group_copy)
 
-    groups.sort(key=lambda group: _guided_group_rank(group.get("name") or ""))
+    groups.sort(key=lambda group: _guided_group_rank(guided_group_name(group)))
     required_groups = [group for group in groups if _is_required_guided_group(group)]
     optional_groups = [group for group in groups if not _is_required_guided_group(group)]
     return required_groups, optional_groups
@@ -822,7 +825,7 @@ def build_guided_order_prompt(
     allow_skip: bool = True,
 ) -> str:
     option_names = _build_group_options_text(group)
-    group_name = (group.get("name") or "option").lower()
+    group_name = (guided_group_name(group) or "option").lower()
     max_selections = _group_max_selections(group)
     count_hint = ""
     if max_selections and max_selections > 1:
@@ -3139,6 +3142,23 @@ async def process_chat_message(
                 session["last_intent"] = "add_items"
                 session["pending_clarification"] = None
                 set_session_stage(session_id, None)
+
+            all_unmatched_modifier_suggestions = []
+            seen_unmatched_modifier_keys: set[tuple[str, str]] = set()
+            for item in successful_items:
+                suggestions = item.get("unmatched_modifier_suggestions") or []
+                if not isinstance(suggestions, list):
+                    continue
+                for suggestion in suggestions:
+                    if not isinstance(suggestion, dict):
+                        continue
+                    fragment = str(suggestion.get("fragment") or "").strip()
+                    normalized_suggestion = str(suggestion.get("suggestion") or "").strip()
+                    dedupe_key = (fragment.lower(), normalized_suggestion.lower())
+                    if dedupe_key in seen_unmatched_modifier_keys:
+                        continue
+                    seen_unmatched_modifier_keys.add(dedupe_key)
+                    all_unmatched_modifier_suggestions.append(suggestion)
 
             return ChatMessageResponse(
                 session_id=session_id,
