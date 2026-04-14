@@ -20,7 +20,7 @@ Does NOT retest:
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock, Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -80,14 +80,38 @@ class TestAddItemsFlow(unittest.IsolatedAsyncioTestCase):
     async def test_add_items_happy_path_sets_cart_updated(self):
         session = fake_session("s-add")
         session_store.sessions["s-add"] = session
+        menu_items = [
+            {**item, "id": 101} if item.get("name") == "Latte" else item
+            for item in fake_menu_items()
+        ]
+        cart_after = fake_cart(
+            "cart-123",
+            items=[{
+                "_id": "line-1",
+                "menuItemId": 101,
+                "name": "Latte",
+                "qty": 1,
+                "price": 8000,
+                "category": "beverages",
+                "subcategory": "coffee",
+            }],
+        )
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response(
-                "add_items", [_latte_requested_item()]
-            ))),
-            patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
+            patch(LLM_TARGET, return_value=mock_llm_response(
+                "add_items",
+                [{
+                    "item_name": "Latte",
+                    "quantity": 1,
+                    "size": None,
+                    "options": {"milk": None, "sugar": None},
+                    "addons": [],
+                    "instructions": "",
+                }],
+            )),
+            patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=menu_items)),
             patch(MENU_DETAIL_TARGET, new=AsyncMock(return_value=fake_menu_item_detail_no_variants("Latte"))),
-            patch(ADD_CART_TARGET, new=AsyncMock(return_value=fake_cart_with_latte())),
+            patch(ADD_CART_TARGET, new=AsyncMock(return_value=cart_after)),
             patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
         ):
             response = await process_chat_message(
@@ -106,10 +130,10 @@ class TestAddItemsFlow(unittest.IsolatedAsyncioTestCase):
         session_store.sessions["s-add2"] = session
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response(
+            patch(LLM_TARGET, return_value=mock_llm_response(
                 "add_items", [{"item_name": "xyzqqqblarp", "quantity": 1, "size": None,
                                "options": {"milk": None, "sugar": None}, "addons": [], "instructions": ""}]
-            ))),
+            )),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
             patch(MENU_DETAIL_TARGET, new=AsyncMock(return_value=None)),
             patch(ADD_CART_TARGET, new=AsyncMock(return_value=fake_cart())),
@@ -141,11 +165,11 @@ class TestUpdateQuantityFlow(unittest.IsolatedAsyncioTestCase):
         cart_after = fake_cart("cart-1", items=[{"_id": "line-1", "name": "Latte", "qty": 3}])
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response(
+            patch(LLM_TARGET, return_value=mock_llm_response(
                 "update_quantity",
                 [{"item_name": "Latte", "quantity": 3, "size": None,
                   "options": {"milk": None, "sugar": None}, "addons": [], "instructions": ""}]
-            ))),
+            )),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
             patch(GET_CART_TARGET, new=AsyncMock(return_value=fake_cart_with_latte("cart-1"))),
             patch(UPDATE_QTY_TARGET, new=AsyncMock(return_value=cart_after)),
@@ -171,9 +195,9 @@ class TestUpdateQuantityFlow(unittest.IsolatedAsyncioTestCase):
         cart_response = fake_cart("cart-2", items=[{"_id": "line-1", "name": "Latte", "qty": 5}])
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response(
+            patch(LLM_TARGET, return_value=mock_llm_response(
                 "update_quantity", []  # no items — should use session.last_items
-            ))),
+            )),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
             patch(GET_CART_TARGET, new=AsyncMock(return_value=fake_cart_with_latte("cart-2"))),
             patch(UPDATE_QTY_TARGET, new=AsyncMock(return_value=cart_response)),
@@ -205,11 +229,11 @@ class TestRemoveItemFlow(unittest.IsolatedAsyncioTestCase):
         cart_after = fake_cart("cart-3", items=[])
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response(
+            patch(LLM_TARGET, return_value=mock_llm_response(
                 "remove_item",
                 [{"item_name": "Latte", "quantity": 1, "size": None,
                   "options": {}, "addons": [], "instructions": ""}]
-            ))),
+            )),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
             patch(GET_CART_TARGET, new=AsyncMock(return_value=fake_cart_with_latte("cart-3"))),
             patch(REMOVE_ITEM_TARGET, new=AsyncMock(return_value=cart_after)),
@@ -231,9 +255,9 @@ class TestRemoveItemFlow(unittest.IsolatedAsyncioTestCase):
         session_store.sessions["s-rem2"] = session
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response(
+            patch(LLM_TARGET, return_value=mock_llm_response(
                 "remove_item", []  # no item — falls back to session
-            ))),
+            )),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
             patch(GET_CART_TARGET, new=AsyncMock(return_value=fake_cart_with_latte("cart-4"))),
             patch(REMOVE_ITEM_TARGET, new=AsyncMock(return_value=fake_cart("cart-4"))),
@@ -262,7 +286,7 @@ class TestViewCartFlow(unittest.IsolatedAsyncioTestCase):
         session_store.sessions["s-view"] = session
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response("view_cart"))),
+            patch(LLM_TARGET, return_value=mock_llm_response("view_cart")),
             patch(GET_CART_TARGET, new=AsyncMock(return_value=fake_cart_with_latte("cart-5"))),
             patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
         ):
@@ -293,7 +317,8 @@ class TestClearCartFlow(unittest.IsolatedAsyncioTestCase):
         session_store.sessions["s-clr"] = session
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response("clear_cart"))),
+            patch(LLM_TARGET, return_value=mock_llm_response("clear_cart")),
+            patch(GET_CART_TARGET, new=AsyncMock(return_value=fake_cart_with_latte("cart-6"))),
             patch(CLEAR_CART_TARGET, new=AsyncMock(return_value=fake_cart("cart-6"))),
             patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
         ):
@@ -325,11 +350,11 @@ class TestDescribeItemFlow(unittest.IsolatedAsyncioTestCase):
         detail["description"] = "A smooth espresso with steamed milk."
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response(
+            patch(LLM_TARGET, return_value=mock_llm_response(
                 "describe_item",
                 [{"item_name": "Latte", "quantity": 1, "size": None,
                   "options": {}, "addons": [], "instructions": ""}]
-            ))),
+            )),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
             patch(MENU_DETAIL_TARGET, new=AsyncMock(return_value=detail)),
         ):
@@ -358,7 +383,7 @@ class TestRecommendationQueryFlow(unittest.IsolatedAsyncioTestCase):
         session_store.sessions["s-rec"] = session
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response("recommendation_query"))),
+            patch(LLM_TARGET, return_value=mock_llm_response("recommendation_query")),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
             patch("app.services.tools.fetch_featured_items", new=AsyncMock(return_value=[])),
             patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
@@ -388,7 +413,7 @@ class TestCheckoutFlow(unittest.IsolatedAsyncioTestCase):
         session_store.sessions["s-chk"] = session
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response("checkout"))),
+            patch(LLM_TARGET, return_value=mock_llm_response("checkout")),
             patch(GET_CART_TARGET, new=AsyncMock(return_value=fake_cart_with_latte("cart-7"))),
             patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
         ):
@@ -417,12 +442,12 @@ class TestUnknownIntentFallback(unittest.IsolatedAsyncioTestCase):
         session_store.sessions["s-unk"] = session
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value={
+            patch(LLM_TARGET, return_value={
                 "intent": "unknown",
                 "items": [],
                 "confidence": 0.2,
                 "fallback_needed": True,
-            })),
+            }),
             patch(FALLBACK_TARGET, new=AsyncMock(return_value="I'm not sure, can you rephrase?")),
         ):
             response = await process_chat_message(
@@ -462,7 +487,7 @@ class TestRepeatLastOrderFlow(unittest.IsolatedAsyncioTestCase):
         }
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response("repeat_last_order"))),
+            patch(LLM_TARGET, return_value=mock_llm_response("repeat_last_order")),
             patch(ORDERS_TARGET, new=AsyncMock(return_value=[past_order])),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
             patch(MENU_DETAIL_TARGET, new=AsyncMock(return_value=fake_menu_item_detail_no_variants("Latte"))),

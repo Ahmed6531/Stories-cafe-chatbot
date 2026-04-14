@@ -1602,7 +1602,44 @@ async def process_chat_message(
         }
         intent = special_command
     elif not repeat_override:  # Only call LLM if we didn't already have an override
-        llm_result = try_interpret_message(normalized_message, context=session.get("history", []) if session else [])
+        try:
+            llm_result = try_interpret_message(
+                normalized_message,
+                context=session.get("history", []) if session else [],
+            )
+        except Exception as err:
+            logger.exception(
+                "LLM interpretation failed",
+                extra={
+                    "normalized_message": normalized_message,
+                    "session_id": session_id,
+                    "error": str(err),
+                },
+            )
+            fallback_reply = await generate_fallback_reply(normalized_message)
+            response = ChatMessageResponse(
+                session_id=session_id,
+                status="ok",
+                reply=fallback_reply or "I'm having trouble right now. Please try again in a moment.",
+                intent="unknown",
+                cart_updated=False,
+                cart_id=cart_id,
+                defaults_used=[],
+                suggestions=[],
+                metadata={
+                    "normalized_message": normalized_message,
+                    "pipeline_stage": "llm_interpretation_failed",
+                    "fallback_source": "llm" if fallback_reply else "static",
+                },
+            )
+            update_last_action(
+                session_id,
+                normalized_message,
+                response.reply,
+                "unknown",
+                action_data={"fallback": True, "llm_error": str(err)},
+            )
+            return response
 
         if llm_result:
             interpretation = llm_result

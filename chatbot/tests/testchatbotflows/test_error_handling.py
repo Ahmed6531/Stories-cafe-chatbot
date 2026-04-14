@@ -70,7 +70,7 @@ class TestLLMFailure(unittest.IsolatedAsyncioTestCase):
         session_store.sessions["s-llm-fail"] = session
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(side_effect=Exception("Gemini unavailable"))),
+            patch(LLM_TARGET, side_effect=Exception("Gemini unavailable")),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
             patch(FALLBACK_TARGET, new=AsyncMock(return_value="Sorry, I'm having trouble right now.")),
             patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
@@ -91,7 +91,7 @@ class TestLLMFailure(unittest.IsolatedAsyncioTestCase):
         session_store.sessions["s-llm-none"] = session
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=None)),
+            patch(LLM_TARGET, return_value=None),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
             patch(FALLBACK_TARGET, new=AsyncMock(return_value="I didn't catch that.")),
             patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
@@ -120,9 +120,9 @@ class TestExpressBackendDown(unittest.IsolatedAsyncioTestCase):
         session_store.sessions["s-menu-fail"] = session
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response(
+            patch(LLM_TARGET, return_value=mock_llm_response(
                 "add_items", [_latte_item()]
-            ))),
+            )),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=[])),  # empty = backend failure
             patch(FALLBACK_TARGET, new=AsyncMock(return_value="Menu is unavailable right now.")),
             patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
@@ -144,7 +144,7 @@ class TestExpressBackendDown(unittest.IsolatedAsyncioTestCase):
         session_store.sessions["s-cart-fail"] = session
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response("view_cart"))),
+            patch(LLM_TARGET, return_value=mock_llm_response("view_cart")),
             patch(GET_CART_TARGET, new=AsyncMock(return_value={"cart_id": "cart-x", "cart": []})),
             patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
         ):
@@ -174,7 +174,7 @@ class TestItemNotFoundInMenu(unittest.IsolatedAsyncioTestCase):
         add_mock = AsyncMock(return_value=fake_cart())
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response(
+            patch(LLM_TARGET, return_value=mock_llm_response(
                 "add_items",
                 [{
                     "item_name": "zzznonexistent",
@@ -184,7 +184,7 @@ class TestItemNotFoundInMenu(unittest.IsolatedAsyncioTestCase):
                     "addons": [],
                     "instructions": "",
                 }]
-            ))),
+            )),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
             patch(MENU_DETAIL_TARGET, new=AsyncMock(return_value=None)),
             patch(ADD_CART_TARGET, new=add_mock),
@@ -219,7 +219,7 @@ class TestCartAddFailureDoesNotCorruptSession(unittest.IsolatedAsyncioTestCase):
         # Simulate add_item_to_cart returning an empty cart (error state)
         from app.services.http_client import ExpressAPIError
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response(
+            patch(LLM_TARGET, return_value=mock_llm_response(
                 "add_items",
                 [{
                     "item_name": "Cappuccino",
@@ -229,7 +229,7 @@ class TestCartAddFailureDoesNotCorruptSession(unittest.IsolatedAsyncioTestCase):
                     "addons": [],
                     "instructions": "",
                 }]
-            ))),
+            )),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
             patch(MENU_DETAIL_TARGET, new=AsyncMock(return_value=fake_menu_item_detail_no_variants("Cappuccino"))),
             patch(ADD_CART_TARGET, new=AsyncMock(return_value={"cart_id": None, "cart": []})),
@@ -260,7 +260,7 @@ class TestEdgeCaseInputs(unittest.IsolatedAsyncioTestCase):
         session_store.sessions["s-ws"] = session
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response("unknown"))),
+            patch(LLM_TARGET, return_value=mock_llm_response("unknown")),
             patch(FALLBACK_TARGET, new=AsyncMock(return_value="Could you say that again?")),
             patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
         ):
@@ -280,7 +280,7 @@ class TestEdgeCaseInputs(unittest.IsolatedAsyncioTestCase):
         long_message = "add a latte " * 500  # ~6000 chars
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response("unknown"))),
+            patch(LLM_TARGET, return_value=mock_llm_response("unknown")),
             patch(FALLBACK_TARGET, new=AsyncMock(return_value="I didn't understand that.")),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
             patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
@@ -300,7 +300,7 @@ class TestEdgeCaseInputs(unittest.IsolatedAsyncioTestCase):
         session_store.sessions["s-desc-none"] = session
 
         with (
-            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response(
+            patch(LLM_TARGET, return_value=mock_llm_response(
                 "describe_item",
                 [{
                     "item_name": "Latte",
@@ -310,7 +310,7 @@ class TestEdgeCaseInputs(unittest.IsolatedAsyncioTestCase):
                     "addons": [],
                     "instructions": "",
                 }]
-            ))),
+            )),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
             patch(MENU_DETAIL_TARGET, new=AsyncMock(return_value=None)),
         ):

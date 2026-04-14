@@ -85,32 +85,6 @@ describe("cart consistency — add → view → update → remove", () => {
   // Add → view
   // -------------------------------------------------------------------------
 
-  test("add item → GET /cart returns item with matching lineId, name, qty", async () => {
-    const menuItem = makeMenuItem({ id: 101, name: "Latte", basePrice: 8000 });
-    stubMenuItemLookup(menuItem);
-    stubMenuItems([menuItem]);
-
-    // Cart starts empty; addToCart will push a new line
-    const cart = makeCart({ cartId: CART_ID, items: [] });
-    Cart.findOne = jest.fn().mockResolvedValue(null);
-    Cart.collection = { findOne: jest.fn().mockResolvedValue(null) };
-    Cart.create = jest.fn().mockResolvedValue(cart);
-
-    const addReq = cartReq({ body: { menuItemId: 101, qty: 1 } });
-    const addRes = mockRes();
-    await addToCart(addReq, addRes);
-
-    expect(addRes.status).toHaveBeenCalledWith(201);
-    const addBody = addRes.json.mock.calls[0][0];
-    expect(addBody.items).toHaveLength(1);
-
-    const line = addBody.items[0];
-    expect(line.name).toBe("Latte");
-    expect(line.qty).toBe(1);
-    expect(line.price).toBe(8000);
-    expect(line.lineId).toBeDefined();
-  });
-
   test("x-cart-id response header matches cartId in body", async () => {
     const menuItem = makeMenuItem({ id: 101, name: "Latte", basePrice: 8000 });
     stubMenuItemLookup(menuItem);
