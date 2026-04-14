@@ -5,21 +5,26 @@ import uuid
 class Session(TypedDict):
     session_id: str
     cart_id: str | None
-    last_items: list
+    last_items: list[dict[str, Any]]
     last_intent: str | None
     stage: str | None
     checkout_initiated: bool
     pending_clarification: dict[str, Any] | None
-    history: list
+    history: list[dict[str, str]]
     guided_order_item_id: int | str | None
     guided_order_item_name: str | None
     guided_order_phase: int
     guided_order_step: int
-    guided_order_groups: list
-    guided_order_required_groups: list
-    guided_order_optional_groups: list
-    guided_order_selections: dict
+    guided_order_groups: list[dict[str, Any]]
+    guided_order_required_groups: list[dict[str, Any]]
+    guided_order_optional_groups: list[dict[str, Any]]
+    guided_order_selections: dict[str, Any]
     guided_order_quantity: int | None
+    last_user_message: str | None
+    last_bot_response: str | None
+    last_matched_items: list[dict[str, Any]] | None
+    last_action_type: str | None
+    last_action_data: dict[str, Any] | None
 
 
 sessions: dict[str, Session] = {}
@@ -41,6 +46,11 @@ def get_session(session_id: str) -> Session:
         session.setdefault("guided_order_optional_groups", [])
         session.setdefault("guided_order_selections", {})
         session.setdefault("guided_order_quantity", None)
+        session.setdefault("last_user_message", None)
+        session.setdefault("last_bot_response", None)
+        session.setdefault("last_matched_items", None)
+        session.setdefault("last_action_type", None)
+        session.setdefault("last_action_data", None)
         return session
 
     new_session: Session = {
@@ -61,6 +71,11 @@ def get_session(session_id: str) -> Session:
         "guided_order_optional_groups": [],
         "guided_order_selections": {},
         "guided_order_quantity": None,
+        "last_user_message": None,
+        "last_bot_response": None,
+        "last_matched_items": None,
+        "last_action_type": None,
+        "last_action_data": None,
     }
     sessions[session_id] = new_session
     return new_session
@@ -106,6 +121,23 @@ def set_checkout_initiated(session_id: str, value: bool = True) -> None:
     session["checkout_initiated"] = bool(value)
 
 
+def update_last_action(
+    session_id: str,
+    user_message: str,
+    bot_response: str,
+    action_type: str,
+    matched_items: list[dict[str, Any]] | None = None,
+    action_data: dict[str, Any] | None = None,
+) -> None:
+    """Store the last user message, bot response, and action for repeat/recovery flows."""
+    session = get_session(session_id)
+    session["last_user_message"] = user_message
+    session["last_bot_response"] = bot_response
+    session["last_action_type"] = action_type
+    session["last_matched_items"] = matched_items if matched_items is not None else session.get("last_items", [])
+    session["last_action_data"] = action_data or {}
+
+
 def get_guided_order_item_id(session_id: str) -> int | str | None:
     session = get_session(session_id)
     return session.get("guided_order_item_id")
@@ -146,42 +178,42 @@ def set_guided_order_step(session_id: str, step: int) -> None:
     session["guided_order_step"] = int(step)
 
 
-def get_guided_order_groups(session_id: str) -> list:
+def get_guided_order_groups(session_id: str) -> list[dict[str, Any]]:
     session = get_session(session_id)
     return list(session.get("guided_order_groups") or [])
 
 
-def set_guided_order_groups(session_id: str, groups: list) -> None:
+def set_guided_order_groups(session_id: str, groups: list[dict[str, Any]]) -> None:
     session = get_session(session_id)
     session["guided_order_groups"] = list(groups or [])
 
 
-def get_guided_order_required_groups(session_id: str) -> list:
+def get_guided_order_required_groups(session_id: str) -> list[dict[str, Any]]:
     session = get_session(session_id)
     return list(session.get("guided_order_required_groups") or [])
 
 
-def set_guided_order_required_groups(session_id: str, groups: list) -> None:
+def set_guided_order_required_groups(session_id: str, groups: list[dict[str, Any]]) -> None:
     session = get_session(session_id)
     session["guided_order_required_groups"] = list(groups or [])
 
 
-def get_guided_order_optional_groups(session_id: str) -> list:
+def get_guided_order_optional_groups(session_id: str) -> list[dict[str, Any]]:
     session = get_session(session_id)
     return list(session.get("guided_order_optional_groups") or [])
 
 
-def set_guided_order_optional_groups(session_id: str, groups: list) -> None:
+def set_guided_order_optional_groups(session_id: str, groups: list[dict[str, Any]]) -> None:
     session = get_session(session_id)
     session["guided_order_optional_groups"] = list(groups or [])
 
 
-def get_guided_order_selections(session_id: str) -> dict:
+def get_guided_order_selections(session_id: str) -> dict[str, Any]:
     session = get_session(session_id)
     return dict(session.get("guided_order_selections") or {})
 
 
-def set_guided_order_selections(session_id: str, selections: dict) -> None:
+def set_guided_order_selections(session_id: str, selections: dict[str, Any]) -> None:
     session = get_session(session_id)
     session["guided_order_selections"] = dict(selections or {})
 

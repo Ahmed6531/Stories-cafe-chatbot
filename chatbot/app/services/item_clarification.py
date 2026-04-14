@@ -31,6 +31,8 @@ def _active_option_names(group: dict[str, Any]) -> list[str]:
     for option in options:
         if not isinstance(option, dict):
             continue
+        if option.get("isActive", True) is False:
+            continue
         name = str(option.get("name") or "").strip()
         if name:
             names.append(name)
@@ -83,13 +85,35 @@ def get_menu_detail_variants(menu_detail: dict[str, Any] | None) -> list[dict[st
     if not isinstance(menu_detail, dict):
         return []
 
+    def _is_group_active(group: dict[str, Any]) -> bool:
+        if group.get("isActive") is False:
+            return False
+
+        category = group.get("category")
+        if isinstance(category, dict) and category.get("isActive") is False:
+            return False
+
+        category_model = group.get("categoryModel")
+        if isinstance(category_model, dict) and category_model.get("isActive") is False:
+            return False
+
+        return True
+
     variants = menu_detail.get("variantGroupDetails")
     if isinstance(variants, list):
-        return [group for group in variants if isinstance(group, dict)]
+        return [
+            group
+            for group in variants
+            if isinstance(group, dict) and _is_group_active(group)
+        ]
 
     variants = menu_detail.get("variants")
     if isinstance(variants, list):
-        return [group for group in variants if isinstance(group, dict)]
+        return [
+            group
+            for group in variants
+            if isinstance(group, dict) and _is_group_active(group)
+        ]
 
     return []
 
@@ -158,7 +182,6 @@ def _group_answered(requested_item: dict[str, Any], group: dict[str, Any]) -> bo
 
 
 def find_ambiguous_menu_matches(menu_items: list[dict[str, Any]], item_query: str) -> list[dict[str, Any]]:
-    # Only consider items that are currently available
     menu_items = [
         item for item in menu_items
         if isinstance(item, dict) and item.get("isAvailable", True) is not False
@@ -187,8 +210,6 @@ def find_ambiguous_menu_matches(menu_items: list[dict[str, Any]], item_query: st
     if exact_matches:
         return []
 
-    # If one full menu name is a clearly better fuzzy match for the query,
-    # treat it as specific instead of opening a family-level ambiguity prompt.
     full_name_map = {
         _normalize_text(item.get("name")): item
         for item in menu_items
@@ -203,8 +224,6 @@ def find_ambiguous_menu_matches(menu_items: list[dict[str, Any]], item_query: st
         if (top_score - second_score) >= 0.12:
             return []
 
-    # If the query includes a token that is also an exact standalone item
-    # name (e.g., "espresso"), prefer direct resolution over family ambiguity.
     query_tokens = {
         _normalize_token(token)
         for token in normalized_query.split()
@@ -218,9 +237,6 @@ def find_ambiguous_menu_matches(menu_items: list[dict[str, Any]], item_query: st
     if any(token in standalone_item_names and len(token) >= 4 for token in query_tokens):
         return []
 
-    # If the user provided a specific multi-word name (even with typos),
-    # and exactly one menu item matches all query tokens fuzzily,
-    # do not trigger ambiguity at the family level.
     query_tokens = [_normalize_token(token) for token in normalized_query.split() if _normalize_token(token)]
     if len(query_tokens) >= 2:
         token_precise_matches: list[dict[str, Any]] = []
@@ -303,23 +319,15 @@ def find_ambiguous_menu_matches(menu_items: list[dict[str, Any]], item_query: st
     if len(unique_candidates) > 1:
         return unique_candidates
 
-    # Single candidate: only auto-resolve if the query is a close match to
-    # the item name.  If the item name has meaningful extra tokens the user
-    # didn't type (e.g. "water" → "Rim Sparkling Water"), return the single
-    # candidate so the bot can ask "Did you mean X?" instead of silently
-    # adding the wrong thing.
-    # EXCEPT: for very short queries (1-2 words like "water", "juice"), 
-    # auto-add without confirmation.
     if len(unique_candidates) == 1:
-        query_word_count = len([w for w in normalized_query.split() if w])
+        query_word_count = len([word for word in normalized_query.split() if word])
         if query_word_count <= 2:
-            # Short query → auto-add without confirmation
             return []
-        
+
         item_name_words = set(_normalize_text(unique_candidates[0].get("name")).split())
         query_words_set = set(normalized_query.split())
         extra_words = item_name_words - query_words_set
-        if any(len(w) >= 4 for w in extra_words):
+        if any(len(word) >= 4 for word in extra_words):
             return unique_candidates
 
     return []
@@ -331,7 +339,6 @@ def build_menu_choice_prompt(item_query: str, candidates: list[dict[str, Any]]) 
         if not raw:
             return "item"
 
-        # Build a vocabulary from candidate names to auto-correct display tokens.
         vocab: set[str] = set()
         for item in items:
             if not isinstance(item, dict):
@@ -436,8 +443,6 @@ def collect_missing_variant_groups(requested_item: dict[str, Any], menu_detail: 
         if not isinstance(group, dict):
             continue
 
-        # If a group has only one available choice, do not block on clarification.
-        # The add flow will auto-select that option when building selected_options.
         if len(_active_option_names(group)) <= 1:
             continue
 
@@ -460,8 +465,7 @@ def build_customization_prompt(item_name: str, missing_groups: list[dict[str, An
     if not missing_groups:
         return f"Awesome choice. How would you like your {item_name}?"
 
-    # Checklist UI renders the concrete options, so keep the text concise.
-    return f"Great pick! Let’s customize your {item_name}. Please choose from the checklist below."
+    return f"Great pick! Let's customize your {item_name}. Please choose from the checklist below."
 
 
 def build_customization_suggestions(
@@ -476,16 +480,19 @@ def build_customization_suggestions(
     for group in missing_groups:
         label = _group_label(group)
         group_key = _group_key(group)
+        options = _active_option_names(group)[:max_options_per_group]
+
         raw_max = group.get("maxSelections")
         if isinstance(raw_max, int) and raw_max > 0:
             max_selections = raw_max
+        elif raw_max is None:
+            max_selections = max(1, len(options))
         else:
             max_selections = 1
 
         if group_key == "addons" and "flavor" in _normalize_text(label):
             max_selections = min(max_selections, 2) if max_selections > 1 else 2
 
-        options = _active_option_names(group)[:max_options_per_group]
         for option_name in options:
             input_text = str(option_name).strip()
             key = _normalize_text(input_text)
@@ -545,6 +552,8 @@ def apply_customization_response(
         for option in options:
             if not isinstance(option, dict):
                 continue
+            if option.get("isActive", True) is False:
+                continue
             option_name = str(option.get("name") or "").strip()
             if not option_name:
                 continue
@@ -553,13 +562,21 @@ def apply_customization_response(
             normalized_description = _normalize_text(option.get("description"))
             option_aliases = _option_aliases(option_name, group_key)
 
-            if not any(_phrase_matches_message(normalized_message, alias) for alias in option_aliases):
-                if not (normalized_description and _phrase_matches_message(normalized_message, normalized_description)):
+            alias_matched = any(
+                _phrase_matches_message(normalized_message, alias)
+                for alias in option_aliases
+            )
+            description_matched = bool(
+                normalized_description and _phrase_matches_message(normalized_message, normalized_description)
+            )
+
+            if group_key == "addons":
+                if not alias_matched:
                     continue
+            elif not alias_matched and not description_matched:
+                continue
 
             if group_key == "milk" and ("small" in normalized_option or "medium" in normalized_option or "large" in normalized_option):
-                # If the option name includes a size but user didn't mention one,
-                # do not auto-pick a size-specific milk option.
                 size_in_message = any(token in normalized_message.split() for token in ["small", "medium", "med", "meduim", "large", "lg"])
                 if not size_in_message:
                     continue
@@ -588,7 +605,6 @@ def apply_customization_response(
 
 
 def _is_frozen_yogurt(menu_detail: dict[str, Any] | None) -> bool:
-    """Return True if the item is a frozen yogurt product (smart defaults are skipped for these)."""
     if not isinstance(menu_detail, dict):
         return False
     category = _normalize_text(menu_detail.get("category"))
@@ -599,26 +615,22 @@ def _is_frozen_yogurt(menu_detail: dict[str, Any] | None) -> bool:
 
 
 def _find_default_option(group: dict[str, Any], preferred_names: list[str]) -> str | None:
-    """Return the name of the best matching default option from a variant group."""
     options = _active_option_names(group)
     if not options:
         return None
 
-    normalized_preferred = [_normalize_text(p) for p in preferred_names]
+    normalized_preferred = [_normalize_text(preferred) for preferred in preferred_names]
 
-    # Exact match first
     for option in options:
         if _normalize_text(option) in normalized_preferred:
             return option
 
-    # Substring match
     for option in options:
         norm_opt = _normalize_text(option)
         for pref in normalized_preferred:
             if pref in norm_opt or norm_opt in pref:
                 return option
 
-    # Fallback: first available option
     return options[0]
 
 
@@ -626,15 +638,6 @@ def apply_smart_defaults(
     requested_item: dict[str, Any],
     menu_detail: dict[str, Any] | None,
 ) -> tuple[dict[str, Any], list[str], list[dict[str, Any]]]:
-    """
-    Apply smart defaults: size → Medium, milk → Regular/Full Fat.
-    Addon/topping/espresso/sugar groups are silently skipped (opt-in only).
-
-    Returns:
-        updated_item: copy of requested_item with size and milk filled in
-        applied_labels: human-readable labels for what was defaulted
-        still_required: list of required groups that couldn't be defaulted
-    """
     if not isinstance(menu_detail, dict):
         return requested_item, [], []
 
@@ -684,12 +687,9 @@ def apply_smart_defaults(
                 still_required.append(group)
 
         elif key in ("addons", "sugar"):
-            # Opt-in / optional — never prompt or default
             pass
 
         elif key == "temperature":
-            # For drinks/water, apply a silent cold default so users are not
-            # blocked by a clarification prompt on simple add requests.
             default_opt = _find_default_option(
                 group,
                 ["cold water", "cold", "chilled", "iced"],
@@ -702,7 +702,6 @@ def apply_smart_defaults(
                 still_required.append(group)
 
         else:
-            # Other groups (e.g. Temperature, Sauce): only block if required
             if is_required:
                 still_required.append(group)
 
@@ -714,15 +713,14 @@ def build_defaults_confirmation_prompt(
     applied_labels: list[str],
     user_customizations: dict[str, Any] | None = None,
 ) -> str:
-    """Build a natural smart-default confirmation message."""
     user_customizations = user_customizations or {}
 
     _SIZE_KW = {"small", "medium", "large"}
     size_label = next(
-        (lbl for lbl in applied_labels if any(kw in _normalize_text(lbl) for kw in _SIZE_KW)),
+        (label for label in applied_labels if any(kw in _normalize_text(label) for kw in _SIZE_KW)),
         None,
     )
-    other_labels = [lbl for lbl in applied_labels if lbl != size_label]
+    other_labels = [label for label in applied_labels if label != size_label]
 
     user_option_values: list[str] = []
     raw_options = user_customizations.get("options")
@@ -767,22 +765,21 @@ def build_defaults_confirmation_prompt(
         parts.append(f"with {', '.join(customizations)}")
 
     description = " ".join(parts)
-    return f"Got it! {description} ☕. Want to change anything?"
+    return f"Got it! {description} cafe-style. Want to change anything?"
 
 
 def build_defaults_confirmation_suggestions() -> list[dict[str, Any]]:
-    """Return two chip buttons: 'Looks good!' and 'Change it'."""
     return [
         {
             "type": "defaults_confirmation",
             "item_name": "",
-            "label": "Looks good! Add it \u2713",
+            "label": "Looks good! Add it",
             "input_text": "looks good add it",
         },
         {
             "type": "defaults_confirmation",
             "item_name": "",
-            "label": "Change it \u270f\ufe0f",
+            "label": "Change it",
             "input_text": "change it",
         },
     ]

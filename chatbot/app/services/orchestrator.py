@@ -32,6 +32,7 @@ from app.services.session_store import (
     set_guided_order_selections,
     set_guided_order_step,
     set_checkout_initiated,
+    update_last_action,
 )
 
 logger = logging.getLogger(__name__)
@@ -520,6 +521,42 @@ def active_variant_options(group: dict) -> list[dict]:
 
 def _normalize_whitespace(value: str | None) -> str:
     return " ".join(str(value or "").strip().lower().split())
+
+
+def _get_static_reply(normalized_phrase: str) -> str | None:
+    exact_reply = STATIC_REPLY_TABLE.get(normalized_phrase)
+    if exact_reply:
+        return exact_reply
+
+    cleaned = re.sub(r"[^\w\s]", " ", normalized_phrase)
+    cleaned = _normalize_whitespace(cleaned)
+    if not cleaned:
+        return None
+
+    exact_cleaned_reply = STATIC_REPLY_TABLE.get(cleaned)
+    if exact_cleaned_reply:
+        return exact_cleaned_reply
+
+    greeting_prefixes = (
+        "hi",
+        "hey",
+        "hello",
+        "hiya",
+        "good morning",
+        "good afternoon",
+        "good evening",
+    )
+    gratitude_prefixes = ("thanks", "thank you", "thx", "cheers")
+    positive_prefixes = ("great", "perfect", "awesome")
+
+    if any(cleaned.startswith(prefix) for prefix in greeting_prefixes):
+        return STATIC_REPLY_TABLE["hi"]
+    if any(cleaned.startswith(prefix) for prefix in gratitude_prefixes):
+        return STATIC_REPLY_TABLE["thank you"]
+    if any(cleaned.startswith(prefix) for prefix in positive_prefixes):
+        return STATIC_REPLY_TABLE["great"]
+
+    return None
 
 
 def _is_required_guided_group(group: dict) -> bool:
@@ -1074,6 +1111,27 @@ async def _finalize_guided_order(
         if is_out_of_stock_error(add_err):
             clear_guided_order_session(session_id)
             set_session_stage(session_id, None)
+            if not suggestion_lines and not rec_category and rec_query_terms:
+                requested = " ".join(rec_query_terms)
+                reply_text = f"I couldn't find specific matches for {requested} right now - try another item name from the menu."
+
+            if session and "last_recommendation_query" in session:
+                del session["last_recommendation_query"]
+            if session is not None:
+                session["last_recommendation_items"] = [
+                    s.get("item_name")
+                    for s in filtered_suggestions
+                    if isinstance(s, dict) and isinstance(s.get("item_name"), str) and s.get("item_name").strip()
+                ]
+
+            update_last_action(
+                session_id,
+                normalized_message,
+                reply_text,
+                intent,
+                action_data={"category": rec_category},
+            )
+
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
@@ -1206,7 +1264,11 @@ async def process_chat_message(
     message: str,
     cart_id: str | None = None,
     session: Session | None = None,
+    auth_cookie: str | None = None,
 ) -> ChatMessageResponse:
+
+    if session is None:
+        session = get_session(session_id)
 
     from app.utils.normalize import normalize_user_message
     from app.services.tools import (
@@ -1215,12 +1277,14 @@ async def process_chat_message(
         fetch_featured_items,
         fetch_menu_item_detail,
         fetch_menu_items,
+        fetch_my_orders,
         find_menu_item_by_name,
         get_cart,
         remove_item_from_cart,
         update_cart_item_quantity,
     )
     from app.services.suggestions import (
+        extract_recommendation_query_terms,
         suggest_complementary_items,
         suggest_popular_items,
         extract_recommendation_category,
@@ -1258,7 +1322,7 @@ async def process_chat_message(
     _skip_resolve = False
 
     if current_stage not in {"guided_ordering", "checkout_summary"}:
-        static_reply = STATIC_REPLY_TABLE.get(normalized_phrase)
+        static_reply = _get_static_reply(normalized_phrase)
         if static_reply:
             return ChatMessageResponse(
                 session_id=session_id,
@@ -2284,6 +2348,14 @@ async def process_chat_message(
             menu_items = await fetch_menu_items()
 
             rec_category = extract_recommendation_category(normalized_message)
+            rec_query_terms = extract_recommendation_query_terms(normalized_message)
+
+            if not rec_category and not rec_query_terms and session and session.get("last_recommendation_query"):
+                rec_category = session.get("last_recommendation_query")
+                from app.services.menu_details import _looks_like_ice_cream_query
+
+                if _looks_like_ice_cream_query(rec_category):
+                    rec_category = "yogurt"
             menu_items_by_name = {
                 (item.get("name") or "").lower(): item
                 for item in menu_items
@@ -2304,12 +2376,73 @@ async def process_chat_message(
                 anchor_menu_item=cart_items[-1] if cart_items else None,
             )
 
-            all_suggestions = popular + complementary + upsell
+            raw_suggestions = popular + complementary + upsell
+            all_suggestions = raw_suggestions
+            used_broad_category_fallback = False
+            used_term_only_fallback = False
 
-            if rec_category:
-                all_suggestions = filter_by_category(all_suggestions, rec_category, menu_items_by_name)
+            if rec_category or rec_query_terms:
+                all_suggestions = filter_by_category(
+                    all_suggestions,
+                    rec_category,
+                    menu_items_by_name,
+                    rec_query_terms,
+                )
 
-            seen_names: set = set()
+                if not all_suggestions and rec_query_terms and rec_category:
+                    all_menu_suggestions = [
+                        {
+                            "type": "menu_search",
+                            "item_name": item.get("name"),
+                            "menu_item_id": item.get("id"),
+                        }
+                        for item in menu_items
+                        if isinstance(item, dict) and item.get("name")
+                    ]
+                    all_suggestions = filter_by_category(
+                        all_menu_suggestions,
+                        rec_category,
+                        menu_items_by_name,
+                        rec_query_terms,
+                    )
+                    if not all_suggestions:
+                        all_suggestions = filter_by_category(
+                            raw_suggestions,
+                            rec_category,
+                            menu_items_by_name,
+                            [],
+                        )
+                        used_broad_category_fallback = bool(all_suggestions)
+
+            if not all_suggestions and rec_query_terms and not rec_category:
+                all_menu_suggestions = [
+                    {
+                        "type": "menu_search",
+                        "item_name": item.get("name"),
+                        "menu_item_id": item.get("id"),
+                    }
+                    for item in menu_items
+                    if isinstance(item, dict) and item.get("name")
+                ]
+                all_suggestions = filter_by_category(
+                    all_menu_suggestions,
+                    None,
+                    menu_items_by_name,
+                    rec_query_terms,
+                )
+                if all_suggestions:
+                    used_term_only_fallback = True
+                else:
+                    all_suggestions = filter_by_category(
+                        raw_suggestions,
+                        "food",
+                        menu_items_by_name,
+                        [],
+                    )
+                    if all_suggestions:
+                        used_term_only_fallback = True
+
+            seen_names: set[str] = set()
             filtered_suggestions = []
             for suggestion in all_suggestions:
                 item_name = (suggestion.get("item_name") or "").strip()
@@ -2326,13 +2459,36 @@ async def process_chat_message(
             suggestion_lines = [f"- {s['item_name']}" for s in filtered_suggestions]
             if suggestion_lines:
                 if rec_category:
-                    cat_label = "drinks" if rec_category == "drink" else "food"
-                    reply_text = f"Here are some {cat_label} you might like:\n" + "\n".join(suggestion_lines)
+                    if rec_category == "drink":
+                        cat_label = "drinks"
+                    elif rec_category == "yogurt":
+                        cat_label = "yogurt items"
+                    else:
+                        cat_label = "food"
+                    if used_broad_category_fallback and rec_query_terms:
+                        requested = " ".join(rec_query_terms)
+                        reply_text = (
+                            f"I couldn't find specific {requested} right now, but here are some {cat_label} you might like:\n"
+                            + "\n".join(suggestion_lines)
+                        )
+                    else:
+                        reply_text = f"Here are some {cat_label} you might like:\n" + "\n".join(suggestion_lines)
+                elif used_term_only_fallback and rec_query_terms:
+                    requested = " ".join(rec_query_terms)
+                    reply_text = (
+                        f"I couldn't find exact matches for {requested}, but here are items you might like:\n"
+                        + "\n".join(suggestion_lines)
+                    )
                 else:
                     reply_text = "Here are some picks you might like:\n" + "\n".join(suggestion_lines)
             else:
                 if rec_category:
-                    cat_label = "drinks" if rec_category == "drink" else "food items"
+                    if rec_category == "drink":
+                        cat_label = "drinks"
+                    elif rec_category == "yogurt":
+                        cat_label = "yogurt items"
+                    else:
+                        cat_label = "food items"
                     reply_text = f"I don't have specific {cat_label} to suggest right now — try browsing the menu!"
                 else:
                     reply_text = "I can help with suggestions once you add an item to your cart."
@@ -2349,6 +2505,9 @@ async def process_chat_message(
                 metadata={
                     "normalized_message": normalized_message,
                     "recommendation_category": rec_category,
+                    "recommendation_query_terms": rec_query_terms,
+                    "used_broad_category_fallback": used_broad_category_fallback,
+                    "used_term_only_fallback": used_term_only_fallback,
                     "pipeline_stage": "recommendation_done",
                 },
             )
@@ -3183,7 +3342,42 @@ async def process_chat_message(
         if intent == "repeat_order":
             # Repeat the most recently ordered items from this session if available.
             session_items: list = (session or {}).get("last_items") or []
+            recent_order_lines: list[dict] = []
             if not session_items:
+                recent_orders = await fetch_my_orders(auth_cookie=auth_cookie, limit=20)
+                if recent_orders:
+                    for order in recent_orders:
+                        if not isinstance(order, dict):
+                            continue
+                        if str(order.get("status") or "").strip().lower() == "cancelled":
+                            continue
+                        order_items = order.get("items")
+                        if not isinstance(order_items, list) or not order_items:
+                            continue
+
+                        normalized_lines: list[dict] = []
+                        for line in order_items:
+                            if not isinstance(line, dict):
+                                continue
+                            menu_item_id = line.get("menuItemId")
+                            qty = int(line.get("qty") or 1)
+                            if menu_item_id is None or qty < 1:
+                                continue
+                            normalized_lines.append(
+                                {
+                                    "menuItemId": menu_item_id,
+                                    "qty": qty,
+                                    "selectedOptions": line.get("selectedOptions") if isinstance(line.get("selectedOptions"), list) else [],
+                                    "instructions": str(line.get("instructions") or ""),
+                                    "name": str(line.get("name") or "").strip(),
+                                }
+                            )
+
+                        if normalized_lines:
+                            recent_order_lines = normalized_lines
+                            break
+
+            if not session_items and not recent_order_lines:
                 fallback_reply = await generate_fallback_reply(
                     normalized_message,
                     reason="repeat_order_no_history",
@@ -3206,6 +3400,80 @@ async def process_chat_message(
                         "pipeline_stage": "repeat_order_no_history",
                     },
                 )
+            if recent_order_lines:
+                successful_items = []
+                failed_items = []
+                cart_result = None
+                current_cart_id = cart_id
+
+                for line in recent_order_lines:
+                    menu_item_id = line.get("menuItemId")
+                    quantity = int(line.get("qty") or 1)
+                    if menu_item_id is None or quantity < 1:
+                        continue
+                    try:
+                        cart_result = await add_item_to_cart(
+                            menu_item_id=menu_item_id,
+                            qty=quantity,
+                            selected_options=line.get("selectedOptions") if isinstance(line.get("selectedOptions"), list) else [],
+                            instructions=str(line.get("instructions") or ""),
+                            cart_id=current_cart_id,
+                        )
+                    except ExpressAPIError as add_err:
+                        failed_message = "out of stock right now" if is_out_of_stock_error(add_err) else "could not add right now"
+                        failed_items.append(_build_failed_item(line.get("name") or "item", failed_message))
+                        continue
+
+                    current_cart_id = cart_result["cart_id"]
+                    successful_items.append(
+                        {
+                            "requested_name": line.get("name"),
+                            "matched_name": line.get("name") or "item",
+                            "quantity": quantity,
+                            "selected_options": line.get("selectedOptions") if isinstance(line.get("selectedOptions"), list) else [],
+                            "instructions": str(line.get("instructions") or ""),
+                        }
+                    )
+
+                if not successful_items:
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="ok",
+                        reply="I couldn't re-add your last checked-out order.",
+                        intent="repeat_order",
+                        cart_updated=False,
+                        cart_id=current_cart_id,
+                        defaults_used=[],
+                        suggestions=[],
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "failed_items": failed_items,
+                            "pipeline_stage": "repeat_order_failed",
+                        },
+                    )
+
+                cart_summary = build_cart_summary(cart_result["cart"])
+                added_lines = [f"- {item['quantity']}x {item['matched_name']}" for item in successful_items]
+                reply_text = "Re-added your last checked-out order:\n" + "\n".join(added_lines)
+                if cart_summary:
+                    reply_text += f"\n\nYour cart now contains:\n{cart_summary}"
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply=reply_text,
+                    intent="repeat_order",
+                    cart_updated=True,
+                    cart_id=current_cart_id,
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "added_items": successful_items,
+                        "cart": cart_result["cart"],
+                        "pipeline_stage": "repeat_order_done",
+                    },
+                )
+
             # Re-use the add flow with the session items
             resolved["items"] = list(session_items)
             intent = "add_items"
