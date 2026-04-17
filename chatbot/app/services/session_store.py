@@ -25,6 +25,9 @@ class Session(TypedDict):
     last_matched_items: list[dict[str, Any]] | None
     last_action_type: str | None
     last_action_data: dict[str, Any] | None
+    _schema_version: int
+    pending_operations: list[dict]
+    pending_operations_context: dict
 
 
 sessions: dict[str, Session] = {}
@@ -33,24 +36,31 @@ sessions: dict[str, Session] = {}
 def get_session(session_id: str) -> Session:
     if session_id in sessions:
         session = sessions[session_id]
-        session.setdefault("stage", None)
-        session.setdefault("checkout_initiated", False)
-        session.setdefault("pending_clarification", None)
-        session.setdefault("history", [])
-        session.setdefault("guided_order_item_id", None)
-        session.setdefault("guided_order_item_name", None)
-        session.setdefault("guided_order_phase", 1)
-        session.setdefault("guided_order_step", 0)
-        session.setdefault("guided_order_groups", [])
-        session.setdefault("guided_order_required_groups", [])
-        session.setdefault("guided_order_optional_groups", [])
-        session.setdefault("guided_order_selections", {})
-        session.setdefault("guided_order_quantity", None)
-        session.setdefault("last_user_message", None)
-        session.setdefault("last_bot_response", None)
-        session.setdefault("last_matched_items", None)
-        session.setdefault("last_action_type", None)
-        session.setdefault("last_action_data", None)
+        # Migration: only run setdefaults once per session lifetime.
+        # After migration the _schema_version flag is set so this block is
+        # skipped on every subsequent access.
+        if session.get("_schema_version") != 1:
+            session.setdefault("stage", None)
+            session.setdefault("checkout_initiated", False)
+            session.setdefault("pending_clarification", None)
+            session.setdefault("history", [])
+            session.setdefault("guided_order_item_id", None)
+            session.setdefault("guided_order_item_name", None)
+            session.setdefault("guided_order_phase", 1)
+            session.setdefault("guided_order_step", 0)
+            session.setdefault("guided_order_groups", [])
+            session.setdefault("guided_order_required_groups", [])
+            session.setdefault("guided_order_optional_groups", [])
+            session.setdefault("guided_order_selections", {})
+            session.setdefault("guided_order_quantity", None)
+            session.setdefault("last_user_message", None)
+            session.setdefault("last_bot_response", None)
+            session.setdefault("last_matched_items", None)
+            session.setdefault("last_action_type", None)
+            session.setdefault("last_action_data", None)
+            session.setdefault("pending_operations", [])
+            session.setdefault("pending_operations_context", {})
+            session["_schema_version"] = 1
         return session
 
     new_session: Session = {
@@ -76,6 +86,9 @@ def get_session(session_id: str) -> Session:
         "last_matched_items": None,
         "last_action_type": None,
         "last_action_data": None,
+        "_schema_version": 1,
+        "pending_operations": [],
+        "pending_operations_context": {},
     }
     sessions[session_id] = new_session
     return new_session
@@ -240,3 +253,31 @@ def clear_guided_order_session(session_id: str) -> None:
     session["guided_order_optional_groups"] = []
     session["guided_order_selections"] = {}
     session["guided_order_quantity"] = None
+    # pending_operations intentionally NOT cleared here —
+    # abort handler needs the queue to ask user about remaining ops.
+
+
+def get_pending_operations(session_id: str) -> list[dict]:
+    session = get_session(session_id)
+    return list(session.get("pending_operations") or [])
+
+
+def set_pending_operations(session_id: str, ops: list[dict]) -> None:
+    session = get_session(session_id)
+    session["pending_operations"] = list(ops or [])
+
+
+def get_pending_operations_context(session_id: str) -> dict:
+    session = get_session(session_id)
+    return dict(session.get("pending_operations_context") or {})
+
+
+def set_pending_operations_context(session_id: str, context: dict) -> None:
+    session = get_session(session_id)
+    session["pending_operations_context"] = dict(context or {})
+
+
+def clear_pending_operations(session_id: str) -> None:
+    session = get_session(session_id)
+    session["pending_operations"] = []
+    session["pending_operations_context"] = {}

@@ -1,11 +1,12 @@
 import logging
 import re
 from collections.abc import Awaitable, Callable
-from collections.abc import Awaitable, Callable
 
 import httpx
 
 from app.core.config import settings
+from app.utils.gemini_utils import _normalize_gemini_model_name
+from app.utils.static_replies import STATIC_REPLY_TABLE
 
 genai = None
 
@@ -93,27 +94,9 @@ _OFF_SCRIPT_REPLY_PATTERNS = (
     r"\bkiss\b",
 )
 
-_SAFE_STATIC_REPLY_TABLE: dict[str, str] = {
-    "hi": "Hi! What can I get for you today?",
-    "hey": "Hey! What can I get for you?",
-    "hello": "Hello! What would you like to order?",
-    "hiya": "Hi there! What can I get you?",
-    "good morning": "Good morning! What can I get for you?",
-    "good afternoon": "Good afternoon! What would you like?",
-    "good evening": "Good evening! What can I get for you?",
-    "thanks": "You're welcome! Anything else?",
-    "thank you": "You're welcome! Let me know if you need anything else.",
-    "thx": "You're welcome!",
-    "cheers": "Cheers! Anything else I can help with?",
-    "great": "Great! Anything else?",
-    "perfect": "Perfect! Anything else?",
-    "awesome": "Glad to help! Anything else?",
-}
-
-
 def _safe_static_reply(user_message: str) -> str:
     normalized = " ".join((user_message or "").strip().lower().split())
-    static_reply = _SAFE_STATIC_REPLY_TABLE.get(normalized)
+    static_reply = STATIC_REPLY_TABLE.get(normalized)
     if static_reply:
         return static_reply
     return "I can help with menu details, cart updates, or checkout."
@@ -289,13 +272,6 @@ async def _generate_complete_reply_once(
     return _safe_static_reply(user_message)
 
 
-def _normalize_gemini_model_name(model_name: str | None) -> str:
-    normalized = (model_name or "").strip()
-    if normalized.startswith("models/"):
-        return normalized.split("/", 1)[1]
-    return normalized
-
-
 def _iter_gemini_models(preferred_model: str | None) -> list[str]:
     seen = set()
     models: list[str] = []
@@ -331,11 +307,9 @@ async def _generate_with_azure_openai(user_message: str, system_prompt: str) -> 
 
     try:
         async with httpx.AsyncClient(timeout=FALLBACK_HTTP_TIMEOUT_SECONDS) as client:
-        async with httpx.AsyncClient(timeout=FALLBACK_HTTP_TIMEOUT_SECONDS) as client:
             response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
         data = response.json()
-        return _extract_openai_style_content(data)
         return _extract_openai_style_content(data)
     except Exception as exc:
         logger.warning("Azure fallback assistant call failed: %s", exc)
@@ -363,11 +337,9 @@ async def _generate_with_openai(user_message: str, system_prompt: str) -> str | 
 
     try:
         async with httpx.AsyncClient(timeout=FALLBACK_HTTP_TIMEOUT_SECONDS) as client:
-        async with httpx.AsyncClient(timeout=FALLBACK_HTTP_TIMEOUT_SECONDS) as client:
             response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
         data = response.json()
-        return _extract_openai_style_content(data)
         return _extract_openai_style_content(data)
     except Exception as exc:
         logger.warning("OpenAI fallback assistant call failed: %s", exc)
@@ -394,7 +366,6 @@ async def _generate_with_gemini(user_message: str, system_prompt: str) -> str | 
                     "max_output_tokens": FALLBACK_MAX_TOKENS,
                 },
             )
-            return _extract_gemini_content(response)
             return _extract_gemini_content(response)
         except Exception as exc:
             last_error = exc

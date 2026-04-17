@@ -17,8 +17,10 @@ The returned dict is a fully resolved intent object.  The orchestrator
 consumes it directly and never re-inspects the raw message for intent.
 """
 
+import asyncio
 import logging
 import re
+import time
 from typing import Optional
 
 from app.services.llm_interpreter import try_interpret_message
@@ -46,22 +48,6 @@ _CONFIRM_CHECKOUT_PHRASES: frozenset[str] = frozenset({
     "proceed",
     "place it",
     "let's go",
-})
-
-# Bare affirmations — NEVER routed to confirm_checkout by themselves.
-# Layer 4a resolves them against session stage.
-_CONVERSATIONAL_PASSTHROUGH: frozenset[str] = frozenset({
-    "hi",
-    "hey",
-    "hello",
-    "hiya",
-    "thanks",
-    "thank you",
-    "thx",
-    "cheers",
-    "good morning",
-    "good afternoon",
-    "good evening",
 })
 
 _BARE_AFFIRMATIONS: frozenset[str] = frozenset({
@@ -101,7 +87,9 @@ _VALID_INTENTS: frozenset[str] = frozenset({
     "checkout",
     "confirm_checkout",
     "repeat_order",
+    "update_item",
     "guided_order_response",
+    "multi_op",
     "unknown",
 })
 
@@ -120,8 +108,9 @@ def _make_resolved(
     reason: str = "",
     source: str = "llm",
     route_to_fallback: bool = False,
+    operations: list | None = None,
 ) -> dict:
-    return {
+    result = {
         "intent": intent,
         "confidence": confidence,
         "items": items if items is not None else [],
@@ -133,6 +122,11 @@ def _make_resolved(
         # Kept for backward compatibility with execution-layer checks
         "fallback_needed": route_to_fallback,
     }
+    if operations is not None:
+        result["operations"] = operations
+    else:
+        result["operations"] = []
+    return result
 
 
 def _extract_explicit_quantity(normalized_message: str) -> int | None:
@@ -185,25 +179,104 @@ _RE_PRICE = re.compile(
     r"cost\s+of\s+(?:the\s+|a\s+)?)(.+?)(?:\s*\?)?$"
 )
 
-# Category keywords that map to a browsable category (not item names)
-_CATEGORY_KEYWORDS: frozenset[str] = frozenset({
+# ── Dynamic category cache ────────────────────────────────────────
+# Built from live menu data. Refreshed every 5 minutes.
+# Falls back to hardcoded set if fetch fails.
+
+_CATEGORY_CACHE: frozenset[str] = frozenset()
+_CATEGORY_CACHE_TIMESTAMP: float = 0.0
+_CATEGORY_CACHE_TTL: float = 300.0  # 5 minutes
+
+_CATEGORY_KEYWORDS_FALLBACK: frozenset[str] = frozenset({
     "drink", "drinks", "beverage", "beverages",
     "coffee", "coffees", "tea", "teas",
-    "juice", "juices", "smoothie", "smoothies", "milkshake", "milkshakes",
-    "food", "foods", "eat", "snack", "snacks",
-    "pastry", "pastries", "cake", "cakes",
-    "dessert", "desserts", "sweet", "sweets",
-    "sandwich", "sandwiches", "wrap", "wraps",
-    "salad", "salads", "breakfast", "lunch", "brunch",
-    "meal", "meals", "hot", "cold", "iced",
+    "juice", "juices", "smoothie", "smoothies",
+    "milkshake", "milkshakes", "food", "foods",
+    "eat", "snack", "snacks", "pastry", "pastries",
+    "cake", "cakes", "dessert", "desserts",
+    "sweet", "sweets", "sandwich", "sandwiches",
+    "wrap", "wraps", "salad", "salads",
+    "breakfast", "lunch", "brunch", "meal", "meals",
+    "hot", "cold", "iced", "yogurt", "yogurts",
+    "froyo", "platter", "platters", "bowl", "bowls",
 })
+
+
+async def _get_category_keywords() -> frozenset[str]:
+    """
+    Returns a frozenset of category keywords built from live menu data.
+    Refreshes every 5 minutes. Falls back to hardcoded set on failure.
+    """
+    global _CATEGORY_CACHE, _CATEGORY_CACHE_TIMESTAMP
+
+    now = time.monotonic()
+    if (
+        _CATEGORY_CACHE
+        and (now - _CATEGORY_CACHE_TIMESTAMP) < _CATEGORY_CACHE_TTL
+    ):
+        return _CATEGORY_CACHE
+
+    try:
+        from app.services.tools import fetch_menu_items
+        menu_items = await fetch_menu_items()
+
+        keywords: set[str] = set()
+        for item in menu_items:
+            if not isinstance(item, dict):
+                continue
+
+            # Extract category name and subcategory
+            cat = item.get("category")
+            if isinstance(cat, dict):
+                cat_name = str(cat.get("name") or "").strip().lower()
+                if cat_name:
+                    keywords.add(cat_name)
+                    # Add singular/plural variants
+                    if cat_name.endswith("s") and len(cat_name) > 3:
+                        keywords.add(cat_name[:-1])
+                    else:
+                        keywords.add(cat_name + "s")
+            elif isinstance(cat, str) and cat.strip():
+                cat_name = cat.strip().lower()
+                keywords.add(cat_name)
+                if cat_name.endswith("s") and len(cat_name) > 3:
+                    keywords.add(cat_name[:-1])
+                else:
+                    keywords.add(cat_name + "s")
+
+            # Also extract subcategory if present
+            subcat = item.get("subcategory")
+            if isinstance(subcat, dict):
+                subcat_name = str(subcat.get("name") or "").strip().lower()
+                if subcat_name:
+                    keywords.add(subcat_name)
+            elif isinstance(subcat, str) and subcat.strip():
+                keywords.add(subcat.strip().lower())
+
+        # Always include fallback keywords so common terms always work
+        keywords.update(_CATEGORY_KEYWORDS_FALLBACK)
+
+        _CATEGORY_CACHE = frozenset(keywords)
+        _CATEGORY_CACHE_TIMESTAMP = now
+        logger.info({
+            "stage": "category_cache_refreshed",
+            "keyword_count": len(_CATEGORY_CACHE),
+        })
+        return _CATEGORY_CACHE
+
+    except Exception as exc:
+        logger.warning({
+            "stage": "category_cache_fetch_failed",
+            "error": str(exc),
+        })
+        return _CATEGORY_KEYWORDS_FALLBACK
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Layer 2 — Deterministic Router
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _layer2_deterministic(normalized: str) -> Optional[dict]:
+async def _layer2_deterministic(normalized: str) -> Optional[dict]:
     """
     Exact-phrase match only.  No substring scanning, no regex.
     Returns a resolved intent dict or None (fall through to Layer 3).
@@ -234,7 +307,8 @@ def _layer2_deterministic(normalized: str) -> Optional[dict]:
     m = _RE_LIST_CATEGORY.match(normalized)
     if m:
         candidate = (m.group(1) or m.group(2) or "").strip().lower()
-        if candidate in _CATEGORY_KEYWORDS:
+        category_keywords = await _get_category_keywords()
+        if candidate in category_keywords:
             return _make_resolved(
                 intent="list_category_items",
                 source="deterministic",
@@ -283,7 +357,52 @@ def _layer4_resolve(
     Enriches, validates, and makes the final routing decision.
     Does NOT reclassify intent — only adds context, resolves references,
     normalises quantities, and sets route_to_fallback.
+
+    For multi-op messages (raw["operations"] has >1 entry), runs the existing
+    single-op logic on each operation independently and returns a multi_op result
+    if multiple valid operations survive.
     """
+    operations = raw.get("operations") or []
+
+    if len(operations) > 1:
+        # ── Multi-op path ─────────────────────────────────────────────────────
+        top_confidence = float(raw.get("confidence") or 0.0)
+        resolved_ops = []
+        for op in operations:
+            # Build a synthetic single-op raw dict so existing logic can process it.
+            # Inject the top-level confidence since per-operation dicts don't carry it.
+            synthetic_raw = {
+                "intent": op.get("intent"),
+                "items": op.get("items") or [],
+                "follow_up_ref": op.get("follow_up_ref"),
+                "needs_clarification": op.get("needs_clarification", False),
+                "reason": op.get("reason") or "",
+                "confidence": top_confidence,
+                "fallback_needed": raw.get("fallback_needed", False),
+            }
+            op_resolved = _layer4_resolve(synthetic_raw, normalized_message, session, menu)
+            if op_resolved.get("route_to_fallback"):
+                op_resolved["intent"] = "unknown"
+            resolved_ops.append(op_resolved)
+
+        # Filter unknowns only when other valid ops exist
+        valid_ops = [op for op in resolved_ops if op["intent"] != "unknown"]
+        if not valid_ops:
+            # All ambiguous — fall back to first op's resolved shape
+            return resolved_ops[0]
+
+        if len(valid_ops) == 1:
+            # Only one real operation survived — return it as a normal single-intent result
+            return valid_ops[0]
+
+        return _make_resolved(
+            intent="multi_op",
+            confidence=min(op["confidence"] for op in valid_ops),
+            operations=valid_ops,
+            route_to_fallback=False,
+        )
+
+    # ── Single-op path (unchanged) ─────────────────────────────────────────────
     result = _make_resolved(
         intent=raw.get("intent") or "unknown",
         confidence=float(raw.get("confidence") or 0.0),
@@ -429,7 +548,7 @@ async def resolve_intent(
     normalized = " ".join(message.strip().lower().split())
 
     # ── Layer 2: Deterministic Router ────────────────────────────────────────
-    deterministic = _layer2_deterministic(normalized)
+    deterministic = await _layer2_deterministic(normalized)
     if deterministic is not None:
         logger.info({
             "stage": "pipeline_layer2_match",
@@ -462,7 +581,7 @@ async def resolve_intent(
     if session_id:
         guided_order_phase = get_guided_order_phase(session_id)
 
-    raw = try_interpret_message(
+    raw = await try_interpret_message(
         normalized,
         context={
             "session_stage": session_stage,
