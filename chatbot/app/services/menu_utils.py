@@ -70,6 +70,32 @@ def normalize_modifier_text(value: str | None) -> str:
     return " ".join(normalized.split())
 
 
+def is_guided_skip_response(value: str | None) -> bool:
+    normalized = normalize_modifier_text(value)
+    if not normalized:
+        return False
+
+    if normalized in GUIDED_SKIP_WORDS:
+        return True
+
+    if normalized in {"no thanks", "no thank you", "none thanks", "none thank you"}:
+        return True
+
+    return any(
+        normalized.startswith(prefix)
+        for prefix in (
+            "none thanks",
+            "none thank you",
+            "no thanks",
+            "no thank you",
+            "nothing thanks",
+            "nothing thank you",
+            "skip thanks",
+            "skip thank you",
+        )
+    )
+
+
 def get_variant_group_label(group: dict | None) -> str:
     if not isinstance(group, dict):
         return ""

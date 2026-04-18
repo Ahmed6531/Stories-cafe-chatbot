@@ -364,33 +364,34 @@ def _is_safe_fuzzy_candidate(item_query: str, candidate: str) -> bool:
     return False
 
 
-async def find_menu_item_by_name(menu_items, item_query):
+async def find_menu_item_by_name(menu_items, item_query, *, include_unavailable: bool = False):
     if not item_query:
         return None
 
     item_query = _normalize_lookup_text(item_query)
 
-    # Only consider items that are currently available
-    available_items = [
-        item for item in menu_items
-        if isinstance(item, dict) and item.get("isAvailable", True) is not False
-    ]
+    candidates = [item for item in menu_items if isinstance(item, dict)]
+    if not include_unavailable:
+        candidates = [
+            item for item in candidates
+            if item.get("isAvailable", True) is not False
+        ]
 
     # Special case: "water" or "cold water" etc should map to "Rim 330ML" not
     # "Rim Sparkling Water" unless the user explicitly says "sparkling".
     if "water" in item_query and "sparkling" not in item_query:
-        for item in available_items:
+        for item in candidates:
             if item.get("name", "").strip().lower() == "rim 330ml":
                 return item
 
     # 1) exact match
-    for item in available_items:
+    for item in candidates:
         name = _normalize_lookup_text(item.get("name", ""))
         if item_query == name:
             return item
 
     # 2) contains match
-    for item in available_items:
+    for item in candidates:
         name = _normalize_lookup_text(item.get("name", ""))
         if item_query in name or name in item_query:
             return item
@@ -401,7 +402,7 @@ async def find_menu_item_by_name(menu_items, item_query):
     best_item = None
     best_overlap = 0
 
-    for item in available_items:
+    for item in candidates:
         name = _normalize_lookup_text(item.get("name", ""))
         name_words = set(name.split())
         overlap = len(query_words & name_words)
@@ -419,7 +420,7 @@ async def find_menu_item_by_name(menu_items, item_query):
     # 4) fuzzy match
     menu_name_map = {
         _normalize_lookup_text(item.get("name", "")): item
-        for item in available_items
+        for item in candidates
         if item.get("name")
     }
 

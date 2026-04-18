@@ -22,6 +22,7 @@ from app.schemas.actions import (
 )
 from app.services.compiler import CompileFailure, CompileNeedsClarification, CompileSuccess
 from app.services.executor import ExecutionResult, execute_compiled_operations
+from app.services.executor import _failure_to_reply
 from app.services.session_store import get_session
 
 
@@ -193,3 +194,12 @@ async def test_followup_reference_works_after_multi_op_add(monkeypatch):
         for item in last_items
         if isinstance(item, dict)
     ), f"last_items does not contain expected item names: {last_items}"
+
+
+def test_failure_to_reply_prefers_custom_message():
+    failure = CompileFailure(
+        reason="item_not_found",
+        source_item=ParsedItemRequest(item_query="flat white"),
+        message="I couldn't find 'flat white' in your cart.",
+    )
+    assert _failure_to_reply(failure, "flat white") == "I couldn't find 'flat white' in your cart."

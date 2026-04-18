@@ -96,6 +96,16 @@ class TestFindMenuItemByName(unittest.IsolatedAsyncioTestCase):
         result = await find_menu_item_by_name(menu, "Sold Out Item")
         self.assertIsNone(result)
 
+    async def test_can_include_unavailable_items_when_requested(self):
+        menu = fake_menu_items()
+        result = await find_menu_item_by_name(
+            menu,
+            "Sold Out Item",
+            include_unavailable=True,
+        )
+        self.assertIsNotNone(result)
+        self.assertEqual(result["name"], "Sold Out Item")
+
     async def test_water_special_case_routes_to_rim_330ml(self):
         menu = fake_menu_items()
         result = await find_menu_item_by_name(menu, "water")

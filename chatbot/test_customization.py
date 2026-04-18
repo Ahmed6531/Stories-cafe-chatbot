@@ -681,6 +681,69 @@ class GuidedOrderingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.metadata["pipeline_stage"], "guided_ordering_default_all")
         self.assertEqual(add_to_cart_mock.await_args.kwargs["selected_options"], [])
 
+    async def test_guided_order_none_thank_you_skips_instructions(self) -> None:
+        session = get_session("guided-none-thank-you")
+        matched_item = {"id": 12, "name": "Croissant", "category": "Pastries"}
+        add_result = {"cart_id": "cart789", "cart": [{"name": "Croissant", "qty": 1}]}
+
+        with patch(
+            "app.services.orchestrator.resolve_intent",
+            new=AsyncMock(
+                side_effect=[
+                    resolved_add_items("croissant"),
+                    resolved_guided_response(),
+                    resolved_guided_response(),
+                ]
+            ),
+        ), patch(
+            "app.services.tools.fetch_menu_items",
+            new=AsyncMock(return_value=[matched_item]),
+        ), patch(
+            "app.services.tools.find_menu_item_by_name",
+            new=AsyncMock(return_value=matched_item),
+        ), patch(
+            "app.services.tools.fetch_menu_item_detail",
+            new=AsyncMock(return_value=build_croissant_menu_detail()),
+        ), patch(
+            "app.services.tools.add_item_to_cart",
+            new=AsyncMock(return_value=add_result),
+        ) as add_to_cart_mock, patch(
+            "app.services.tools.fetch_featured_items",
+            new=AsyncMock(return_value=[]),
+        ), patch(
+            "app.services.suggestions.suggest_popular_items",
+            return_value=[],
+        ), patch(
+            "app.services.suggestions.suggest_complementary_items",
+            return_value=[],
+        ):
+            start_response = await process_chat_message(
+                session_id=session["session_id"],
+                message="add croissant",
+                cart_id=None,
+                session=session,
+            )
+            self.assertEqual(start_response.metadata["pipeline_stage"], "guided_ordering_start")
+
+            option_response = await process_chat_message(
+                session_id=session["session_id"],
+                message="warmed",
+                cart_id=None,
+                session=session,
+            )
+            self.assertEqual(option_response.metadata["pipeline_stage"], "guided_ordering_instructions")
+
+            final_response = await process_chat_message(
+                session_id=session["session_id"],
+                message="none thank you",
+                cart_id=None,
+                session=session,
+            )
+
+        self.assertTrue(final_response.cart_updated)
+        self.assertEqual(final_response.metadata["pipeline_stage"], "guided_ordering_done")
+        self.assertEqual(add_to_cart_mock.await_args.kwargs["instructions"], "")
+
     async def test_guided_order_clear_cart_interrupts_normally(self) -> None:
         session = get_session("guided-interrupt")
         matched_item = {"id": 8, "name": "Latte", "category": "Coffee"}

@@ -275,6 +275,47 @@ class TestRemoveItemFlow(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn(response.intent, {"remove_item", "unknown"})
 
+    async def test_remove_item_can_match_unavailable_cart_item(self):
+        session = fake_session("s-rem-unavailable")
+        session_store.sessions["s-rem-unavailable"] = session
+        cart_after = fake_cart("cart-5", items=[])
+        unavailable_flat_white_cart = fake_cart(
+            "cart-5",
+            items=[
+                {
+                    "_id": "line-flat-white",
+                    "menuItemId": "item-flat-white",
+                    "name": "Flat White",
+                    "qty": 1,
+                    "price": 8000,
+                    "category": "beverages",
+                    "subcategory": "coffee",
+                    "isAvailable": False,
+                }
+            ],
+        )
+
+        with (
+            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response(
+                "remove_item",
+                [{"item_name": "Flat White", "quantity": 1, "size": None,
+                  "options": {}, "addons": [], "instructions": ""}]
+            ))),
+            patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
+            patch(GET_CART_TARGET, new=AsyncMock(return_value=unavailable_flat_white_cart)),
+            patch(REMOVE_ITEM_TARGET, new=AsyncMock(return_value=cart_after)),
+            patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
+        ):
+            response = await process_chat_message(
+                session_id="s-rem-unavailable",
+                message="remove the flat white",
+                cart_id="cart-5",
+                session=session,
+            )
+
+        self.assertEqual(response.intent, "remove_item")
+        self.assertIn("Removed Flat White", response.reply)
+
 
 # ---------------------------------------------------------------------------
 # view_cart

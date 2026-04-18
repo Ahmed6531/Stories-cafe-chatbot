@@ -120,9 +120,10 @@ def _coerce_menu_item_id(value) -> int | None:
 
 def _get_cart_items(cart: dict | None) -> list[dict]:
     if isinstance(cart, dict):
-        items = cart.get("items")
-        if isinstance(items, list):
-            return [item for item in items if isinstance(item, dict)]
+        for key in ("cart", "items"):
+            items = cart.get(key)
+            if isinstance(items, list):
+                return [item for item in items if isinstance(item, dict)]
     return []
 
 
@@ -348,9 +349,17 @@ async def _compile_cart_target_operation(parsed: ParsedOperation, session: dict,
     resolved_item = _resolve_follow_up_item(target_item, parsed.intent, session)
     if isinstance(resolved_item, CompileNeedsClarification):
         return resolved_item
-    matched_cart_item = await tools_service.find_menu_item_by_name(cart_items, resolved_item.item_query)
+    matched_cart_item = await tools_service.find_menu_item_by_name(
+        cart_items,
+        resolved_item.item_query,
+        include_unavailable=True,
+    )
     if not matched_cart_item:
-        return CompileFailure(reason="item_not_found", source_item=resolved_item)
+        return CompileFailure(
+            reason="item_not_found",
+            source_item=resolved_item,
+            message=f"I couldn't find '{resolved_item.item_query}' in your cart.",
+        )
     candidates = _cart_candidates(cart_items, matched_cart_item)
     distinct_variants = {
         tuple(

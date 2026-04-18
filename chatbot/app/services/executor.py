@@ -203,7 +203,11 @@ async def _execute_remove(op: CompiledOperation, ctx: ExecutionContext) -> OpExe
         cart_result = await get_cart(cart_id=ctx.cart_id)
         # Phase 5: move find_menu_item_by_name to a shared module.
         from app.services.tools import find_menu_item_by_name
-        matched = await find_menu_item_by_name(cart_result["cart"], item_name)
+        matched = await find_menu_item_by_name(
+            cart_result["cart"],
+            item_name,
+            include_unavailable=True,
+        )
         if not matched:
             return OpExecutionOutcome(reply_fragment=f"Couldn't find {item_name} in your cart.", failed=True)
         cart_line_id = matched.get("lineId") or matched.get("_id")
@@ -617,12 +621,12 @@ async def execute_compiled_operations(
 
 
 def _failure_to_reply(failure: CompileFailure, item_name: str) -> str:
+    if failure.message:
+        return failure.message
     if failure.reason == "item_not_found":
         return f"I couldn't find '{item_name}' on the menu."
     if failure.reason == "item_unavailable":
         return f"{item_name} is out of stock right now."
     if failure.reason == "menu_item_id_missing":
         return f"I found {item_name} but couldn't add it right now."
-    if failure.message:
-        return failure.message
     return f"I couldn't process {item_name} right now."

@@ -30,6 +30,7 @@ from app.services.menu_utils import (
     get_variant_group_id,
     get_variant_group_key,
     get_variant_group_label,
+    is_guided_skip_response,
     is_menu_item_available,
     iter_variant_options,
     merge_instruction_text,
@@ -2315,7 +2316,7 @@ async def process_chat_message(
                     )
                 else:
                     current_group = required_groups[step]
-                    if current_response in GUIDED_SKIP_WORDS or current_response == "no thanks":
+                    if is_guided_skip_response(current_response):
                         return ChatMessageResponse(
                             session_id=session_id,
                             status="ok",
@@ -2787,7 +2788,7 @@ async def process_chat_message(
                     },
                 )
 
-            instructions_text = "" if current_response in GUIDED_SKIP_WORDS or current_response == "no thanks" else normalized_message
+            instructions_text = "" if is_guided_skip_response(current_response) else normalized_message
             return await _finalize_guided_order(
                 session_id,
                 cart_id,
@@ -3477,7 +3478,11 @@ async def process_chat_message(
             has_customization_hint = any(hint in normalized_message for hint in customization_hints)
 
             if quantity is None and has_customization_hint and requested_item_has_customization(target_item):
-                matched_cart_item = await find_menu_item_by_name(cart_result["cart"], item_query)
+                matched_cart_item = await find_menu_item_by_name(
+                    cart_result["cart"],
+                    item_query,
+                    include_unavailable=True,
+                )
                 if not matched_cart_item:
                     return ChatMessageResponse(
                         session_id=session_id,
@@ -3581,7 +3586,11 @@ async def process_chat_message(
                 )
 
             if quantity is None or quantity < 1:
-                matched_for_prompt = await find_menu_item_by_name(cart_result["cart"], item_query)
+                matched_for_prompt = await find_menu_item_by_name(
+                    cart_result["cart"],
+                    item_query,
+                    include_unavailable=True,
+                )
                 prompt_item_name = (
                     matched_for_prompt.get("name", item_query)
                     if isinstance(matched_for_prompt, dict)
@@ -3607,7 +3616,11 @@ async def process_chat_message(
                     },
                 )
 
-            matched_cart_item = await find_menu_item_by_name(cart_result["cart"], item_query)
+            matched_cart_item = await find_menu_item_by_name(
+                cart_result["cart"],
+                item_query,
+                include_unavailable=True,
+            )
             if not matched_cart_item:
                 return ChatMessageResponse(
                     session_id=session_id,
@@ -3715,7 +3728,9 @@ async def process_chat_message(
                 )
 
             matched_cart_item = await find_menu_item_by_name(
-                cart_result["cart"], item_query
+                cart_result["cart"],
+                item_query,
+                include_unavailable=True,
             )
             if not matched_cart_item:
                 return ChatMessageResponse(
@@ -3938,7 +3953,11 @@ async def process_chat_message(
                     },
                 )
 
-            matched_cart_item = await find_menu_item_by_name(cart_result["cart"], item_query)
+            matched_cart_item = await find_menu_item_by_name(
+                cart_result["cart"],
+                item_query,
+                include_unavailable=True,
+            )
             if not matched_cart_item:
                 return ChatMessageResponse(
                     session_id=session_id,

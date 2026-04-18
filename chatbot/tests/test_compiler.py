@@ -168,6 +168,31 @@ async def test_clear_cart_returns_empty_success():
 
 
 @pytest.mark.asyncio
+async def test_remove_item_uses_cart_key_shape_from_tools_result():
+    results = await compile_operation(
+        ParsedOperation(intent="remove_item", items=[ParsedItemRequest(item_query="flat white")]),
+        {"last_items": []},
+        cart={
+            "cart_id": "cart-1",
+            "cart": [
+                {
+                    "_id": "line-flat-white",
+                    "menuItemId": 22,
+                    "name": "Flat White",
+                    "qty": 1,
+                    "isAvailable": False,
+                }
+            ],
+        },
+        menu_items=[fake_menu_item(22, "Flat White")],
+    )
+    result = results[0]
+    assert isinstance(result, CompileSuccess)
+    assert result.operation.cart_line_id == "line-flat-white"
+    assert result.operation.lines[0].menu_item_id == 22
+
+
+@pytest.mark.asyncio
 async def test_wire_format_parity():
     results = await compile_operation(
         ParsedOperation(
