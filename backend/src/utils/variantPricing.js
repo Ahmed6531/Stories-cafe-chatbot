@@ -59,12 +59,10 @@ export function createVariantGroupMap(variantGroups = []) {
   const groupsByRef = new Map();
 
   variantGroups.forEach((group) => {
-    [group?.refId, group?.groupId]
-      .map((value) => (typeof value === "string" ? value.trim() : ""))
-      .filter(Boolean)
-      .forEach((ref) => {
-        groupsByRef.set(ref, group);
-      });
+    [group?.refId, group?.groupId].forEach((rawId) => {
+      const ref = typeof rawId === "string" ? rawId.trim() : "";
+      if (ref) groupsByRef.set(ref, group);
+    });
   });
 
   return groupsByRef;

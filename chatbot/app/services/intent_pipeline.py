@@ -89,7 +89,6 @@ _VALID_INTENTS: frozenset[str] = frozenset({
     "repeat_order",
     "update_item",
     "guided_order_response",
-    "multi_op",
     "unknown",
 })
 
@@ -358,14 +357,13 @@ def _layer4_resolve(
     Does NOT reclassify intent — only adds context, resolves references,
     normalises quantities, and sets route_to_fallback.
 
-    For multi-op messages (raw["operations"] has >1 entry), runs the existing
-    single-op logic on each operation independently and returns a multi_op result
-    if multiple valid operations survive.
+    When raw["operations"] is present, resolves each operation independently
+    and returns them on result["operations"] while keeping legacy top-level
+    fields mirrored from the first resolved operation.
     """
     operations = raw.get("operations") or []
 
-    if len(operations) > 1:
-        # ── Multi-op path ─────────────────────────────────────────────────────
+    if operations:
         top_confidence = float(raw.get("confidence") or 0.0)
         resolved_ops = []
         for op in operations:
@@ -385,21 +383,30 @@ def _layer4_resolve(
                 op_resolved["intent"] = "unknown"
             resolved_ops.append(op_resolved)
 
-        # Filter unknowns only when other valid ops exist
-        valid_ops = [op for op in resolved_ops if op["intent"] != "unknown"]
-        if not valid_ops:
-            # All ambiguous — fall back to first op's resolved shape
-            return resolved_ops[0]
+        if not resolved_ops:
+            return _make_resolved(
+                intent=raw.get("intent") or "unknown",
+                confidence=top_confidence,
+                items=list(raw.get("items") or []),
+                follow_up_ref=raw.get("follow_up_ref"),
+                needs_clarification=bool(raw.get("needs_clarification", False)),
+                reason=raw.get("reason") or "",
+                source="llm",
+                route_to_fallback=bool(raw.get("fallback_needed", False)),
+                operations=[],
+            )
 
-        if len(valid_ops) == 1:
-            # Only one real operation survived — return it as a normal single-intent result
-            return valid_ops[0]
-
+        primary = resolved_ops[0]
         return _make_resolved(
-            intent="multi_op",
-            confidence=min(op["confidence"] for op in valid_ops),
-            operations=valid_ops,
-            route_to_fallback=False,
+            intent=primary.get("intent") or "unknown",
+            confidence=min(float(op.get("confidence") or 0.0) for op in resolved_ops),
+            items=list(primary.get("items") or []),
+            follow_up_ref=primary.get("follow_up_ref"),
+            needs_clarification=bool(primary.get("needs_clarification", False)),
+            reason=primary.get("reason") or "",
+            source=primary.get("source") or "llm",
+            route_to_fallback=bool(primary.get("route_to_fallback", False)),
+            operations=resolved_ops,
         )
 
     # ── Single-op path (unchanged) ─────────────────────────────────────────────
@@ -441,9 +448,9 @@ def _layer4_resolve(
         return result  # short-circuit — skip all remaining resolver steps
 
     # ── 4b: Follow-up reference resolution ───────────────────────────────────
-    # When the LLM detects a reference to a previous item ("same one", "that last
-    # one", "it") it sets follow_up_ref and leaves item_name blank.
-    # We resolve it here against session["last_items"].
+    # This remains load-bearing for legacy resolved dict flows that still need
+    # item back-references materialized before later intent-specific branches.
+    # The compiler duplicates this logic for the typed path.
     if result["follow_up_ref"] is not None:
         session_items: list = session.get("last_items") or []
         if isinstance(session_items, list) and session_items:

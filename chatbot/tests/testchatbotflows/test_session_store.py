@@ -7,7 +7,9 @@ Does NOT retest: anything already covered by other test files.
 """
 import sys
 import unittest
+import json
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -218,6 +220,78 @@ class TestUpdateLastAction(unittest.TestCase):
         )
         session = get_session("s13")
         self.assertEqual(session["last_action_data"], {})
+
+
+class _FakeRedisClient:
+    def __init__(self, payloads=None, fail_get=False, fail_set=False):
+        self.payloads = payloads or {}
+        self.fail_get = fail_get
+        self.fail_set = fail_set
+        self.getex_calls = []
+        self.set_calls = []
+
+    async def getex(self, key, ex=None):
+        self.getex_calls.append((key, ex))
+        if self.fail_get:
+            raise OSError("redis unavailable")
+        return self.payloads.get(key)
+
+    async def set(self, key, value, ex=None):
+        self.set_calls.append((key, value, ex))
+        if self.fail_set:
+            raise OSError("redis unavailable")
+        self.payloads[key] = value
+        return True
+
+
+class TestRedisBackedSessionStore(unittest.TestCase):
+    def setUp(self):
+        _flush_sessions()
+
+    def test_get_session_fetches_from_redis(self):
+        redis_payload = json.dumps({
+            "session_id": "redis-sid",
+            "cart_id": "cart-123",
+            "last_items": [],
+            "last_intent": None,
+            "_schema_version": 0,
+        })
+        fake_redis = _FakeRedisClient({"session:redis-sid": redis_payload})
+
+        with patch.object(session_store, "_get_redis_client", return_value=fake_redis), \
+             patch.object(session_store.settings, "redis_session_ttl_seconds", 123):
+            session = get_session("redis-sid")
+
+        self.assertEqual(fake_redis.getex_calls, [("session:redis-sid", 123)])
+        self.assertEqual(session["session_id"], "redis-sid")
+        self.assertEqual(session["cart_id"], "cart-123")
+        self.assertEqual(session["_schema_version"], 1)
+        self.assertIn("pending_operations", session)
+
+    def test_set_session_stage_writes_back_to_redis_with_ttl(self):
+        fake_redis = _FakeRedisClient()
+
+        with patch.object(session_store, "_get_redis_client", return_value=fake_redis), \
+             patch.object(session_store.settings, "redis_session_ttl_seconds", 222):
+            get_session("stage-sid")
+            fake_redis.set_calls.clear()
+            set_session_stage("stage-sid", "guided_ordering")
+
+        self.assertEqual(len(fake_redis.set_calls), 2)
+        last_key, last_value, last_ttl = fake_redis.set_calls[-1]
+        self.assertEqual(last_key, "session:stage-sid")
+        self.assertEqual(last_ttl, 222)
+        self.assertEqual(json.loads(last_value)["stage"], "guided_ordering")
+
+    def test_redis_failure_falls_back_to_memory(self):
+        fake_redis = _FakeRedisClient(fail_get=True)
+
+        with patch.object(session_store, "_get_redis_client", return_value=fake_redis):
+            session = get_session("fallback-sid")
+            set_session_stage("fallback-sid", "guided_ordering")
+
+        self.assertEqual(session["session_id"], "fallback-sid")
+        self.assertEqual(get_session_stage("fallback-sid"), "guided_ordering")
 
 
 if __name__ == "__main__":

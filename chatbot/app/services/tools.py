@@ -116,6 +116,17 @@ async def fetch_menu_item_detail(menu_item_id):
         })
         data, _ = await client.get(f"/menu/{menu_item_id}")
         result = data.get("item")
+        variant_group_refs = result.get("variantGroups") if isinstance(result, dict) else []
+        variant_group_details = result.get("variantGroupDetails") if isinstance(result, dict) else []
+        logger.info({
+            "service": "express",
+            "method": "GET",
+            "path": f"/menu/{menu_item_id}",
+            "menu_item_id": menu_item_id,
+            "variant_group_refs_count": len(variant_group_refs) if isinstance(variant_group_refs, list) else 0,
+            "variant_group_details_count": len(variant_group_details) if isinstance(variant_group_details, list) else 0,
+            "variant_group_refs": variant_group_refs if isinstance(variant_group_refs, list) else [],
+        })
         _cache_set(cache_key, result)
         return result
     except ExpressAPIError:

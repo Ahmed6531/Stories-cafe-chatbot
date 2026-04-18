@@ -6,7 +6,6 @@ import { connectDB } from "../config/db.js";
 import { Category } from "../models/Category.js";
 import { MenuItem } from "../models/MenuItem.js";
 import { VariantGroup } from "../models/VariantGroup.js";
-import { generateVariantGroupRefId } from "../utils/variantGroupRefs.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -95,7 +94,6 @@ async function seed() {
 
   const variantGroupsArray = Object.entries(templates.variantGroups).map(
     ([groupId, group]) => {
-      const refId = generateVariantGroupRefId();
       const inferredCategoryName = inferCategoryForGroup(groupId);
       const categoryId = inferredCategoryName
         ? categoryByName.get(inferredCategoryName.toLowerCase()) ?? null
@@ -113,14 +111,13 @@ async function seed() {
         adminName: group.adminName || group.name,
         customerLabel: group.customerLabel || "",
         name: group.name,
-        refId,
         categoryId,
       };
     },
   );
 
   const variantGroupRefByLegacyId = new Map(
-    variantGroupsArray.map((group) => [group.groupId, group.refId || group.groupId]),
+    variantGroupsArray.map((group) => [group.groupId, group.groupId]),
   );
 
   await VariantGroup.insertMany(variantGroupsArray);

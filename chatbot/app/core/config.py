@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     app_port: int = 8000
 
     express_api_base_url: str = "http://localhost:5000"
+    redis_url: str = "redis://localhost:6379/0"
+    redis_session_ttl_seconds: int = 3600
 
     openai_provider: str = "gemini"
 

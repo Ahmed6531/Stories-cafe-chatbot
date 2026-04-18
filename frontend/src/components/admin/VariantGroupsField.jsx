@@ -16,8 +16,13 @@ function getVariantGroupId(groupRef) {
     return ""
   }
 
-  const rawId = groupRef.refId || groupRef.groupId || groupRef.id
-  return typeof rawId === "string" ? rawId.trim() : ""
+  for (const candidate of [groupRef.refId, groupRef.groupId, groupRef.id]) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim()
+    }
+  }
+
+  return ""
 }
 
 function sanitizeVariantGroupIds(variantGroups) {

@@ -18,9 +18,8 @@ function buildVariantGroupCategoryFilter(categoryId) {
 }
 
 function getVariantGroupRefs(group) {
-  return [group?.refId, group?.groupId]
-    .filter((value) => typeof value === "string" && value.trim())
-    .map((value) => value.trim());
+  const value = group?.groupId;
+  return typeof value === "string" && value.trim() ? [value.trim()] : [];
 }
 
 // ─── GET /categories ──────────────────────────────────────────────────────────
@@ -205,7 +204,7 @@ export async function deleteCategory(req, res) {
     const [relatedItems, relatedGroups] = await Promise.all([
       MenuItem.find({ category: existing._id }).select("_id id image variantGroups").lean(),
       VariantGroup.find(buildVariantGroupCategoryFilter(existing._id))
-        .select("_id refId groupId")
+        .select("_id groupId")
         .lean(),
     ]);
 
@@ -287,9 +286,8 @@ export async function getVariantGroupsByCategory(req, res) {
 
     console.log("[variant-groups/by-category]", {
       categoryId: String(category._id),
-      groupRefs: groups.map((group) => group.refId || group.groupId),
+      groupRefs: groups.map((group) => group.groupId),
       categoryRefs: groups.map((group) => ({
-        refId: group.refId || null,
         groupId: group.groupId,
         categoryId: group.categoryId ? String(group.categoryId) : null,
       })),

@@ -35,7 +35,7 @@ export async function submitMenuItem({
           typeof groupRef === "string"
             ? groupRef
             : groupRef && typeof groupRef === "object"
-              ? groupRef.refId || groupRef.groupId || groupRef.id
+              ? groupRef.refId || groupRef.groupId || groupRef.id || ""
               : ""
         const groupId = typeof rawId === "string" ? rawId.trim() : ""
         if (!groupId || groupIds.includes(groupId)) {

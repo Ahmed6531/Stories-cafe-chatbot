@@ -6,7 +6,12 @@ from unittest.mock import AsyncMock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from app.services.fallback_assistant import _build_fallback_system_prompt, _finalize_reply
-from app.services.orchestrator import map_requested_item_to_selected_options, process_chat_message
+from app.services.compiler import _resolve_modifiers_legacy_shim
+from app.services.llm_interpreter import _parse_add_item_segment
+from app.services.orchestrator import (
+    cart_item_to_requested_item,
+    process_chat_message,
+)
 from app.services.session_store import (
     get_guided_order_phase,
     get_session,
@@ -138,6 +143,70 @@ def build_seed_like_mocha_menu_detail() -> dict:
     }
 
 
+def build_americano_menu_detail() -> dict:
+    return {
+        "id": 18,
+        "name": "Americano",
+        "variants": [
+            {
+                "name": "Choose Size",
+                "isRequired": False,
+                "maxSelections": 1,
+                "options": [
+                    {"name": "Small", "isActive": True},
+                    {"name": "Medium", "isActive": True},
+                ],
+            },
+            {
+                "name": "Espresso Options",
+                "isRequired": False,
+                "maxSelections": 2,
+                "options": [
+                    {"name": "Shot Decaffe", "isActive": True},
+                    {"name": "Add Shot", "isActive": True},
+                    {"name": "Yirgacheffe Shot", "isActive": True},
+                ],
+            },
+            {
+                "name": "Milk",
+                "isRequired": False,
+                "maxSelections": 1,
+                "options": [
+                    {"name": "Full Fat", "isActive": False},
+                    {"name": "Skim Milk", "isActive": False},
+                    {"name": "Lactose Free", "isActive": False},
+                ],
+            },
+        ],
+    }
+
+
+def build_sandwich_menu_detail() -> dict:
+    return {
+        "id": 44,
+        "name": "Turkey Sandwich",
+        "variants": [
+            {
+                "groupId": "sauce-group",
+                "name": "Sauces",
+                "isRequired": False,
+                "maxSelections": 2,
+                "options": [
+                    {
+                        "name": "Mayo",
+                        "isActive": True,
+                        "suboptionLabel": "Amount",
+                        "suboptions": [
+                            {"name": "Regular", "additionalPrice": 0},
+                            {"name": "Light", "additionalPrice": 0},
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+
 def resolved_add_items(item_name: str, *, quantity: int = 1, size=None, milk=None, addons=None, instructions="") -> dict:
     return {
         "intent": "add_items",
@@ -183,12 +252,12 @@ class VariantMappingTests(unittest.TestCase):
             "instructions": "no warming",
         }
 
-        selected_options, instructions, unmatched = map_requested_item_to_selected_options(
+        selected_options, instructions, unmatched = _resolve_modifiers_legacy_shim(
             requested_item,
             build_croissant_menu_detail(),
         )
 
-        self.assertEqual(selected_options, [{"optionName": "No Warming"}])
+        self.assertEqual(selected_options, [{"optionName": "No Warming", "groupName": "Warming"}])
         self.assertEqual(instructions, "")
         self.assertEqual(unmatched, [])
 
@@ -202,12 +271,12 @@ class VariantMappingTests(unittest.TestCase):
             "instructions": "not warmed up",
         }
 
-        selected_options, instructions, unmatched = map_requested_item_to_selected_options(
+        selected_options, instructions, unmatched = _resolve_modifiers_legacy_shim(
             requested_item,
             build_croissant_menu_detail(),
         )
 
-        self.assertEqual(selected_options, [{"optionName": "No Warming"}])
+        self.assertEqual(selected_options, [{"optionName": "No Warming", "groupName": "Warming"}])
         self.assertEqual(instructions, "")
         self.assertEqual(unmatched, [])
 
@@ -221,7 +290,7 @@ class VariantMappingTests(unittest.TestCase):
             "instructions": "",
         }
 
-        selected_options, instructions, unmatched = map_requested_item_to_selected_options(
+        selected_options, instructions, unmatched = _resolve_modifiers_legacy_shim(
             requested_item,
             build_latte_menu_detail(),
         )
@@ -232,6 +301,112 @@ class VariantMappingTests(unittest.TestCase):
             unmatched,
             [{"fragment": "almond please", "suggestion": "Almond Milk"}],
         )
+
+    def test_no_sugar_none_normalizes_to_instruction_without_none_artifact(self) -> None:
+        requested_item = {
+            "item_name": "americano",
+            "quantity": 1,
+            "size": None,
+            "options": {"milk": None, "sugar": "none"},
+            "addons": ["Yirgacheffe Shot"],
+            "instructions": "no sugar",
+        }
+
+        selected_options, instructions, unmatched = _resolve_modifiers_legacy_shim(
+            requested_item,
+            build_americano_menu_detail(),
+        )
+
+        self.assertEqual(
+            selected_options,
+            [{"optionName": "Yirgacheffe Shot", "groupName": "Espresso Options"}],
+        )
+        self.assertIn("no sugar", instructions)
+        self.assertNotIn("none", instructions)
+        self.assertEqual(
+            unmatched,
+            [{"fragment": "no sugar", "suggestion": None}],
+        )
+
+    def test_customizations_list_resolves_directly_to_cart_options(self) -> None:
+        requested_item = {
+            "item_name": "latte",
+            "quantity": 1,
+            "size": None,
+            "options": {"milk": None, "sugar": None},
+            "addons": [],
+            "instructions": "",
+            "customizations": [
+                {"kind": "selection", "value": "Medium", "group_label": "Choose Size"},
+                {"kind": "selection", "value": "Oat Milk", "group_label": "Milk"},
+                {"kind": "selection", "value": "Vanilla Syrup", "group_label": "Extras"},
+            ],
+        }
+
+        selected_options, instructions, unmatched = _resolve_modifiers_legacy_shim(
+            requested_item,
+            build_latte_menu_detail(),
+        )
+
+        self.assertEqual(
+            selected_options,
+            [
+                {"optionName": "Medium", "groupName": "Choose Size"},
+                {"optionName": "Oat Milk", "groupName": "Milk"},
+                {"optionName": "Vanilla Syrup", "groupName": "Extras"},
+            ],
+        )
+        self.assertEqual(instructions, "")
+        self.assertEqual(unmatched, [])
+
+    def test_cart_round_trip_preserves_suboptions(self) -> None:
+        cart_item = {
+            "name": "Turkey Sandwich",
+            "qty": 1,
+            "selectedOptions": [
+                {
+                    "optionName": "Mayo",
+                    "suboptionName": "Regular",
+                    "groupId": "sauce-group",
+                }
+            ],
+            "instructions": "",
+        }
+
+        requested_item = cart_item_to_requested_item(
+            cart_item,
+            build_sandwich_menu_detail(),
+        )
+        selected_options, instructions, unmatched = _resolve_modifiers_legacy_shim(
+            requested_item,
+            build_sandwich_menu_detail(),
+        )
+
+        self.assertEqual(
+            selected_options,
+            [
+                {
+                    "optionName": "Mayo",
+                    "groupName": "Sauces",
+                    "groupId": "sauce-group",
+                    "suboptionName": "Regular",
+                }
+            ],
+        )
+        self.assertEqual(instructions, "")
+        self.assertEqual(unmatched, [])
+
+
+class ParserContractTests(unittest.TestCase):
+    def test_parse_add_item_segment_moves_sugar_into_instructions(self) -> None:
+        parsed_item = _parse_add_item_segment(
+            "add an americano with yirgacheffe shot and no sugar"
+        )
+
+        self.assertIsNotNone(parsed_item)
+        self.assertEqual(parsed_item["options"], {"milk": None})
+        self.assertEqual(parsed_item["addons"], ["yirgacheffe shot"])
+        self.assertIn("no sugar", parsed_item["instructions"])
 
 
 class GuidedOrderingTests(unittest.IsolatedAsyncioTestCase):

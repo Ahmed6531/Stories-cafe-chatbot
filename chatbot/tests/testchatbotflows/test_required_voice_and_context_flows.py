@@ -22,7 +22,7 @@ from app.services import session_store
 from app.services.orchestrator import process_chat_message
 
 
-LLM_TARGET = "app.services.orchestrator.try_interpret_message"
+LLM_TARGET = "app.services.intent_pipeline.try_interpret_message"
 MENU_ITEMS_TARGET = "app.services.tools.fetch_menu_items"
 MENU_DETAIL_TARGET = "app.services.tools.fetch_menu_item_detail"
 ADD_CART_TARGET = "app.services.tools.add_item_to_cart"
@@ -86,6 +86,37 @@ def _latte_requested(quantity=1):
     }
 
 
+def _blank_requested(quantity=None):
+    return {
+        "item_name": "",
+        "quantity": quantity,
+        "size": None,
+        "options": {"milk": None, "sugar": None},
+        "addons": [],
+        "instructions": "",
+    }
+
+
+def _llm_result(intent, items=None, *, follow_up_ref=None, confidence=0.95):
+    op = {
+        "intent": intent,
+        "items": list(items or []),
+        "follow_up_ref": follow_up_ref,
+        "needs_clarification": False,
+        "reason": "",
+    }
+    return {
+        "intent": intent,
+        "items": list(items or []),
+        "follow_up_ref": follow_up_ref,
+        "confidence": confidence,
+        "needs_clarification": False,
+        "reason": "",
+        "fallback_needed": False,
+        "operations": [op],
+    }
+
+
 def _latte_cart(cart_id="cart-1", qty=1):
     return {
         "cart_id": cart_id,
@@ -107,12 +138,12 @@ class TestRequiredChatbotContextFlows(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         _flush_sessions()
 
-    async def test_add_one_latte_uses_heuristics_and_calls_express_add(self):
+    async def test_add_one_latte_calls_express_add(self):
         session = _session("sid-add")
         add_mock = AsyncMock(return_value=_latte_cart("cart-add", qty=1))
 
         with (
-            patch(LLM_TARGET, return_value=None),
+            patch(LLM_TARGET, return_value=_llm_result("add_items", [_latte_requested(quantity=1)])),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=_latte_menu())),
             patch(MENU_DETAIL_TARGET, new=AsyncMock(return_value=_latte_detail())),
             patch(ADD_CART_TARGET, new=add_mock),
@@ -141,7 +172,14 @@ class TestRequiredChatbotContextFlows(unittest.IsolatedAsyncioTestCase):
         update_mock = AsyncMock(return_value=_latte_cart("cart-update", qty=2))
 
         with (
-            patch(LLM_TARGET, return_value=None),
+            patch(
+                LLM_TARGET,
+                return_value=_llm_result(
+                    "update_quantity",
+                    [_blank_requested(quantity=2)],
+                    follow_up_ref="it",
+                ),
+            ),
             patch(GET_CART_TARGET, new=AsyncMock(return_value=_latte_cart("cart-update", qty=1))),
             patch(UPDATE_QTY_TARGET, new=update_mock),
         ):
@@ -165,7 +203,14 @@ class TestRequiredChatbotContextFlows(unittest.IsolatedAsyncioTestCase):
         add_mock = AsyncMock(return_value=_latte_cart("cart-another", qty=2))
 
         with (
-            patch(LLM_TARGET, side_effect=AssertionError("repeat override should skip LLM")),
+            patch(
+                LLM_TARGET,
+                return_value=_llm_result(
+                    "add_items",
+                    [_blank_requested(quantity=1)],
+                    follow_up_ref="another one",
+                ),
+            ),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=_latte_menu())),
             patch(MENU_DETAIL_TARGET, new=AsyncMock(return_value=_latte_detail())),
             patch(ADD_CART_TARGET, new=add_mock),
@@ -213,12 +258,7 @@ class TestRequiredChatbotContextFlows(unittest.IsolatedAsyncioTestCase):
         session["cart_id"] = "cart-checkout"
 
         with (
-            patch(LLM_TARGET, return_value={
-                "intent": "unknown",
-                "items": [],
-                "confidence": 0.1,
-                "fallback_needed": True,
-            }),
+            patch(LLM_TARGET, return_value=_llm_result("checkout", [])),
             patch(GET_CART_TARGET, new=AsyncMock(return_value=_latte_cart("cart-checkout", qty=1))),
         ):
             summary = await process_chat_message(

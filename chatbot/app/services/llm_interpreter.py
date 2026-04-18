@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any
 import google.generativeai as genai
 
 from app.core.config import settings
+from app.utils.log_redaction import redact
 from app.utils.gemini_utils import _normalize_gemini_model_name
 
 logger = logging.getLogger(__name__)
@@ -321,7 +322,6 @@ def _base_item() -> Dict[str, Any]:
         "size": None,
         "options": {
             "milk": None,
-            "sugar": None,
         },
         "addons": [],
         "instructions": "",
@@ -343,40 +343,58 @@ def _normalize_item(item: Any, default_quantity: int | None = None) -> Optional[
 
     normalized_item = _base_item()
     normalized_item.update(item)
-
+    if item.get("item_query") and not item.get("item_name"):
+        normalized_item["item_name"] = str(item.get("item_query") or "").strip()
     if isinstance(item.get("options"), dict):
         normalized_item["options"].update(item["options"])
 
+    addon_values = []
     raw_addons = item.get("addons")
     if isinstance(raw_addons, list):
-        normalized_item["addons"] = _unique_strings(
-            [str(addon).strip() for addon in raw_addons if str(addon).strip()]
-        )
+        addon_values.extend(str(addon).strip() for addon in raw_addons if str(addon).strip())
     elif isinstance(raw_addons, str) and raw_addons.strip():
-        normalized_item["addons"] = [raw_addons.strip()]
-    else:
-        normalized_item["addons"] = []
+        addon_values.append(raw_addons.strip())
 
-    raw_instructions = item.get("instructions")
-    if isinstance(raw_instructions, list):
-        normalized_item["instructions"] = ", ".join(
-            str(value).strip() for value in raw_instructions if str(value).strip()
-        ).strip()
-    elif isinstance(raw_instructions, str):
-        normalized_item["instructions"] = raw_instructions.strip()
+    size_words = {"small", "medium", "large", "regular", "tall", "grande", "venti", "short", "xl", "extra large"}
+    for modifier in item.get("modifiers") or []:
+        cleaned_modifier = str(modifier).strip()
+        lowered_modifier = cleaned_modifier.lower()
+        if not cleaned_modifier:
+            continue
+        if not normalized_item.get("size") and lowered_modifier in size_words:
+            normalized_item["size"] = cleaned_modifier
+        elif not normalized_item["options"].get("milk") and "milk" in lowered_modifier:
+            normalized_item["options"]["milk"] = cleaned_modifier
+        else:
+            addon_values.append(cleaned_modifier)
+    normalized_item["addons"] = _unique_strings(addon_values)
+
+    if isinstance(item.get("instructions"), list):
+        normalized_item["instructions"] = "; ".join(
+            str(value).strip() for value in item["instructions"] if str(value).strip()
+        )
+    elif isinstance(item.get("instructions"), str):
+        normalized_item["instructions"] = item["instructions"].strip()
     else:
         normalized_item["instructions"] = ""
+    if isinstance(item.get("notes"), list):
+        notes_text = "; ".join(str(value).strip() for value in item["notes"] if str(value).strip())
+        if notes_text:
+            normalized_item["instructions"] = (
+                f"{normalized_item['instructions']}; {notes_text}".strip("; ")
+                if normalized_item["instructions"] else notes_text
+            )
 
     if normalized_item.get("quantity") is None and default_quantity is not None:
         normalized_item["quantity"] = default_quantity
+    if isinstance(normalized_item.get("item_name"), str):
+        normalized_item["item_name"] = normalized_item["item_name"].strip()
 
-    item_name = normalized_item.get("item_name")
-    if isinstance(item_name, str):
-        normalized_item["item_name"] = item_name.strip()
-
-    if not normalized_item.get("item_name"):
+    follow_up_ref = str(item.get("follow_up_ref") or "").strip()
+    if follow_up_ref:
+        normalized_item["follow_up_ref"] = follow_up_ref
+    if not normalized_item.get("item_name") and not follow_up_ref:
         return None
-
     return normalized_item
 
 
@@ -542,6 +560,8 @@ def _parse_add_item_segment(segment: str) -> Dict[str, Any] | None:
     size, segment = _extract_first_match(segment, SIZE_ALIASES)
     sugar, segment = _extract_first_match(segment, SUGAR_CANONICAL)
     instruction_parts, segment = _extract_repeated_matches(segment, INSTRUCTION_CANONICAL)
+    if sugar:
+        instruction_parts.append(sugar)
 
     modifier_source = ""
     modifier_match = re.search(r"\b(with|without)\b", segment)
@@ -572,7 +592,6 @@ def _parse_add_item_segment(segment: str) -> Dict[str, Any] | None:
         "size": size,
         "options": {
             "milk": milk,
-            "sugar": sugar,
         },
         "addons": addons,
         "instructions": ", ".join(instruction_parts),
@@ -700,18 +719,13 @@ Output schema:
       "intent": string,
       "items": [
         {{
-          "item_name": string,
+          "item_query": string,
           "quantity": number or null,
-          "size": string or null,
-          "options": {{
-            "milk": string or null,
-            "sugar": string or null
-          }},
-          "addons": [string],
-          "instructions": string or null
+          "modifiers": [string],
+          "notes": [string],
+          "follow_up_ref": string or null
         }}
       ],
-      "follow_up_ref": string or null,
       "needs_clarification": boolean,
       "reason": string
     }}
@@ -769,7 +783,7 @@ Rules:
    - Phase 2 (review prompt): short replies like "done", "add it", "yes", or "i want toppings" should be "guided_order_response" with confidence 0.9 or higher.
    - Phase 3 (open customization): replies asking about options, asking how many can be chosen, naming add-ons, or changing a previous selection should be "guided_order_response" with confidence 0.9 or higher.
    - Phase 4 (instructions): short instruction replies or skip words like "none" should be "guided_order_response" with confidence 0.9 or higher.
-   In all guided phases, item_name should be null and the reply is a follow-up to guided_current_group / guided_order_item_name.
+   In all guided phases, item_query should be null and the reply is a follow-up to guided_current_group / guided_order_item_name.
    Exception: if the user is clearly asking for a different action like clearing the cart or checking out, classify that action normally instead.
 3. Natural language patterns:
    - "repeat my last order", "same as before", "order again", "same thing again" -> "repeat_order"
@@ -777,10 +791,10 @@ Rules:
    - "what is X", "tell me about X", "describe X", "what's in X" -> "describe_item"
    - quantity changes like "make it 3", "change that to 2", "set the latte to 2" -> "update_quantity" (first such pattern note; do not treat as add_items)
    - removals like "take out X", "remove X", "cancel X", "delete X", "i don't want X anymore" -> "remove_item"
-   - follow-up references like "same one", "that last one", "it", "that one", "another one of those" -> set follow_up_ref to the exact phrase and leave item_name null/empty
+   - follow-up references like "same one", "that last one", "it", "that one", "another one of those" -> set the item's follow_up_ref to the exact phrase and leave item_query empty
 4. Confidence: use >=0.8 when clear, 0.6-0.79 when plausible but uncertain, <0.6 for ambiguity, mixed operations, or unclear references; never force high confidence when unsure.
 5. Quantity defaults: "a couple" -> 2, "a few" -> 3, "some" -> 2; if add_items has no quantity, use 1; put prep or serving requests in "instructions".
-6. Multi-item rules: "A and B" or "A, B" means separate item entries; each item gets its own item_name, quantity, size, options, addons, and instructions.
+6. Multi-item rules: "A and B" or "A, B" means separate item entries; each item gets its own item_query, quantity, modifiers (flat list of user-language modifiers like 'medium', 'oat milk', 'extra shot'), and notes (free-text instructions like 'less ice', 'no whip').
 6b. Modifying variant options on an item already in the cart
     ("change the milk on my latte to oat", "swap the syrup to caramel",
     "remove the skim milk from my espresso keep full fat",
@@ -789,23 +803,20 @@ Rules:
 
     CRITICAL DISTINCTION:
     - "update_item" = changing WHAT OPTIONS an item has (milk, size,
-      addons, sugar, syrup — the variants/customizations)
+      addons, syrup, other modifiers — the variants/customizations)
     - "update_quantity" = changing HOW MANY of an item (numbers only)
 
     For update_item, populate the items array with:
-    - item_name: the cart item being modified
+    - item_query: the cart item being modified
     - quantity: null (do not set quantity for update_item)
-    - size: new size if mentioned, null otherwise
-    - options.milk: new milk if mentioned, null otherwise
-    - options.sugar: new sugar if mentioned, null otherwise
-    - addons: new addons to add if mentioned, empty array otherwise
-    - instructions: any removal instructions like "remove the skim milk",
-      "no whip", "without vanilla" — free text removals go here
+    - modifiers: new option values to apply
+    - notes: free-text changes like "remove the skim milk", "no sugar",
+      "no whip", "without vanilla"
 
     The execution layer will merge these changes with the item's
     current cart options. Null fields mean "keep existing value".
     Non-null fields mean "replace with this value".
-    Instructions are used to strip specific options by name.
+    Notes are used to strip specific options by name.
 7. Use "unknown" for purely conversational, off-topic, or genuinely unclear messages. Do not guess.
 
 {context_block}
@@ -840,7 +851,7 @@ async def try_interpret_message(
     import sys
 
     try:
-        print(f"[LLM INPUT] {message}", file=sys.stderr, flush=True)
+        print(f"[LLM INPUT] {redact(message)}", file=sys.stderr, flush=True)
         session_stage = None
         guided_order_phase = None
         guided_current_group = None
@@ -870,15 +881,15 @@ Session context:
 
         prompt = _build_intent_prompt(context_block, message, menu_vocab_block)
         raw_text = await _generate_gemini_content_async(prompt)
-        print(f"[LLM OUTPUT] {raw_text}", file=sys.stderr, flush=True)
+        print(f"[LLM OUTPUT] {redact(raw_text)}", file=sys.stderr, flush=True)
         if not raw_text:
             return None
 
-        logger.info({
+        logger.info(redact({
             "stage": "llm_raw_response",
             "message": message,
             "raw_text": raw_text,
-        })
+        }))
 
         parsed = _extract_json_object(raw_text)
         print(
@@ -917,20 +928,35 @@ Session context:
 
             # Apply heuristic for add_items per operation
             if op_intent == "add_items":
-                op_item_text = " ".join(
+                op_item_names = [
                     item.get("item_name") or ""
                     for item in op_items
                     if isinstance(item, dict)
-                ).strip()
+                ]
+                op_item_text = (
+                    ", ".join(name for name in op_item_names if name).strip()
+                    if len(op_item_names) > 1
+                    else " ".join(op_item_names).strip()
+                )
                 heuristic_source = op_item_text if op_item_text else message
                 heuristic_items = _extract_add_items_from_message(heuristic_source)
                 if _should_use_heuristic_items(op_items, heuristic_items):
                     op_items = heuristic_items
 
+            op_follow_up_ref = str(op.get("follow_up_ref") or "").strip() or None
+            if not op_follow_up_ref:
+                for normalized_item in op_items:
+                    if not isinstance(normalized_item, dict):
+                        continue
+                    item_follow_up_ref = str(normalized_item.get("follow_up_ref") or "").strip()
+                    if item_follow_up_ref:
+                        op_follow_up_ref = item_follow_up_ref
+                        break
+
             normalized_op = {
                 "intent": op_intent,
                 "items": op_items,
-                "follow_up_ref": op.get("follow_up_ref"),
+                "follow_up_ref": op_follow_up_ref,
                 "needs_clarification": bool(op.get("needs_clarification", False)),
                 "reason": op.get("reason") or "",
             }
@@ -949,7 +975,7 @@ Session context:
         if not isinstance(fallback_needed, bool):
             fallback_needed = confidence < 0.6
 
-        result = {
+        legacy_result = {
             "operations": normalized_operations,
             "confidence": confidence,
             "needs_clarification": needs_clarification,
@@ -960,18 +986,17 @@ Session context:
             "items": normalized_operations[0]["items"],
             "follow_up_ref": normalized_operations[0].get("follow_up_ref"),
         }
-
         logger.info({
             "stage": "llm_interpretation_ready",
             "message": message,
-            "intent": result["intent"],
+            "intent": legacy_result["intent"],
             "op_count": len(normalized_operations),
-            "confidence": result.get("confidence"),
-            "follow_up_ref": result.get("follow_up_ref"),
-            "needs_clarification": result.get("needs_clarification"),
+            "confidence": legacy_result.get("confidence"),
+            "follow_up_ref": legacy_result.get("follow_up_ref"),
+            "needs_clarification": legacy_result.get("needs_clarification"),
         })
 
-        return result
+        return legacy_result
 
     except Exception as e:
         logger.exception({
@@ -996,7 +1021,7 @@ async def extract_modifiers_for_item(
     structured dict matching the item schema.
 
     Returns a dict with keys:
-        size, options (milk, sugar), addons, instructions
+        size, options (milk), addons, instructions
     All keys present, unrecognized fields set to null/empty.
 
     Returns empty defaults on failure — caller falls back to
@@ -1004,7 +1029,7 @@ async def extract_modifiers_for_item(
     """
     _DEFAULTS: Dict[str, Any] = {
         "size": None,
-        "options": {"milk": None, "sugar": None},
+        "options": {"milk": None},
         "addons": [],
         "instructions": "",
     }
@@ -1073,8 +1098,7 @@ Return ONLY valid JSON with this exact schema:
 {{
   "size": string or null,
   "options": {{
-    "milk": string or null,
-    "sugar": string or null
+    "milk": string or null
   }},
   "addons": [string],
   "instructions": string or null
@@ -1090,7 +1114,7 @@ Rules:
 4. If the customer mentions something that is not in the variant
    list, put it in "instructions" as free text.
 5. For addons, include all mentioned options as an array.
-6. Return null for size/milk/sugar if not mentioned.
+6. Return null for size/milk if not mentioned.
 7. Never include quantity in this response.
 """
 
@@ -1113,9 +1137,6 @@ Rules:
             result["options"] = {
                 "milk": (
                     str(opts.get("milk") or "").strip() or None
-                ),
-                "sugar": (
-                    str(opts.get("sugar") or "").strip() or None
                 ),
             }
         if isinstance(parsed.get("addons"), list):
