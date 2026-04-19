@@ -303,6 +303,17 @@ async def _compile_add_or_describe_item(
     if isinstance(resolved_item, CompileNeedsClarification):
         return resolved_item
     matched_item = await tools_service.find_menu_item_by_name(menu_items, resolved_item.item_query)
+    if matched_item:
+        query_normalized = resolved_item.item_query.strip().lower()
+        matched_name_normalized = str(matched_item.get("name") or "").strip().lower()
+        if query_normalized != matched_name_normalized:
+            candidates = find_ambiguous_menu_matches(menu_items, resolved_item.item_query)
+            if len(candidates) > 1:
+                return CompileNeedsClarification(
+                    reason="ambiguous_item",
+                    candidates=_build_ambiguous_candidates(candidates),
+                    source_item=resolved_item,
+                )
     if not matched_item:
         candidates = find_ambiguous_menu_matches(menu_items, resolved_item.item_query)
         if len(candidates) > 1:
@@ -319,6 +330,13 @@ async def _compile_add_or_describe_item(
     if menu_item_id is None:
         return CompileFailure(reason="menu_item_id_missing", source_item=resolved_item)
     menu_detail = await _get_menu_detail(matched_item, menu_item_id)
+    qty = int(resolved_item.quantity or 1)
+    if qty <= 0:
+        return CompileFailure(
+            reason="internal_error",
+            source_item=resolved_item,
+            message="Quantity must be at least 1.",
+        )
     if parsed.intent == "add_items":
         legacy_item = _parsed_item_to_legacy_dict(resolved_item)
         if resolved_item.use_defaults:
@@ -366,7 +384,7 @@ async def _compile_add_or_describe_item(
                     lines=[
                         CompiledCartLine(
                             menuItemId=menu_item_id,
-                            qty=max(1, int(resolved_item.quantity or 1)),
+                            qty=qty,
                             selectedOptions=selected_options,
                             instructions=instructions,
                             unmatched_modifiers=actionable_unmatched,
@@ -397,7 +415,7 @@ async def _compile_add_or_describe_item(
     selected_options, instructions, actionable_unmatched = _resolve_modifiers_against_menu(resolved_item, menu_detail)
     line = CompiledCartLine(
         menuItemId=menu_item_id,
-        qty=max(1, int(resolved_item.quantity or 1)),
+        qty=qty,
         selectedOptions=selected_options,
         instructions=instructions,
         unmatched_modifiers=actionable_unmatched,
@@ -426,6 +444,16 @@ async def _compile_cart_target_operation(parsed: ParsedOperation, session: dict,
             source_item=resolved_item,
             message=f"I couldn't find '{resolved_item.item_query}' in your cart.",
         )
+    _cart_query_norm = resolved_item.item_query.strip().lower()
+    _cart_match_norm = str(matched_cart_item.get("name") or "").strip().lower()
+    if _cart_query_norm != _cart_match_norm:
+        _cart_ambiguous = find_ambiguous_menu_matches(cart_items, resolved_item.item_query)
+        if len(_cart_ambiguous) > 1:
+            return CompileNeedsClarification(
+                reason="ambiguous_item",
+                candidates=_build_ambiguous_candidates(_cart_ambiguous),
+                source_item=resolved_item,
+            )
     candidates = _cart_candidates(cart_items, matched_cart_item)
     distinct_variants = {
         tuple(
@@ -459,6 +487,12 @@ async def _compile_cart_target_operation(parsed: ParsedOperation, session: dict,
     if menu_item_id is None:
         return CompileFailure(reason="menu_item_id_missing", source_item=resolved_item)
     qty = resolved_item.quantity if parsed.intent == "update_quantity" else (resolved_item.quantity or int(matched_cart_item.get("qty") or 1))
+    if parsed.intent == "update_quantity" and qty is not None and int(qty) <= 0:
+        return CompileFailure(
+            reason="internal_error",
+            source_item=resolved_item,
+            message="Quantity must be at least 1.",
+        )
     line = CompiledCartLine(
         menuItemId=menu_item_id,
         qty=max(1, int(qty or 1)),
@@ -509,10 +543,22 @@ async def _compile_update_item_operation(
 
     menu_item_id = _coerce_menu_item_id(matched_cart_item.get("menuItemId"))
     if menu_item_id is None:
+        _fallback_query = str(matched_cart_item.get("name") or item_query)
         fallback_match = await tools_service.find_menu_item_by_name(
             menu_items,
-            matched_cart_item.get("name") or item_query,
+            _fallback_query,
         )
+        if fallback_match:
+            _fb_query_norm = _fallback_query.strip().lower()
+            _fb_name_norm = str(fallback_match.get("name") or "").strip().lower()
+            if _fb_query_norm != _fb_name_norm:
+                _fb_candidates = find_ambiguous_menu_matches(menu_items, _fallback_query)
+                if len(_fb_candidates) > 1:
+                    return CompileNeedsClarification(
+                        reason="ambiguous_item",
+                        candidates=_build_ambiguous_candidates(_fb_candidates),
+                        source_item=resolved_item,
+                    )
         menu_item_id = _coerce_menu_item_id((fallback_match or {}).get("id") or (fallback_match or {}).get("_id"))
     if menu_item_id is None:
         return CompileFailure(reason="menu_item_id_missing", source_item=resolved_item)

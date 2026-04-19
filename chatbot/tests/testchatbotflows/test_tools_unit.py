@@ -356,16 +356,15 @@ class TestFetchMyOrders(unittest.IsolatedAsyncioTestCase):
             headers = call_kwargs[1].get("headers", {})
             self.assertEqual(headers.get("cookie"), "token=abc123")
 
-    async def test_returns_empty_list_on_error(self):
+    async def test_raises_on_api_error(self):
         from app.services.http_client import ExpressAPIError
         with patch("app.services.tools.ExpressHttpClient") as MockClient:
             instance = MagicMock()
             instance.get = AsyncMock(side_effect=ExpressAPIError("401"))
             MockClient.return_value = instance
 
-            result = await fetch_my_orders()
-
-        self.assertEqual(result, [])
+            with self.assertRaises(ExpressAPIError):
+                await fetch_my_orders()
 
     async def test_limit_applied(self):
         orders_payload = {

@@ -3294,7 +3294,18 @@ async def process_chat_message(
             if intent == "repeat_order":
                 from app.schemas.actions import ParsedItemRequest, ParsedOperation, ParsedRequest
 
-                recent_orders = await fetch_my_orders(auth_cookie=auth_cookie, limit=20)
+                order_fetch_failed = False
+                order_fetch_auth_error = False
+                try:
+                    recent_orders = await fetch_my_orders(auth_cookie=auth_cookie, limit=20)
+                except ExpressAPIError as e:
+                    recent_orders = []
+                    order_fetch_failed = True
+                    if "401" in str(e) or "403" in str(e) or "unauthorized" in str(e).lower():
+                        order_fetch_auth_error = True
+                except Exception:
+                    recent_orders = []
+                    order_fetch_failed = True
                 order_history_items: list[dict] = []
                 for order in (recent_orders or []):
                     if not isinstance(order, dict):
@@ -3346,13 +3357,25 @@ async def process_chat_message(
 
                 items_to_repeat = order_history_items or session_items
                 if not items_to_repeat:
+                    if order_fetch_auth_error:
+                        _no_history_reply = (
+                            "I couldn't access your order history — "
+                            "please sign in to use this feature."
+                        )
+                    elif order_fetch_failed:
+                        _no_history_reply = (
+                            "I couldn't reach your order history right now. "
+                            "Please try again in a moment."
+                        )
+                    else:
+                        _no_history_reply = (
+                            "I don't have a record of a previous order. "
+                            "Sign in to access your order history, or tell me what you'd like."
+                        )
                     return ChatMessageResponse(
                         session_id=session_id,
                         status="ok",
-                        reply=(
-                            "I don't have a record of a previous order. "
-                            "Sign in to access your order history, or tell me what you'd like."
-                        ),
+                        reply=_no_history_reply,
                         intent=intent,
                         cart_updated=False,
                         cart_id=cart_id,
