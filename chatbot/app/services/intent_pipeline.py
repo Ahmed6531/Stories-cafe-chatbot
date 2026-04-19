@@ -161,7 +161,9 @@ _RE_LIST_ALL = re.compile(
 # "what drinks do you have" / "show me your pastries" / "do you have any food"
 _RE_LIST_CATEGORY = re.compile(
     r"^(?:what|show\s+me|list|see|browse|view)\s+(?:your\s+|the\s+)?(\w+)"
-    r"(?:\s+(?:do\s+you\s+have|you\s+have|you\s+serve|you\s+offer|options?|items?|menu))?(?:\s*\?)?$"
+    r"(?:\s+(?:do\s+you\s+(?:have|provide|sell|carry|offer|serve)"
+    r"|you\s+(?:have|provide|sell|carry|serve|offer)"
+    r"|options?|items?|menu))?(?:\s*\?)?$"
     r"|^do\s+you\s+have\s+any\s+(\w+)(?:\s*\?)?$"
 )
 

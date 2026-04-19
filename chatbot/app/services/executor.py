@@ -141,6 +141,46 @@ async def _execute_add_line(
         )
 
 
+async def _build_post_add_suggestions(
+    ctx: ExecutionContext,
+    added_item_records: list[dict],
+) -> list[dict]:
+    """
+    Generate upsell/complementary suggestions after a successful add.
+    Returns [] on any error or if cooldown suppresses suggestions.
+    Never raises.
+    """
+    del added_item_records
+    try:
+        from app.services.upsell import get_upsell_suggestions
+        from app.services.tools import fetch_menu_items, get_cart
+
+        cart_result = await get_cart(cart_id=ctx.cart_id)
+        cart_items = cart_result.get("cart") or []
+        if not cart_items:
+            return []
+
+        menu_items = await fetch_menu_items()
+        anchor = cart_items[-1] if cart_items else None
+
+        suggestions = await get_upsell_suggestions(
+            session_id=ctx.session_id,
+            intent="add_items",
+            cart_items=cart_items,
+            menu_items=menu_items,
+            anchor_menu_item=anchor,
+        )
+        if suggestions:
+            return suggestions
+
+        # Upsell suppressed by cooldown — try complementary as fallback
+        from app.services.suggestions import suggest_complementary_items
+        return suggest_complementary_items(menu_items, anchor, limit=2)
+
+    except Exception:
+        return []
+
+
 async def _execute_add_operation(op: CompiledOperation, ctx: ExecutionContext) -> OpExecutionOutcome:
     """
     Iterate ALL op.lines — fixes bug #2 (op_items[0] drop in _drain_pending_operations).
@@ -179,12 +219,17 @@ async def _execute_add_operation(op: CompiledOperation, ctx: ExecutionContext) -
         ctx.session["last_items"] = added_item_records
         ctx.session["last_intent"] = "add_items"
 
+    post_suggestions: list[dict] = []
+    if added_item_records:
+        post_suggestions = await _build_post_add_suggestions(ctx, added_item_records)
+
     all_parts = success_parts + failure_parts
     reply = " ".join(all_parts) if all_parts else ""
     return OpExecutionOutcome(
         reply_fragment=reply,
         cart_updated=bool(success_parts),
         failed=bool(failure_parts) and not bool(success_parts),
+        suggestions=post_suggestions,
     )
 
 
@@ -268,6 +313,7 @@ async def _execute_update_quantity(op: CompiledOperation, ctx: ExecutionContext)
 
 async def _execute_update_item(op: CompiledOperation, ctx: ExecutionContext) -> OpExecutionOutcome:
     # Phase 5: move tool imports to a shared module.
+    from app.services.http_client import ExpressAPIError
     from app.services.tools import add_item_to_cart, remove_item_from_cart
 
     cart_line_id = op.cart_line_id
@@ -277,7 +323,6 @@ async def _execute_update_item(op: CompiledOperation, ctx: ExecutionContext) -> 
     line = op.lines[0]
     item_name = (op.source_parsed.items[0].item_query if op.source_parsed and op.source_parsed.items else "item")
     try:
-        from app.services.http_client import ExpressAPIError
         removed = await remove_item_from_cart(line_id=cart_line_id, cart_id=ctx.cart_id)
         wire = line.to_wire_payload()
         result = await add_item_to_cart(
@@ -290,8 +335,17 @@ async def _execute_update_item(op: CompiledOperation, ctx: ExecutionContext) -> 
         ctx.cart_id = result["cart_id"]
         ctx.cart_updated = True
         return OpExecutionOutcome(reply_fragment=f"Updated {item_name}.", cart_updated=True)
-    except Exception:
-        return OpExecutionOutcome(reply_fragment=f"Couldn't update {item_name} right now.", failed=True)
+    except ExpressAPIError as err:
+        from app.services.orchestrator import is_out_of_stock_error
+        if is_out_of_stock_error(err):
+            return OpExecutionOutcome(
+                reply_fragment=f"{item_name} is out of stock.",
+                failed=True,
+            )
+        return OpExecutionOutcome(
+            reply_fragment=f"Couldn't update {item_name} right now.",
+            failed=True,
+        )
 
 
 async def _execute_view_cart(op: CompiledOperation, ctx: ExecutionContext) -> OpExecutionOutcome:

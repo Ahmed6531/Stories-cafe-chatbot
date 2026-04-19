@@ -393,6 +393,8 @@ def _normalize_item(item: Any, default_quantity: int | None = None) -> Optional[
     follow_up_ref = str(item.get("follow_up_ref") or "").strip()
     if follow_up_ref:
         normalized_item["follow_up_ref"] = follow_up_ref
+    if item.get("use_defaults"):
+        normalized_item["use_defaults"] = True
     if not normalized_item.get("item_name") and not follow_up_ref:
         return None
     return normalized_item
@@ -723,7 +725,8 @@ Output schema:
           "quantity": number or null,
           "modifiers": [string],
           "notes": [string],
-          "follow_up_ref": string or null
+          "follow_up_ref": string or null,
+          "use_defaults": boolean
         }}
       ],
       "needs_clarification": boolean,
@@ -789,6 +792,11 @@ Rules:
    - "repeat my last order", "same as before", "order again", "same thing again" -> "repeat_order"
    - "what's good", "surprise me", "any suggestions", "what do you recommend" -> "recommendation_query"
    - "what is X", "tell me about X", "describe X", "what's in X" -> "describe_item"
+   - "what [category] do you have/provide/sell/offer/carry",
+     "show me your [category]", "what kinds of [category]",
+     "what [category] options do you have" → "list_category_items"
+     when the word matches a menu category (coffee, tea, food, drinks,
+     pastry, dessert, etc.). Do NOT classify as "describe_item".
    - quantity changes like "make it 3", "change that to 2", "set the latte to 2" -> "update_quantity" (first such pattern note; do not treat as add_items)
    - removals like "take out X", "remove X", "cancel X", "delete X", "i don't want X anymore" -> "remove_item"
    - follow-up references like "same one", "that last one", "it", "that one", "another one of those" -> set the item's follow_up_ref to the exact phrase and leave item_query empty
@@ -818,6 +826,11 @@ Rules:
     Non-null fields mean "replace with this value".
     Notes are used to strip specific options by name.
 7. Use "unknown" for purely conversational, off-topic, or genuinely unclear messages. Do not guess.
+8. If the user says "default", "whatever", "surprise me", "your choice",
+   "just the default", "no preference", or similar for a specific item -
+   meaning they want the item added without customization - set
+   use_defaults: true for that item. Do not set it for items where the
+   user specified options.
 
 {context_block}
 {f"{menu_vocab_block}" + chr(10) if menu_vocab_block else ""}

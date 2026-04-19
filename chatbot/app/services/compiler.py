@@ -43,6 +43,7 @@ from app.services.menu_utils import (
     is_menu_item_available,
     merge_instruction_text,
     normalize_modifier_text,
+    split_instruction_fragments,
 )
 from app.services import tools as tools_service
 
@@ -111,11 +112,22 @@ def _parsed_item_to_legacy_dict(item: ParsedItemRequest) -> dict:
     }
 
 
-def _coerce_menu_item_id(value) -> int | None:
+def _coerce_menu_item_id(value) -> int | str | None:
+    if isinstance(value, str):
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        try:
+            return int(cleaned)
+        except ValueError:
+            return cleaned
     try:
         return int(value)
     except (TypeError, ValueError):
-        return None
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        return cleaned or None
 
 
 def _get_cart_items(cart: dict | None) -> list[dict]:
@@ -184,7 +196,7 @@ def _resolve_follow_up_item(item: ParsedItemRequest, intent: str, session: dict)
     return item.model_copy(update={"item_query": item_query, "quantity": quantity})
 
 
-async def _get_menu_detail(matched_item: dict, menu_item_id: int) -> dict | None:
+async def _get_menu_detail(matched_item: dict, menu_item_id: int | str) -> dict | None:
     if isinstance(matched_item.get("variantGroupDetails"), list) or isinstance(matched_item.get("variants"), list):
         return matched_item
     return await tools_service.fetch_menu_item_detail(menu_item_id)
@@ -309,6 +321,60 @@ async def _compile_add_or_describe_item(
     menu_detail = await _get_menu_detail(matched_item, menu_item_id)
     if parsed.intent == "add_items":
         legacy_item = _parsed_item_to_legacy_dict(resolved_item)
+        if resolved_item.use_defaults:
+            from app.services.item_clarification import apply_smart_defaults
+
+            defaulted_item, _defaults_used, still_required = apply_smart_defaults(
+                legacy_item,
+                menu_detail,
+            )
+            if still_required:
+                return CompileNeedsClarification(
+                    reason="missing_required_group",
+                    missing_groups=still_required,
+                    source_item=resolved_item,
+                    matched_menu_item=matched_item,
+                )
+            merged_modifiers: list[str] = []
+            size_value = str(defaulted_item.get("size") or "").strip()
+            if size_value:
+                merged_modifiers.append(size_value)
+            options = defaulted_item.get("options") if isinstance(defaulted_item.get("options"), dict) else {}
+            milk_value = str(options.get("milk") or "").strip()
+            if milk_value:
+                merged_modifiers.append(
+                    milk_value if "milk" in milk_value.lower() else f"{milk_value} milk"
+                )
+            for addon in defaulted_item.get("addons") or []:
+                cleaned_addon = str(addon or "").strip()
+                if cleaned_addon:
+                    merged_modifiers.append(cleaned_addon)
+            merged_notes = split_instruction_fragments(
+                defaulted_item.get("instructions") or ""
+            )
+            selected_options, instructions, actionable_unmatched = _resolve_modifiers_against_menu(
+                ParsedItemRequest(
+                    item_query=resolved_item.item_query,
+                    modifiers=merged_modifiers,
+                    notes=merged_notes,
+                ),
+                menu_detail,
+            )
+            return CompileSuccess(
+                operation=CompiledOperation(
+                    intent=parsed.intent,
+                    lines=[
+                        CompiledCartLine(
+                            menuItemId=menu_item_id,
+                            qty=max(1, int(resolved_item.quantity or 1)),
+                            selectedOptions=selected_options,
+                            instructions=instructions,
+                            unmatched_modifiers=actionable_unmatched,
+                        )
+                    ],
+                    source_parsed=parsed,
+                )
+            )
         missing_groups = collect_missing_variant_groups(legacy_item, menu_detail)
         if missing_groups:
             return CompileNeedsClarification(
@@ -409,6 +475,156 @@ async def _compile_cart_target_operation(parsed: ParsedOperation, session: dict,
     )
 
 
+async def _compile_update_item_operation(
+    parsed: ParsedOperation,
+    session: dict,
+    cart: dict | None,
+    menu_items: list[dict],
+) -> CompileResult:
+    size_words = {"small", "medium", "large", "regular", "tall", "grande", "venti", "short", "xl", "extra large"}
+    if cart is None:
+        return CompileFailure(reason="internal_error", message="cart required for update_item")
+
+    target_item = parsed.items[0] if parsed.items else ParsedItemRequest()
+    resolved_item = _resolve_follow_up_item(target_item, parsed.intent, session)
+    if isinstance(resolved_item, CompileNeedsClarification):
+        return resolved_item
+
+    item_query = resolved_item.item_query.strip()
+    if not item_query:
+        return CompileFailure(reason="internal_error", message="no item specified")
+
+    cart_items = _get_cart_items(cart)
+    matched_cart_item = await tools_service.find_menu_item_by_name(
+        cart_items,
+        item_query,
+        include_unavailable=True,
+    )
+    if not matched_cart_item:
+        return CompileFailure(reason="item_not_found", source_item=resolved_item)
+
+    line_id = matched_cart_item.get("lineId") or matched_cart_item.get("_id")
+    if line_id is None:
+        return CompileFailure(reason="internal_error", source_item=resolved_item, message="cart line id missing")
+
+    menu_item_id = _coerce_menu_item_id(matched_cart_item.get("menuItemId"))
+    if menu_item_id is None:
+        fallback_match = await tools_service.find_menu_item_by_name(
+            menu_items,
+            matched_cart_item.get("name") or item_query,
+        )
+        menu_item_id = _coerce_menu_item_id((fallback_match or {}).get("id") or (fallback_match or {}).get("_id"))
+    if menu_item_id is None:
+        return CompileFailure(reason="menu_item_id_missing", source_item=resolved_item)
+
+    menu_detail = await _get_menu_detail(matched_cart_item, menu_item_id)
+
+    from app.services.orchestrator import cart_item_to_requested_item, merge_requested_item_customizations
+
+    current_item = cart_item_to_requested_item(matched_cart_item, menu_detail)
+
+    removal_tokens: set[str] = set()
+    for note in resolved_item.notes:
+        cleaned = str(note or "").strip()
+        if not cleaned:
+            continue
+        stripped = cleaned
+        while True:
+            updated = stripped
+            for prefix in ("remove ", "no ", "without ", "take out ", "strip "):
+                if updated.lower().startswith(prefix):
+                    updated = updated[len(prefix):].strip()
+                    break
+            if updated == stripped:
+                break
+            stripped = updated
+        normalized = normalize_modifier_text(stripped)
+        if normalized:
+            removal_tokens.add(normalized)
+
+    if removal_tokens:
+        current_item["addons"] = [
+            addon
+            for addon in (current_item.get("addons") or [])
+            if normalize_modifier_text(addon) not in removal_tokens
+        ]
+        for opt_key in ("milk", "sugar"):
+            opt_val = (current_item.get("options") or {}).get(opt_key)
+            if opt_val and normalize_modifier_text(opt_val) in removal_tokens:
+                current_item["options"][opt_key] = None
+
+    override_item = {
+        "item_name": resolved_item.item_query,
+        "quantity": None,
+        "size": next((m for m in resolved_item.modifiers if m.lower() in size_words), None),
+        "options": {
+            "milk": next((m for m in resolved_item.modifiers if "milk" in m.lower()), None),
+        },
+        "addons": [
+            m for m in resolved_item.modifiers
+            if m.lower() not in size_words and "milk" not in m.lower()
+        ],
+        "instructions": "",
+    }
+    merged = merge_requested_item_customizations(current_item, override_item, menu_detail)
+    merged_modifiers: list[str] = []
+    seen_modifiers: set[str] = set()
+
+    def append_modifier(value: str | None) -> None:
+        cleaned = str(value or "").strip()
+        normalized = normalize_modifier_text(cleaned)
+        if not normalized or normalized in seen_modifiers:
+            return
+        seen_modifiers.add(normalized)
+        merged_modifiers.append(cleaned)
+
+    merged_size = str(merged.get("size") or "").strip()
+    if merged_size:
+        append_modifier(merged_size)
+    merged_options = merged.get("options") if isinstance(merged.get("options"), dict) else {}
+    merged_milk = str(merged_options.get("milk") or "").strip()
+    if merged_milk:
+        append_modifier(merged_milk if "milk" in merged_milk.lower() else f"{merged_milk} milk")
+    for entry in merged.get("customizations") or []:
+        if not isinstance(entry, dict) or entry.get("kind") != "selection":
+            continue
+        group_hint = normalize_modifier_text(entry.get("group_hint"))
+        if group_hint in {"size", "milk", "sugar"}:
+            continue
+        append_modifier(entry.get("value"))
+    for addon in merged.get("addons") or []:
+        append_modifier(addon)
+
+    selected_options, instructions, actionable_unmatched = _resolve_modifiers_against_menu(
+        ParsedItemRequest(
+            item_query=resolved_item.item_query,
+            modifiers=merged_modifiers,
+            notes=[
+                fragment
+                for fragment in split_instruction_fragments(merged.get("instructions") or "")
+            ],
+        ),
+        menu_detail,
+    )
+
+    return CompileSuccess(
+        operation=CompiledOperation(
+            intent="update_item",
+            lines=[
+                CompiledCartLine(
+                    menuItemId=menu_item_id,
+                    qty=int(matched_cart_item.get("qty") or 1),
+                    selectedOptions=selected_options,
+                    instructions=instructions,
+                    unmatched_modifiers=actionable_unmatched,
+                )
+            ],
+            cart_line_id=str(line_id),
+            source_parsed=parsed,
+        )
+    )
+
+
 async def compile_operation(
     parsed: ParsedOperation,
     session: dict,
@@ -420,6 +636,10 @@ async def compile_operation(
         return [await _compile_add_or_describe_item(parsed, item, session=session, menu_items=menu_items) for item in parsed.items]
     if parsed.intent in {"remove_item", "update_quantity"}:
         return [await _compile_cart_target_operation(parsed, session, cart, menu_items)]
+    if parsed.intent == "update_item":
+        if not parsed.items:
+            return [CompileFailure(reason="internal_error", message="no items for update_item")]
+        return [await _compile_update_item_operation(parsed, session, cart, menu_items)]
     if parsed.intent == "describe_item":
         item = parsed.items[0] if parsed.items else ParsedItemRequest()
         return [await _compile_add_or_describe_item(parsed, item, session=session, menu_items=menu_items)]

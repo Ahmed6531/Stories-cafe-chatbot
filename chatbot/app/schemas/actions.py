@@ -26,10 +26,11 @@ OperationIntent = Literal[
 
 class ParsedItemRequest(BaseModel):
     item_query: str = ""
-    quantity: int = 1
+    quantity: Optional[int] = 1
     modifiers: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
     follow_up_ref: Optional[str] = None
+    use_defaults: bool = False
 
 
 class ParsedOperation(BaseModel):
@@ -57,7 +58,7 @@ class CompiledOption(BaseModel):
 class CompiledCartLine(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    menu_item_id: int = Field(alias="menuItemId")
+    menu_item_id: int | str = Field(alias="menuItemId")
     qty: int = Field(ge=1)
     selected_options: list[CompiledOption] = Field(
         default_factory=list,

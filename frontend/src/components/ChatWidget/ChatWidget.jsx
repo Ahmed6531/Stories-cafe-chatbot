@@ -176,8 +176,33 @@ function BillSummaryCard({ bill, stale = false, onConfirm }) {
 function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
   const isUser = msg.role === 'user'
   const showTime = msg.time !== prevTime
-  const hasSuggestions = msg.suggestions && msg.suggestions.length > 0
-  const isChecklistSuggestions = hasSuggestions && msg.suggestions.every((s) => s?.type === 'clarification_option')
+  const rawSuggestions = Array.isArray(msg.suggestions) ? msg.suggestions : []
+  const isPostAddSuggestion = (suggestion) => {
+    if (!suggestion || typeof suggestion !== 'object') return false
+    const suggestionType = String(suggestion.type || '').trim().toLowerCase()
+    const itemName = typeof suggestion.item_name === 'string' ? suggestion.item_name.trim() : ''
+    return Boolean(
+      itemName
+      && suggestionType !== 'clarification_option'
+      && suggestionType !== 'defaults_confirmation'
+      && (
+        suggestionType === 'upsell'
+        || suggestionType === 'complementary'
+        || suggestionType === 'recommendation'
+        || suggestion.fun_fact
+        || suggestion.menu_item_id != null
+        || suggestion.upsell_source
+      )
+    )
+  }
+  const postAddSuggestions = msg.cartUpdated
+    ? rawSuggestions.filter((suggestion) => isPostAddSuggestion(suggestion))
+    : []
+  const interactiveSuggestions = rawSuggestions.filter((suggestion) => !isPostAddSuggestion(suggestion))
+  const hasInteractiveSuggestions = interactiveSuggestions.length > 0
+  const hasPostAddSuggestions = postAddSuggestions.length > 0
+  const isChecklistSuggestions = hasInteractiveSuggestions
+    && interactiveSuggestions.every((s) => s?.type === 'clarification_option')
   const [selectedChecklist, setSelectedChecklist] = useState({})
 
   const suggestionText = (suggestion) => {
@@ -258,7 +283,7 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
   const groupedChecklistSuggestions = (() => {
     if (!isChecklistSuggestions) return []
     const groups = new Map()
-    for (const suggestion of msg.suggestions) {
+    for (const suggestion of interactiveSuggestions) {
       const groupName = (suggestion?.group || 'Options').toString().trim() || 'Options'
       const list = groups.get(groupName) || []
       list.push(suggestion)
@@ -267,16 +292,15 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
     return Array.from(groups.entries())
   })()
 
-  const selectedChecklistValues = useMemo(() => {
-    if (!isChecklistSuggestions) return []
-    return Object.values(selectedChecklist).flatMap((value) => {
-      if (typeof value === 'string' && value.trim()) return [value.trim()]
-      if (Array.isArray(value)) {
-        return value.filter((item) => typeof item === 'string' && item.trim())
-      }
-      return []
-    })
-  }, [isChecklistSuggestions, selectedChecklist])
+  const selectedChecklistValues = !isChecklistSuggestions
+    ? []
+    : Object.values(selectedChecklist).flatMap((value) => {
+        if (typeof value === 'string' && value.trim()) return [value.trim()]
+        if (Array.isArray(value)) {
+          return value.filter((item) => typeof item === 'string' && item.trim())
+        }
+        return []
+      })
 
   const applyChecklistSelections = () => {
     if (!selectedChecklistValues.length) return
@@ -292,7 +316,7 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
             {i < arr.length - 1 && <br />}
           </span>
         ))}
-        {hasSuggestions && isChecklistSuggestions && (
+        {hasInteractiveSuggestions && isChecklistSuggestions && (
           <div style={{ marginTop: '10px', padding: '10px', border: '1px solid #e5e7eb', borderRadius: '10px', background: '#f9fafb' }}>
             <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px', fontWeight: 600 }}>
               Select options, then apply
@@ -364,9 +388,9 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
             </div>
           </div>
         )}
-        {hasSuggestions && !isChecklistSuggestions && (
+        {hasInteractiveSuggestions && !isChecklistSuggestions && (
           <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {msg.suggestions.map((s, idx) => {
+            {interactiveSuggestions.map((s, idx) => {
               const sStyle = suggestionStyle(s)
               return (
               <button
@@ -397,6 +421,52 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
               >
                 {suggestionLabel(s)}
               </button>
+              )
+            })}
+          </div>
+        )}
+        {hasPostAddSuggestions && (
+          <div
+            style={{
+              marginTop: '12px',
+              display: 'grid',
+              gap: '8px',
+              width: '100%',
+              maxWidth: '320px',
+            }}
+          >
+            {postAddSuggestions.map((suggestion, idx) => {
+              const itemName = suggestionLabel(suggestion)
+              const funFact = typeof suggestion?.fun_fact === 'string' ? suggestion.fun_fact.trim() : ''
+              return (
+                <button
+                  key={`${suggestion?.menu_item_id ?? itemName}-${idx}`}
+                  type="button"
+                  title={funFact || undefined}
+                  onClick={() => onSuggestionClick(`add a ${itemName}`)}
+                  style={{
+                    display: 'grid',
+                    gap: '4px',
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '10px 12px',
+                    borderRadius: '12px',
+                    border: '1px solid #d7e6dc',
+                    background: '#f4fbf6',
+                    color: '#163124',
+                    cursor: 'pointer',
+                    boxShadow: '0 1px 2px rgba(17, 24, 39, 0.05)',
+                  }}
+                >
+                  <span style={{ fontSize: '13px', fontWeight: 700, lineHeight: 1.2 }}>
+                    {itemName}
+                  </span>
+                  {funFact && (
+                    <span style={{ fontSize: '11.5px', lineHeight: 1.4, color: '#4b6355' }}>
+                      {funFact}
+                    </span>
+                  )}
+                </button>
               )
             })}
           </div>
@@ -668,7 +738,8 @@ export default function ChatWidget({
         role: 'bot',
         text: data.reply,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        suggestions: data.suggestions || [],
+        suggestions: Array.isArray(data.suggestions) ? data.suggestions : [],
+        cartUpdated: Boolean(data.cart_updated),
         bill: data.metadata?.bill || null,
       })
       if (data.intent === 'confirm_checkout' && data.metadata?.pipeline_stage === 'checkout_redirect') {

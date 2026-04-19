@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import axios from 'axios'
 import ChatWidget from './ChatWidget'
 
@@ -144,5 +144,101 @@ describe('ChatWidget voice routing', () => {
     })
 
     expect(axios.post).not.toHaveBeenCalled()
+  })
+
+  it('renders post-add suggestion chips only when cart_updated is true and clicking one quick-adds the item', async () => {
+    axios.post
+      .mockResolvedValueOnce({
+        data: {
+          session_id: 'session-voice-test',
+          status: 'ok',
+          reply: 'Added 1x Latte (Small, Skim Milk) to your cart.',
+          intent: 'add_items',
+          cart_updated: true,
+          cart_id: 'cart-with-latte',
+          suggestions: [
+            {
+              type: 'upsell',
+              item_name: 'Cheese Croissant',
+              menu_item_id: 202,
+              upsell_source: 'combo',
+              fun_fact: 'The creamy body of a latte balances the flaky, salty richness of a cheese croissant.',
+            },
+          ],
+          metadata: {},
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          session_id: 'session-voice-test',
+          status: 'ok',
+          reply: 'Added a Cheese Croissant to your cart.',
+          intent: 'add_items',
+          cart_updated: true,
+          cart_id: 'cart-with-latte-and-croissant',
+          suggestions: [],
+          metadata: {},
+        },
+      })
+
+    renderChatWidget()
+
+    await act(async () => {
+      voiceInputMock.onEvent({ type: 'final', text: 'add one latte' })
+      vi.advanceTimersByTime(151)
+      await flushPromises()
+    })
+
+    expect(screen.getByText('Cheese Croissant')).toBeInTheDocument()
+    expect(screen.getByText(/flaky, salty richness of a cheese croissant/i)).toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Cheese Croissant/i }))
+      await flushPromises()
+    })
+
+    expect(axios.post).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8000/chat/message',
+      {
+        session_id: 'session-voice-test',
+        message: 'add a Cheese Croissant',
+        cart_id: 'cart-with-latte',
+      },
+      { withCredentials: true },
+    )
+  })
+
+  it('does not render post-add suggestion chips when cart_updated is false', async () => {
+    axios.post.mockResolvedValueOnce({
+      data: {
+        session_id: 'session-voice-test',
+        status: 'ok',
+        reply: 'Removed the latte from your cart.',
+        intent: 'remove_item',
+        cart_updated: false,
+        cart_id: 'cart-existing',
+        suggestions: [
+          {
+            type: 'upsell',
+            item_name: 'Cheese Croissant',
+            menu_item_id: 202,
+            fun_fact: 'Should stay hidden because cart_updated is false.',
+          },
+        ],
+        metadata: {},
+      },
+    })
+
+    renderChatWidget()
+
+    await act(async () => {
+      voiceInputMock.onEvent({ type: 'final', text: 'remove the latte' })
+      vi.advanceTimersByTime(151)
+      await flushPromises()
+    })
+
+    expect(screen.queryByText('Cheese Croissant')).not.toBeInTheDocument()
+    expect(screen.queryByText(/should stay hidden/i)).not.toBeInTheDocument()
   })
 })
