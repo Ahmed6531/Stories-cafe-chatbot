@@ -48,6 +48,35 @@ def _build_menu_vocab() -> tuple[set[str], set[str]]:
 
 _MENU_VOCAB, _MENU_PHRASES = _build_menu_vocab()
 
+# Filler prefixes common in voice transcription and casual chat.
+# Applied once at normalization time so every downstream layer
+# (Layer 2, Layer 3, guided ordering, static replies) benefits.
+_FILLER_PREFIX_RE = re.compile(
+    r"^(?:"
+    r"um+\s+|uh+\s+|uhh+\s+|hmm+\s+|hm+\s+|err+\s+|"
+    r"oh\s+|oh\s+wait\s+|oh\s+um\s+|"
+    r"so\s+(?:um\s+|uh\s+|like\s+)?|"
+    r"like\s+(?:um\s+|uh\s+|can\s+i\s+)?|"
+    r"i\s+mean\s+|i\s+meant\s+to\s+say\s+|"
+    r"actually\s+(?:wait\s+|um\s+|uh\s+|no\s+wait\s+)?|"
+    r"wait\s+(?:actually\s+|no\s+|um\s+|uh\s+)?|"
+    r"no\s+wait\s+(?:actually\s+)?|"
+    r"ok\s+so\s+|okay\s+so\s+|"
+    r"right\s+so\s+|right\s+um\s+|"
+    r"anyway\s+|anyways\s+|"
+    r"basically\s+|literally\s+|"
+    r"you\s+know\s+(?:what\s+)?|"
+    r"just\s+to\s+(?:say\s+|ask\s+|check\s+)"
+    r")+",
+    re.IGNORECASE,
+)
+
+# Filler suffixes — trailing noise after the real content
+_FILLER_SUFFIX_RE = re.compile(
+    r"\s+(?:you\s+know|i\s+guess|i\s+think|right|yeah|yea|ya|tho|though|tbh|lol|lmao)$",
+    re.IGNORECASE,
+)
+
 # Extra non-menu words so command-style typos can still be corrected.
 _EXTRA_VOCAB: set[str] = {
     "clear", "cart", "empty", "reset", "delete", "remove",
@@ -163,4 +192,15 @@ def normalize_user_message(message: str) -> str:
     """
     normalized = " ".join(message.strip().split()).lower()
     normalized = autocorrect_message(normalized)
+
+    # Strip leading filler words (critical for voice transcription)
+    # Apply repeatedly until stable — handles "um uh actually um add latte"
+    prev = None
+    while prev != normalized:
+        prev = normalized
+        normalized = _FILLER_PREFIX_RE.sub("", normalized).strip()
+
+    # Strip trailing filler
+    normalized = _FILLER_SUFFIX_RE.sub("", normalized).strip()
+
     return normalized

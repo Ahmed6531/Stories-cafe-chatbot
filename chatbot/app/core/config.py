@@ -14,7 +14,8 @@ class Settings(BaseSettings):
     openai_provider: str = "gemini"
 
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.0-flash"
+    gemini_model: str = "models/gemini-2.5-flash-lite"
+    gemini_fallback_model: str = "models/gemini-2.5-flash"
 
     azure_openai_api_key: str = ""
     azure_openai_endpoint: str = ""

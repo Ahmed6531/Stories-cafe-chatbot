@@ -1,17 +1,17 @@
 import logging
+import os
 import re
 from collections.abc import Awaitable, Callable
 
 import httpx
 
 from app.core.config import settings
-from app.utils.gemini_utils import _normalize_gemini_model_name
 from app.utils.static_replies import STATIC_REPLY_TABLE
 
-genai = None
+google_genai = None
 
 try:
-    import google.generativeai as genai
+    from google import genai as google_genai
 
     _GENAI_AVAILABLE = True
 except ImportError:
@@ -23,9 +23,8 @@ _FALLBACK_TEMPERATURE = 0.35
 FALLBACK_MAX_TOKENS = 420
 FALLBACK_HTTP_TIMEOUT_SECONDS = 6.0
 GEMINI_MODEL_CANDIDATES = (
-    "gemini-2.5-flash",
-    "gemini-flash-latest",
-    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash-lite",
+    "gemini-2.0-flash",
 )
 
 _FALLBACK_BASE_PROMPT = (
@@ -275,8 +274,9 @@ async def _generate_complete_reply_once(
 def _iter_gemini_models(preferred_model: str | None) -> list[str]:
     seen = set()
     models: list[str] = []
-    for model_name in (preferred_model, *GEMINI_MODEL_CANDIDATES):
-        normalized = _normalize_gemini_model_name(model_name)
+    configured_fallback = getattr(settings, "gemini_fallback_model", None)
+    for model_name in (preferred_model, configured_fallback, *GEMINI_MODEL_CANDIDATES):
+        normalized = str(model_name or "").strip()
         if normalized and normalized not in seen:
             seen.add(normalized)
             models.append(normalized)
@@ -347,26 +347,32 @@ async def _generate_with_openai(user_message: str, system_prompt: str) -> str | 
 
 
 async def _generate_with_gemini(user_message: str, system_prompt: str) -> str | None:
-    if not _GENAI_AVAILABLE or not settings.gemini_api_key:
+    api_key = (settings.gemini_api_key or os.getenv("GEMINI_API_KEY") or "").strip()
+    if not _GENAI_AVAILABLE or not api_key:
         return None
 
-    genai.configure(api_key=settings.gemini_api_key)
+    import asyncio
+
+    client = google_genai.Client(api_key=api_key)
     last_error = None
 
     for model_name in _iter_gemini_models(settings.gemini_model):
         try:
-            model = genai.GenerativeModel(
-                model_name=model_name,
-                system_instruction=system_prompt,
-            )
-            response = await model.generate_content_async(
-                user_message,
-                generation_config={
-                    "temperature": _FALLBACK_TEMPERATURE,
-                    "max_output_tokens": FALLBACK_MAX_TOKENS,
-                },
+            response = await asyncio.wait_for(
+                client.aio.models.generate_content(
+                    model=model_name,
+                    contents=(
+                        f"{system_prompt}\n\n"
+                        f"User message: {user_message}"
+                    ),
+                ),
+                timeout=FALLBACK_HTTP_TIMEOUT_SECONDS,
             )
             return _extract_gemini_content(response)
+        except asyncio.TimeoutError as exc:
+            last_error = exc
+            logger.warning("Gemini fallback assistant call timed out for model %s: %s", model_name, exc)
+            continue
         except Exception as exc:
             last_error = exc
             logger.warning("Gemini fallback assistant call failed for model %s: %s", model_name, exc)

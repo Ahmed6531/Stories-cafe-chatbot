@@ -569,13 +569,30 @@ def _get_static_reply(normalized_phrase: str) -> str | None:
 
     # Don't short-circuit on messages that continue past the greeting/thanks
     # — they likely contain an intent we should route properly.
-    _ACTION_WORDS = frozenset({
-        "add", "remove", "delete", "update", "checkout", "check out",
-        "order", "cart", "want", "need", "ready", "get", "buy",
-        "clear", "empty", "repeat", "again",
+    from app.services.menu_signal import get_menu_signal_sync
+
+    signal = get_menu_signal_sync()
+
+    _QUERY_WORDS = frozenset({
+        "what", "which", "how", "when", "where",
+        "do", "does", "have", "got", "any",
+        "show", "list", "tell", "describe", "explain",
+        "provide", "sell", "carry", "offer", "serve",
+        "want", "need", "get", "add", "remove", "order",
+        "checkout", "cart", "wondering", "curious",
+        "available", "options", "recommend",
     })
     cleaned_words = set(cleaned.split())
-    if cleaned_words & _ACTION_WORDS:
+
+    has_query_word = bool(cleaned_words & _QUERY_WORDS)
+    has_menu_term = bool(
+        cleaned_words & signal.category_names
+        or cleaned_words & signal.item_name_tokens
+        or cleaned_words & signal.option_names
+        or any(item_name in cleaned for item_name in signal.item_names)
+    )
+
+    if has_query_word or has_menu_term:
         return None
 
     greeting_prefixes = (

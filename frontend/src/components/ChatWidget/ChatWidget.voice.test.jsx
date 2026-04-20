@@ -241,4 +241,36 @@ describe('ChatWidget voice routing', () => {
     expect(screen.queryByText('Cheese Croissant')).not.toBeInTheDocument()
     expect(screen.queryByText(/should stay hidden/i)).not.toBeInTheDocument()
   })
+
+  it('does not render suggestion chips for category listing replies', async () => {
+    axios.post.mockResolvedValueOnce({
+      data: {
+        session_id: 'session-voice-test',
+        status: 'ok',
+        reply: 'Here are our pastries.',
+        intent: 'list_category_items',
+        cart_updated: false,
+        cart_id: 'cart-existing',
+        suggestions: [
+          {
+            item_name: 'Chocolate Croissant',
+          },
+        ],
+        metadata: {
+          pipeline_stage: 'list_category_items_done',
+        },
+      },
+    })
+
+    renderChatWidget()
+
+    await act(async () => {
+      voiceInputMock.onEvent({ type: 'final', text: 'what pastries do you have' })
+      vi.advanceTimersByTime(151)
+      await flushPromises()
+    })
+
+    expect(screen.getByText('Here are our pastries.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Chocolate Croissant' })).not.toBeInTheDocument()
+  })
 })

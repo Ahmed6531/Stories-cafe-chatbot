@@ -4,11 +4,8 @@ import os
 import re
 from typing import Optional, Dict, Any
 
-import google.generativeai as genai
-
 from app.core.config import settings
 from app.utils.log_redaction import redact
-from app.utils.gemini_utils import _normalize_gemini_model_name
 
 logger = logging.getLogger(__name__)
 
@@ -667,25 +664,36 @@ async def _generate_gemini_content_async(
     timeout: float = 12.0,
 ) -> str | None:
     api_key = (settings.gemini_api_key or os.getenv("GEMINI_API_KEY") or "").strip()
-    model_name = _normalize_gemini_model_name(
-        settings.gemini_model or os.getenv("GEMINI_MODEL")
-    )
+    primary_model = (
+        settings.gemini_model or os.getenv("GEMINI_MODEL") or "gemini-2.0-flash-lite"
+    ).strip()
+    fallback_model = (
+        getattr(settings, "gemini_fallback_model", None)
+        or os.getenv("GEMINI_FALLBACK_MODEL")
+        or "gemini-2.0-flash"
+    ).strip()
 
     if not api_key:
         logger.warning({"stage": "llm_api_key_missing"})
         return None
 
-    if not model_name:
-        logger.warning({"stage": "llm_model_missing"})
-        return None
+    from google import genai as google_genai
 
-    genai.configure(api_key=api_key)
-    try:
-        import asyncio
-        model = genai.GenerativeModel(model_name)
+    client = google_genai.Client(api_key=api_key)
+
+    async def _try_model(model_name: str) -> str | None:
         try:
+            import asyncio
+
+            logger.info({
+                "stage": "llm_model_attempt",
+                "model": model_name,
+            })
             response = await asyncio.wait_for(
-                model.generate_content_async(prompt),
+                client.aio.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                ),
                 timeout=timeout,
             )
             return (response.text or "").strip()
@@ -693,17 +701,37 @@ async def _generate_gemini_content_async(
             logger.warning({
                 "stage": "llm_gemini_timeout",
                 "model": model_name,
+                "timeout": timeout,
             })
             return None
-    except Exception as exc:
-        logger.warning(
-            {
+        except Exception as exc:
+            logger.warning({
                 "stage": "llm_model_attempt_failed",
                 "model": model_name,
                 "error": str(exc),
-            }
-        )
-        return None
+            })
+            return None
+
+    result = await _try_model(primary_model)
+    if result is not None:
+        return result
+
+    if fallback_model and fallback_model != primary_model:
+        logger.info({
+            "stage": "llm_fallback_triggered",
+            "primary": primary_model,
+            "fallback": fallback_model,
+        })
+        result = await _try_model(fallback_model)
+        if result is not None:
+            return result
+
+    logger.warning({
+        "stage": "llm_all_models_failed",
+        "primary": primary_model,
+        "fallback": fallback_model,
+    })
+    return None
 
 
 def _build_intent_prompt(

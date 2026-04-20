@@ -176,7 +176,9 @@ function BillSummaryCard({ bill, stale = false, onConfirm }) {
 function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
   const isUser = msg.role === 'user'
   const showTime = msg.time !== prevTime
-  const rawSuggestions = Array.isArray(msg.suggestions) ? msg.suggestions : []
+  const suppressSuggestions = msg.intent === 'list_category_items'
+    || msg.pipelineStage === 'list_category_items_done'
+  const rawSuggestions = !suppressSuggestions && Array.isArray(msg.suggestions) ? msg.suggestions : []
   const isPostAddSuggestion = (suggestion) => {
     if (!suggestion || typeof suggestion !== 'object') return false
     const suggestionType = String(suggestion.type || '').trim().toLowerCase()
@@ -740,6 +742,8 @@ export default function ChatWidget({
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         suggestions: Array.isArray(data.suggestions) ? data.suggestions : [],
         cartUpdated: Boolean(data.cart_updated),
+        intent: typeof data.intent === 'string' ? data.intent : '',
+        pipelineStage: typeof data.metadata?.pipeline_stage === 'string' ? data.metadata.pipeline_stage : '',
         bill: data.metadata?.bill || null,
       })
       if (data.intent === 'confirm_checkout' && data.metadata?.pipeline_stage === 'checkout_redirect') {

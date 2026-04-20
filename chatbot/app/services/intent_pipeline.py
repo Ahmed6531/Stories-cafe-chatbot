@@ -20,7 +20,6 @@ consumes it directly and never re-inspects the raw message for intent.
 import asyncio
 import logging
 import re
-import time
 from typing import Optional
 
 from app.services.llm_interpreter import try_interpret_message
@@ -206,93 +205,19 @@ _RE_CORRECTION_STAGED = re.compile(
 # Built from live menu data. Refreshed every 5 minutes.
 # Falls back to hardcoded set if fetch fails.
 
-_CATEGORY_CACHE: frozenset[str] = frozenset()
-_CATEGORY_CACHE_TIMESTAMP: float = 0.0
-_CATEGORY_CACHE_TTL: float = 300.0  # 5 minutes
-
-_CATEGORY_KEYWORDS_FALLBACK: frozenset[str] = frozenset({
-    "drink", "drinks", "beverage", "beverages",
-    "coffee", "coffees", "tea", "teas",
-    "juice", "juices", "smoothie", "smoothies",
-    "milkshake", "milkshakes", "food", "foods",
-    "eat", "snack", "snacks", "pastry", "pastries",
-    "cake", "cakes", "dessert", "desserts",
-    "sweet", "sweets", "sandwich", "sandwiches",
-    "wrap", "wraps", "salad", "salads",
-    "breakfast", "lunch", "brunch", "meal", "meals",
-    "hot", "cold", "iced", "yogurt", "yogurts",
-    "froyo", "platter", "platters", "bowl", "bowls",
+_CATEGORY_QUERY_WORDS: frozenset[str] = frozenset({
+    "what", "which", "show", "list", "see", "browse", "view",
+    "have", "got", "get", "any", "do", "does", "provide",
+    "sell", "carry", "offer", "serve", "available", "options",
+    "items", "menu", "kinds", "types", "choices",
 })
 
 
-async def _get_category_keywords() -> frozenset[str]:
-    """
-    Returns a frozenset of category keywords built from live menu data.
-    Refreshes every 5 minutes. Falls back to hardcoded set on failure.
-    """
-    global _CATEGORY_CACHE, _CATEGORY_CACHE_TIMESTAMP
+async def _get_category_names_for_routing() -> list[str]:
+    from app.services.menu_signal import get_menu_signal
 
-    now = time.monotonic()
-    if (
-        _CATEGORY_CACHE
-        and (now - _CATEGORY_CACHE_TIMESTAMP) < _CATEGORY_CACHE_TTL
-    ):
-        return _CATEGORY_CACHE
-
-    try:
-        from app.services.tools import fetch_menu_items
-        menu_items = await fetch_menu_items()
-
-        keywords: set[str] = set()
-        for item in menu_items:
-            if not isinstance(item, dict):
-                continue
-
-            # Extract category name and subcategory
-            cat = item.get("category")
-            if isinstance(cat, dict):
-                cat_name = str(cat.get("name") or "").strip().lower()
-                if cat_name:
-                    keywords.add(cat_name)
-                    # Add singular/plural variants
-                    if cat_name.endswith("s") and len(cat_name) > 3:
-                        keywords.add(cat_name[:-1])
-                    else:
-                        keywords.add(cat_name + "s")
-            elif isinstance(cat, str) and cat.strip():
-                cat_name = cat.strip().lower()
-                keywords.add(cat_name)
-                if cat_name.endswith("s") and len(cat_name) > 3:
-                    keywords.add(cat_name[:-1])
-                else:
-                    keywords.add(cat_name + "s")
-
-            # Also extract subcategory if present
-            subcat = item.get("subcategory")
-            if isinstance(subcat, dict):
-                subcat_name = str(subcat.get("name") or "").strip().lower()
-                if subcat_name:
-                    keywords.add(subcat_name)
-            elif isinstance(subcat, str) and subcat.strip():
-                keywords.add(subcat.strip().lower())
-
-        # Always include fallback keywords so common terms always work
-        keywords.update(_CATEGORY_KEYWORDS_FALLBACK)
-
-        _CATEGORY_CACHE = frozenset(keywords)
-        _CATEGORY_CACHE_TIMESTAMP = now
-        logger.info({
-            "stage": "category_cache_refreshed",
-            "keyword_count": len(_CATEGORY_CACHE),
-        })
-        return _CATEGORY_CACHE
-
-    except Exception as exc:
-        logger.warning({
-            "stage": "category_cache_fetch_failed",
-            "error": str(exc),
-        })
-        return _CATEGORY_KEYWORDS_FALLBACK
+    signal = await get_menu_signal()
+    return sorted(signal.category_names, key=len, reverse=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -333,8 +258,8 @@ async def _layer2_deterministic(
     m = _RE_LIST_CATEGORY.match(normalized)
     if m:
         candidate = (m.group(1) or m.group(2) or m.group(3) or "").strip().lower()
-        category_keywords = await _get_category_keywords()
-        if candidate in category_keywords:
+        category_names = await _get_category_names_for_routing()
+        if candidate in category_names:
             return _make_resolved(
                 intent="list_category_items",
                 source="deterministic",
@@ -392,6 +317,34 @@ async def _layer2_deterministic(
                 source="layer2_correction",
                 route_to_fallback=False,
             )
+
+    # If the message contains a known menu category name and a query-like
+    # word, route to list_category_items without the LLM.
+    category_names = await _get_category_names_for_routing()
+    normalized_words = set(normalized.split())
+
+    matched_category = None
+    for cat_name in category_names:
+        if re.search(rf"(?<!\w){re.escape(cat_name)}(?!\w)", normalized):
+            matched_category = cat_name
+            break
+
+    if matched_category:
+        is_bare_category = normalized.strip("?").strip() == matched_category
+        has_query_word = bool(normalized_words & _CATEGORY_QUERY_WORDS)
+
+        if is_bare_category or has_query_word:
+            return {
+                "intent": "list_category_items",
+                "items": [{"category": matched_category}],
+                "confidence": 0.95,
+                "needs_clarification": False,
+                "reason": "category_name_match",
+                "source": "layer2_category",
+                "route_to_fallback": False,
+                "fallback_needed": False,
+                "follow_up_ref": None,
+            }
 
     return None
 
