@@ -1,15 +1,51 @@
 import random
 from typing import Any
 
+from app.core.config import settings
+from app.services.menu_utils import active_variant_options, get_variant_group_key
 from app.services.tools import fetch_combo_suggestions
 
 _upsell_last_shown: dict[str, int] = {}
 _session_turn_counter: dict[str, int] = {}
 
+# Tracks the last copy template index used per session to avoid
+# repeating the same phrasing back-to-back.
+_last_upgrade_template: dict[str, int] = {}
+
 UPSELL_COOLDOWN_TURNS = 3
 
 _NO_UPSELL_INTENTS = {"checkout", "clear_cart", "remove_item"}
 MIN_COMBO_COUNT_FOR_UPSELL = 2
+
+_SIZE_UPGRADE_COPY: dict[str, list[str]] = {
+    # Small jump (price_delta <= 50,000 LL)
+    # Feel: casual, obvious yes, barely worth hesitating over
+    "small": [
+        "{upgrade} is only {delta} more. Most people go for it.",
+        "For {delta} more you get {upgrade} — honestly a no-brainer.",
+        "Quick one: {upgrade} is just {delta} extra. Worth it?",
+        "Most customers upgrade to {upgrade} — only {delta} more.",
+        "{delta} more gets you {upgrade}. Up to you!",
+    ],
+    # Medium jump (50,001–150,000 LL)
+    # Feel: informative, light social proof, respectful of the decision
+    "medium": [
+        "Want to go {upgrade}? It's {delta} more — solid upgrade.",
+        "{upgrade} is {delta} extra if you want the bigger size.",
+        "Thinking {upgrade}? {delta} more and you're set.",
+        "A lot of regulars go {upgrade} for {delta} more. Just saying.",
+        "{upgrade} for {delta} more — plenty of room for that extra shot.",
+    ],
+    # Large jump (> 150,000 LL)
+    # Feel: honest, no pressure, acknowledge it's a real cost
+    "large": [
+        "{upgrade} is available for {delta} more — worth it if you're thirsty.",
+        "You could go {upgrade} for {delta} more. Entirely up to you.",
+        "{upgrade} is {delta} extra — bigger pour, same great taste.",
+        "If you want more, {upgrade} is {delta} more.",
+        "Going big? {upgrade} is {delta} extra today.",
+    ],
+}
 
 _PAIR_FUN_FACTS = {
     ("latte", "cheese croissant"): "The creamy body of a latte balances the flaky, salty richness of a cheese croissant.",
@@ -284,6 +320,110 @@ def record_turn(session_id: str) -> int:
     turn = _session_turn_counter.get(session_id, 0) + 1
     _session_turn_counter[session_id] = turn
     return turn
+
+
+def get_size_upgrade_suggestion(
+    session_id: str,
+    menu_detail: dict | None,
+    selected_option_names: list[str],
+    is_repeat_customer: bool = False,
+) -> dict | None:
+    """
+    Returns a size upgrade suggestion dict or None.
+
+    Fires with dynamic probability based on price delta and customer
+    type. Copy rotates across tier-appropriate templates, never
+    repeating the same phrasing back-to-back in the same session.
+    Shares the same cooldown as the complementary upsell system so
+    both never fire in the same turn.
+    """
+    turn = _session_turn_counter.get(session_id, 0)
+    last_shown = _upsell_last_shown.get(session_id, -999)
+    if turn - last_shown < UPSELL_COOLDOWN_TURNS:
+        return None
+
+    if not isinstance(menu_detail, dict):
+        return None
+    size_group = None
+    for group in (menu_detail.get("variantGroupDetails") or []):
+        if isinstance(group, dict) and get_variant_group_key(group) == "size":
+            size_group = group
+            break
+    if not size_group:
+        return None
+
+    options = [
+        opt for opt in active_variant_options(size_group)
+        if isinstance(opt.get("additionalPrice"), (int, float))
+    ]
+    options.sort(key=lambda o: float(o["additionalPrice"]))
+    if len(options) < 2:
+        return None
+
+    selected_lower = {str(s).strip().lower() for s in selected_option_names}
+    current_idx = 0
+    for i, opt in enumerate(options):
+        if str(opt.get("name", "")).strip().lower() in selected_lower:
+            current_idx = i
+            break
+
+    upgrade_opt = None
+    for opt in options[current_idx + 1:]:
+        upgrade_opt = opt
+        break
+    if upgrade_opt is None:
+        return None
+
+    current_price = float(options[current_idx]["additionalPrice"])
+    upgrade_price = float(upgrade_opt["additionalPrice"])
+    price_delta = upgrade_price - current_price
+    if price_delta <= 0:
+        return None
+
+    max_delta = float(options[-1]["additionalPrice"]) - float(options[0]["additionalPrice"])
+    delta_ratio = price_delta / max_delta if max_delta > 0 else 0.5
+
+    base_rate = (
+        settings.size_upgrade_repeat_probability
+        if is_repeat_customer
+        else settings.size_upgrade_base_probability
+    )
+    probability = base_rate * (1 - delta_ratio * 0.4)
+
+    if random.random() >= probability:
+        return None
+
+    delta_formatted = f"L.L {int(price_delta):,}"
+
+    if price_delta <= 50_000:
+        tier = "small"
+    elif price_delta <= 150_000:
+        tier = "medium"
+    else:
+        tier = "large"
+
+    templates = _SIZE_UPGRADE_COPY[tier]
+    last_idx = _last_upgrade_template.get(f"{session_id}:{tier}", -1)
+
+    candidates = [i for i in range(len(templates)) if i != last_idx]
+    chosen_idx = random.choice(candidates)
+    _last_upgrade_template[f"{session_id}:{tier}"] = chosen_idx
+
+    message = templates[chosen_idx].format(
+        upgrade=upgrade_opt["name"],
+        delta=delta_formatted,
+    )
+
+    _upsell_last_shown[session_id] = turn
+
+    return {
+        "type": "size_upgrade",
+        "current_size": options[current_idx]["name"],
+        "upgrade_size": upgrade_opt["name"],
+        "price_delta": int(price_delta),
+        "message": message,
+        "menu_item_id": menu_detail.get("id") or menu_detail.get("_id"),
+    }
 
 
 async def suggest_upsell_items(

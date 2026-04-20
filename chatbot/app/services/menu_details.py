@@ -16,6 +16,7 @@ import re
 
 from app.schemas.chat import ChatMessageResponse
 from app.services.item_clarification import get_menu_detail_variants
+from app.services.menu_utils import is_menu_item_available
 from app.utils.normalize import normalize_user_message
 
 
@@ -480,11 +481,15 @@ async def process_describe_item(
             },
         )
 
-    matched_item = await find_menu_item_by_name(menu_items, item_name)
+    matched_item = await find_menu_item_by_name(
+        menu_items,
+        item_name,
+        include_unavailable=True,
+    )
     if is_availability_query and matched_item and not _is_confident_availability_match(item_name, matched_item):
         matched_item = None
 
-    if is_availability_query and matched_item and matched_item.get("isAvailable") is False:
+    if is_availability_query and matched_item and not is_menu_item_available(matched_item):
         display_name = (matched_item.get("name") or item_name).strip()
         return ChatMessageResponse(
             session_id=session_id,

@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     openai_provider: str = "gemini"
 
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-2.0-flash"
 
     azure_openai_api_key: str = ""
     azure_openai_endpoint: str = ""
@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     tts_enabled: bool = False
     tts_voice: str = "en-US-Journey-F"
     tts_personality: str = "fun_demo"
+    size_upgrade_base_probability: float = 0.30
+    size_upgrade_repeat_probability: float = 0.50
 
     model_config = SettingsConfigDict(
         env_file=".env",

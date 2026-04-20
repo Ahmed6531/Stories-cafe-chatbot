@@ -55,6 +55,7 @@ class OpExecutionOutcome:
     failed: bool = False
     suggestions: list[dict] = field(default_factory=list)
     defaults_used: list[str] = field(default_factory=list)
+    size_upgrade: dict | None = None
 
 
 @dataclass
@@ -67,6 +68,7 @@ class ExecutionResult:
     followup_stage: str | None = None
     suggestions: list[dict] = field(default_factory=list)
     defaults_used: list[str] = field(default_factory=list)
+    size_upgrade: dict | None = None
     metadata: dict = field(default_factory=dict)
 
 
@@ -121,9 +123,35 @@ async def _execute_add_line(
         suffix = f" ({', '.join(opt_labels)})" if opt_labels else ""
         qty = wire["qty"]
         qty_prefix = f"{qty}x " if qty > 1 else ""
+        size_upgrade: dict | None = None
+        try:
+            from app.services.upsell import get_size_upgrade_suggestion
+            from app.services.tools import fetch_menu_item_detail
+
+            _detail = await fetch_menu_item_detail(wire["menuItemId"])
+            if _detail:
+                _selected_names = [
+                    str(o.get("optionName") or "").strip()
+                    for o in (wire.get("selectedOptions") or [])
+                    if isinstance(o, dict)
+                ]
+                _sess = get_session(ctx.session_id) or {}
+                _is_repeat = bool(
+                    _sess.get("last_checked_out_items")
+                    or _sess.get("checkout_initiated")
+                )
+                size_upgrade = get_size_upgrade_suggestion(
+                    ctx.session_id,
+                    _detail,
+                    _selected_names,
+                    is_repeat_customer=_is_repeat,
+                )
+        except Exception:
+            size_upgrade = None
         return OpExecutionOutcome(
             reply_fragment=f"Added {qty_prefix}{item_name}{suffix} to your cart.",
             cart_updated=True,
+            size_upgrade=size_upgrade,
         )
     except ExpressAPIError as err:
         # Phase 5: move is_out_of_stock_error to a shared module.
@@ -195,6 +223,7 @@ async def _execute_add_operation(op: CompiledOperation, ctx: ExecutionContext) -
     success_parts: list[str] = []
     failure_parts: list[str] = []
     added_item_records: list[dict] = []
+    first_size_upgrade: dict | None = None
 
     for i, line in enumerate(op.lines):
         # Resolve item name: prefer source_parsed, fall back to menu_item_id.
@@ -208,6 +237,8 @@ async def _execute_add_operation(op: CompiledOperation, ctx: ExecutionContext) -
             failure_parts.append(outcome.reply_fragment)
         else:
             success_parts.append(outcome.reply_fragment)
+            if first_size_upgrade is None and outcome.size_upgrade is not None:
+                first_size_upgrade = outcome.size_upgrade
             added_item_records.append({
                 "item_name": str(item_name).strip().lower(),
                 "quantity": line.qty,
@@ -220,7 +251,7 @@ async def _execute_add_operation(op: CompiledOperation, ctx: ExecutionContext) -
         ctx.session["last_intent"] = "add_items"
 
     post_suggestions: list[dict] = []
-    if added_item_records:
+    if added_item_records and first_size_upgrade is None:
         post_suggestions = await _build_post_add_suggestions(ctx, added_item_records)
 
     all_parts = success_parts + failure_parts
@@ -230,6 +261,7 @@ async def _execute_add_operation(op: CompiledOperation, ctx: ExecutionContext) -
         cart_updated=bool(success_parts),
         failed=bool(failure_parts) and not bool(success_parts),
         suggestions=post_suggestions,
+        size_upgrade=first_size_upgrade,
     )
 
 
@@ -246,10 +278,16 @@ async def _execute_remove(op: CompiledOperation, ctx: ExecutionContext) -> OpExe
             return OpExecutionOutcome(reply_fragment="Nothing to remove.", failed=True)
         item_name = op.source_parsed.items[0].item_query
         cart_result = await get_cart(cart_id=ctx.cart_id)
+        cart_items = cart_result.get("cart") or []
+        if not cart_items:
+            return OpExecutionOutcome(
+                reply_fragment="Your cart is empty — nothing to remove.",
+                failed=True,
+            )
         # Phase 5: move find_menu_item_by_name to a shared module.
         from app.services.tools import find_menu_item_by_name
         matched = await find_menu_item_by_name(
-            cart_result["cart"],
+            cart_items,
             item_name,
             include_unavailable=True,
         )
@@ -294,6 +332,15 @@ async def _execute_update_quantity(op: CompiledOperation, ctx: ExecutionContext)
 
     cart_line_id = op.cart_line_id
     if not op.lines or cart_line_id is None:
+        if cart_line_id is None:
+            from app.services.tools import get_cart
+            cart_result = await get_cart(cart_id=ctx.cart_id)
+            cart_items = cart_result.get("cart") or []
+            if not cart_items:
+                return OpExecutionOutcome(
+                    reply_fragment="Your cart is empty — nothing to update.",
+                    failed=True,
+                )
         return OpExecutionOutcome(reply_fragment="Couldn't update quantity right now.", failed=True)
 
     line = op.lines[0]
@@ -318,6 +365,15 @@ async def _execute_update_item(op: CompiledOperation, ctx: ExecutionContext) -> 
 
     cart_line_id = op.cart_line_id
     if not op.lines or cart_line_id is None:
+        if cart_line_id is None:
+            from app.services.tools import get_cart
+            cart_result = await get_cart(cart_id=ctx.cart_id)
+            cart_items = cart_result.get("cart") or []
+            if not cart_items:
+                return OpExecutionOutcome(
+                    reply_fragment="Your cart is empty — nothing to update.",
+                    failed=True,
+                )
         return OpExecutionOutcome(reply_fragment="Couldn't update that item right now.", failed=True)
 
     line = op.lines[0]
@@ -579,6 +635,7 @@ async def execute_compiled_operations(
     reply_parts: list[str] = []
     all_suggestions: list[dict] = []
     all_defaults: list[str] = []
+    first_size_upgrade: dict | None = None
     intent_for_response = "unknown"
 
     # Render compile failures.
@@ -652,6 +709,8 @@ async def execute_compiled_operations(
             ctx.cart_updated = True
         all_suggestions.extend(outcome.suggestions)
         all_defaults.extend(outcome.defaults_used)
+        if first_size_upgrade is None and outcome.size_upgrade is not None:
+            first_size_upgrade = outcome.size_upgrade
 
         # clear_cart failure is terminal: stop executing subsequent ops.
         if op.intent == "clear_cart" and outcome.failed:
@@ -670,6 +729,7 @@ async def execute_compiled_operations(
         followup_stage=None,
         suggestions=all_suggestions,
         defaults_used=all_defaults,
+        size_upgrade=first_size_upgrade,
         metadata={"pipeline_stage": _pipeline_stage_for_intent(intent_for_response)},
     )
 

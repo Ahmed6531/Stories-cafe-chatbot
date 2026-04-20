@@ -567,6 +567,17 @@ def _get_static_reply(normalized_phrase: str) -> str | None:
     if exact_cleaned_reply:
         return exact_cleaned_reply
 
+    # Don't short-circuit on messages that continue past the greeting/thanks
+    # — they likely contain an intent we should route properly.
+    _ACTION_WORDS = frozenset({
+        "add", "remove", "delete", "update", "checkout", "check out",
+        "order", "cart", "want", "need", "ready", "get", "buy",
+        "clear", "empty", "repeat", "again",
+    })
+    cleaned_words = set(cleaned.split())
+    if cleaned_words & _ACTION_WORDS:
+        return None
+
     greeting_prefixes = (
         "hi",
         "hey",
@@ -1152,6 +1163,29 @@ async def _finalize_guided_order(
     except Exception:
         post_add_suggestions = []
 
+    guided_size_upgrade: dict | None = None
+    if not post_add_suggestions:
+        try:
+            from app.services.upsell import get_size_upgrade_suggestion
+            from app.services.tools import fetch_menu_item_detail
+
+            _guided_detail = await fetch_menu_item_detail(item_id)
+            if _guided_detail:
+                _selected_names = list(_selection_summary_parts(selections))
+                _guided_sess = get_session(session_id) or {}
+                _is_repeat = bool(
+                    _guided_sess.get("last_checked_out_items")
+                    or _guided_sess.get("checkout_initiated")
+                )
+                guided_size_upgrade = get_size_upgrade_suggestion(
+                    session_id,
+                    _guided_detail,
+                    _selected_names,
+                    is_repeat_customer=_is_repeat,
+                )
+        except Exception:
+            guided_size_upgrade = None
+
     cart_summary = build_cart_summary(cart_result["cart"])
     summary_parts = _selection_summary_parts(selections)
     if instructions_text:
@@ -1204,6 +1238,7 @@ async def _finalize_guided_order(
                     suggestions=post_add_suggestions,
                     metadata={
                         "normalized_message": normalized_message,
+                        "size_upgrade": guided_size_upgrade,
                         "pipeline_stage": "guided_ordering_start",
                     },
                 )
@@ -1223,6 +1258,7 @@ async def _finalize_guided_order(
             "guided_order_item_name": item_name,
             "guided_order_selections": selections,
             "guided_order_instructions": instructions_text,
+            "size_upgrade": guided_size_upgrade,
             "cart": cart_result["cart"],
             "pipeline_stage": pipeline_stage,
         },
@@ -1283,7 +1319,7 @@ Rules:
 - If the customer names multiple matching options, include all of them.
 - "done", "add it", "add to cart", "that's it", "nothing else", "looks good", "perfect", "yes", "no", "nope" alone mean "finalize".
 """
-    raw_text = await _generate_gemini_content_async(prompt, timeout=10.0)
+    raw_text = await _generate_gemini_content_async(prompt, timeout=8.0)
     parsed = _extract_json_object(raw_text or "")
     if not isinstance(parsed, dict):
         return {
@@ -1336,19 +1372,6 @@ def extract_quantity_value(message: str) -> int | None:
     if token.isdigit():
         return int(token)
     return WORD_TO_NUMBER.get(token)
-
-
-def _build_op_failure_reply(item_name: str | None, failure_reason: str | None) -> str:
-    clean_name = (item_name or "that item").strip() or "that item"
-    if failure_reason == "out_of_stock":
-        return f"{clean_name} is out of stock right now."
-    if failure_reason == "not_found":
-        return f"I couldn't find {clean_name} on the menu."
-    if failure_reason == "missing_id":
-        return f"I found {clean_name} but couldn't add it right now."
-    if failure_reason == "api_error":
-        return f"Something went wrong adding {clean_name} — want to try again?"
-    return f"I couldn't process {clean_name} right now."
 
 
 def _sort_operations_by_priority(operations: list[dict]) -> list[dict]:
@@ -2037,6 +2060,45 @@ async def process_chat_message(
                     "route_to_fallback": False,
                 })
                 intent = "add_items"
+
+        # Bare affirmation with active pending clarification —
+        # treat "yes/ok/sure" as confirmation of the pending question
+        if (
+            resolved.get("reason") == "bare_affirmation_needs_context"
+            and isinstance(session.get("pending_clarification"), dict)
+        ):
+            clarification_type = session["pending_clarification"].get("type")
+            if clarification_type == "menu_choice":
+                # "yes" on a menu choice means "take the first candidate"
+                candidates = session["pending_clarification"].get("candidates") or []
+                if candidates:
+                    first_candidate = candidates[0]
+                    base_item = dict(
+                        session["pending_clarification"].get("requested_item") or {})
+                    base_item["item_name"] = first_candidate.get("name")
+                    resolved.update({
+                        "intent": "add_items",
+                        "items": [base_item],
+                        "confidence": 1.0,
+                        "route_to_fallback": False,
+                        "_resolved_clarification": True,
+                    })
+                    intent = "add_items"
+                    session["pending_clarification"] = None
+                    set_session_stage(session_id, None)
+            elif clarification_type == "item_customization":
+                # "yes" on customization means "add it as is"
+                resolved.update({
+                    "intent": "add_items",
+                    "items": [
+                        session["pending_clarification"].get("requested_item") or {}],
+                    "confidence": 1.0,
+                    "route_to_fallback": False,
+                    "_resolved_clarification": True,
+                })
+                intent = "add_items"
+                session["pending_clarification"] = None
+                set_session_stage(session_id, None)
 
         # ── Route to fallback assistant for low-confidence / unknown intent ──
         if resolved["route_to_fallback"]:
@@ -3497,6 +3559,7 @@ async def process_chat_message(
                 suggestions=exec_result.suggestions,
                 metadata={
                     "normalized_message": normalized_message,
+                    "size_upgrade": exec_result.size_upgrade,
                     **exec_result.metadata,
                 },
             )

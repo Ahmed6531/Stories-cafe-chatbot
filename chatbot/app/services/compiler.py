@@ -302,7 +302,11 @@ async def _compile_add_or_describe_item(
     resolved_item = _resolve_follow_up_item(item, parsed.intent, session)
     if isinstance(resolved_item, CompileNeedsClarification):
         return resolved_item
-    matched_item = await tools_service.find_menu_item_by_name(menu_items, resolved_item.item_query)
+    matched_item = await tools_service.find_menu_item_by_name(
+        menu_items,
+        resolved_item.item_query,
+        include_unavailable=True,
+    )
     if matched_item:
         query_normalized = resolved_item.item_query.strip().lower()
         matched_name_normalized = str(matched_item.get("name") or "").strip().lower()

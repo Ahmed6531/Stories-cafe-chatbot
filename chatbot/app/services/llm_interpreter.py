@@ -664,7 +664,7 @@ def _should_use_heuristic_items(parsed_items: list[Dict[str, Any]], heuristic_it
 
 async def _generate_gemini_content_async(
     prompt: str,
-    timeout: float = 25.0,
+    timeout: float = 12.0,
 ) -> str | None:
     api_key = (settings.gemini_api_key or os.getenv("GEMINI_API_KEY") or "").strip()
     model_name = _normalize_gemini_model_name(

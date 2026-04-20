@@ -164,6 +164,9 @@ _RE_LIST_CATEGORY = re.compile(
     r"(?:\s+(?:do\s+you\s+(?:have|provide|sell|carry|offer|serve)"
     r"|you\s+(?:have|provide|sell|carry|serve|offer)"
     r"|options?|items?|menu))?(?:\s*\?)?$"
+    r"|^what\s+(?:kind|kinds|type|types)\s+of\s+(\w+)"
+    r"(?:\s+(?:do\s+you\s+(?:have|provide|sell|carry|offer|serve)"
+    r"|you\s+(?:have|provide|sell|carry|serve|offer)))?(?:\s*\?)?$"
     r"|^do\s+you\s+have\s+any\s+(\w+)(?:\s*\?)?$"
 )
 
@@ -178,6 +181,25 @@ _RE_PRICE = re.compile(
     r"^(?:how\s+much\s+(?:is|does|for)\s+(?:the\s+|a\s+|an\s+)?|"
     r"(?:what(?:'s|\s+is)\s+the\s+)?price\s+(?:of|for)\s+(?:the\s+|a\s+)?|"
     r"cost\s+of\s+(?:the\s+|a\s+)?)(.+?)(?:\s*\?)?$"
+)
+
+_RE_CORRECTION = re.compile(
+    r"^(?:"
+    r"nevermind\s+i\s+(?:meant|want|wanted)\s+(?:to\s+(?:order|get|add)\s+)?"
+    r"|never\s+mind\s+i\s+(?:meant|want|wanted)\s+(?:to\s+(?:order|get|add)\s+)?"
+    r"|actually\s+(?:i\s+)?(?:i\s+)?(?:want|wanted|d\s+like|would\s+like|can\s+i\s+get|can\s+i\s+have|could\s+i\s+get)\s+(?:to\s+(?:order|get|add)\s+)?"
+    r"|wait\s+i\s+(?:meant|want|wanted)\s+(?:to\s+(?:order|get|add)\s+)?"
+    r"|no\s+wait\s+(?:i\s+want\s+)?"
+    r"|scratch\s+that\s+(?:i\s+want\s+)?"
+    r"|forget\s+(?:it\s+)?(?:i\s+want\s+)?"
+    r"|cancel\s+that\s+(?:i\s+want\s+)?"
+    r")(.+)$",
+    re.IGNORECASE,
+)
+
+_RE_CORRECTION_STAGED = re.compile(
+    r"^(?:i\s+meant|i\s+mean)\s+(.+)$",
+    re.IGNORECASE,
 )
 
 # ── Dynamic category cache ────────────────────────────────────────
@@ -277,7 +299,10 @@ async def _get_category_keywords() -> frozenset[str]:
 # Layer 2 — Deterministic Router
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def _layer2_deterministic(normalized: str) -> Optional[dict]:
+async def _layer2_deterministic(
+    normalized: str,
+    session_stage: str | None = None,
+) -> Optional[dict]:
     """
     Exact-phrase match only.  No substring scanning, no regex.
     Returns a resolved intent dict or None (fall through to Layer 3).
@@ -307,7 +332,7 @@ async def _layer2_deterministic(normalized: str) -> Optional[dict]:
     # "what drinks do you have" / "show me your pastries"
     m = _RE_LIST_CATEGORY.match(normalized)
     if m:
-        candidate = (m.group(1) or m.group(2) or "").strip().lower()
+        candidate = (m.group(1) or m.group(2) or m.group(3) or "").strip().lower()
         category_keywords = await _get_category_keywords()
         if candidate in category_keywords:
             return _make_resolved(
@@ -339,6 +364,33 @@ async def _layer2_deterministic(normalized: str) -> Optional[dict]:
                 source="deterministic",
                 reason="deterministic_match:price_query",
                 items=[{"item_name": item_name}],
+            )
+
+    correction_normalized = re.sub(r"[^a-z0-9\s]+", " ", normalized.lower())
+    correction_normalized = " ".join(correction_normalized.split())
+    _correction_match = _RE_CORRECTION.match(correction_normalized)
+    if not _correction_match and session_stage == "guided_ordering":
+        _correction_match = _RE_CORRECTION_STAGED.match(correction_normalized)
+
+    if _correction_match:
+        new_item_query = _correction_match.group(1).strip()
+        if new_item_query:
+            return _make_resolved(
+                intent="add_items",
+                confidence=0.95,
+                items=[{
+                    "item_name": new_item_query,
+                    "item_query": new_item_query,
+                    "quantity": 1,
+                    "modifiers": [],
+                    "notes": [],
+                    "follow_up_ref": None,
+                    "use_defaults": False,
+                }],
+                needs_clarification=False,
+                reason="correction_pattern",
+                source="layer2_correction",
+                route_to_fallback=False,
             )
 
     return None
@@ -555,9 +607,16 @@ async def resolve_intent(
     """
     # Belt-and-suspenders normalisation in case the caller skips it
     normalized = " ".join(message.strip().lower().split())
+    session_stage = session.get("stage")
+    session_id = session.get("session_id") or ""
+    if session_id:
+        session_stage = get_session_stage(session_id)
 
     # ── Layer 2: Deterministic Router ────────────────────────────────────────
-    deterministic = await _layer2_deterministic(normalized)
+    deterministic = await _layer2_deterministic(
+        normalized,
+        session_stage=session_stage,
+    )
     if deterministic is not None:
         logger.info({
             "stage": "pipeline_layer2_match",
@@ -567,11 +626,6 @@ async def resolve_intent(
         return deterministic
 
     # ── Layer 3: LLM Intent Parser ────────────────────────────────────────────
-    session_stage = session.get("stage")
-    session_id = session.get("session_id") or ""
-    if session_id:
-        session_stage = get_session_stage(session_id)
-
     guided_current_group = None
     guided_order_phase = 1
     guided_groups = session.get("guided_order_groups") or []
