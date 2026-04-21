@@ -357,9 +357,10 @@ async def find_menu_item_by_name(menu_items, item_query):
         if isinstance(item, dict) and item.get("isAvailable", True) is not False
     ]
 
-    # Special case: "water" or "cold water" etc should map to "Rim 330ML" not "Rim Sparkling Water"
-    # unless the user explicitly says "sparkling"
-    if "water" in item_query and "sparkling" not in item_query:
+    # Special case: still water requests should map to "Rim 330ML".
+    # This includes "water" phrasing and shorthand "bottle" phrasing
+    # unless the user explicitly says "sparkling".
+    if ("water" in item_query or "bottle" in item_query) and "sparkling" not in item_query:
         for item in available_items:
             if item.get("name", "").strip().lower() == "rim 330ml":
                 return item

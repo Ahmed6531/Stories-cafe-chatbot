@@ -220,6 +220,39 @@ def _looks_like_repeat_order_command(message: str) -> bool:
     return has_repeatish and has_orderish
 
 
+def _looks_like_shorthand_availability_query(message: str) -> bool:
+    """Detect short availability asks like 'do u matcha?' or 'do you croissant'."""
+    normalized = " ".join(str(message or "").lower().split())
+    if not normalized:
+        return False
+
+    # Avoid hijacking recommendation or action requests.
+    if any(
+        token in normalized
+        for token in ["recommend", "suggest", "add ", "order ", "checkout", "clear cart", "repeat"]
+    ):
+        return False
+
+    match = re.match(r"^do\s+(u|you)\s+([a-z0-9][a-z0-9\s\-']*)\??$", normalized)
+    if not match:
+        return False
+
+    remainder = (match.group(2) or "").strip()
+    if not remainder:
+        return False
+
+    # Avoid routing general conversational questions as menu availability.
+    conversational_starters = {
+        "know", "think", "remember", "understand", "mean", "feel",
+        "believe", "agree", "care", "mind", "prefer",
+    }
+    first_word = remainder.split()[0]
+    if first_word in conversational_starters:
+        return False
+
+    return True
+
+
 def detect_special_command(message: str) -> str | None:
     message = message.lower()
 
@@ -279,6 +312,9 @@ def detect_special_command(message: str) -> str | None:
             return "recommendation_query"
         return "describe_item"
 
+    if _looks_like_shorthand_availability_query(message):
+        return "describe_item"
+
     return None
 
 def has_mixed_intent(message: str) -> bool:
@@ -320,6 +356,9 @@ def detect_intent(message: str) -> str:
             ]
         ):
             return "recommendation_query"
+        return "describe_item"
+
+    if _looks_like_shorthand_availability_query(message):
         return "describe_item"
 
     if _looks_like_repeat_order_command(message):
@@ -1354,10 +1393,14 @@ async def handle_repeat_command(
     Returns a ChatMessageResponse if handled, otherwise None.
     """
     msg_lower = normalized_message.strip().lower()
+
+    # Let the dedicated repeat-last-order flow handle order-history repeats.
+    if _looks_like_repeat_order_command(msg_lower):
+        return None
     
     # Define repeat phrases
     more_phrases = {"more", "another one", "one more", "same again", "another", "duplicate"}
-    again_phrases = {"again", "say that again", "repeat that", "repeat", "once more", "tell me again"}
+    again_phrases = {"again", "say that again", "repeat that", "once more", "tell me again"}
     same_phrases = {"same", "same one", "the same", "same item", "same thing"}
     
     is_more = any(msg_lower == phrase or msg_lower.startswith(phrase + " ") for phrase in more_phrases)
@@ -1857,6 +1900,24 @@ async def process_chat_message(
                 pending_clarification.get("candidates") or [],
             )
             if not selected_candidate:
+                # "no [item]" → user rejected the suggestion and named a different item.
+                _no_redirect = re.match(r"^no[o]?[,\s]+(.+)$", normalized_message.strip())
+                if _no_redirect:
+                    _new_query = _no_redirect.group(1).strip()
+                    if _new_query:
+                        session["pending_clarification"] = None
+                        set_session_stage(session_id, None)
+                        pending_clarification = None
+                        interpretation = {
+                            "intent": "add_items",
+                            "items": [{"item_name": _new_query, "quantity": 1}],
+                            "confidence": 1.0,
+                            "fallback_needed": False,
+                        }
+                        intent = "add_items"
+                        # Fall through to the add_items pipeline below.
+
+            if pending_clarification is not None and clarification_type == "menu_choice" and not selected_candidate:
                 return ChatMessageResponse(
                     session_id=session_id,
                     status="ok",
@@ -1877,22 +1938,34 @@ async def process_chat_message(
                     },
                 )
 
-            base_item = dict(pending_clarification.get("requested_item") or {})
-            base_item["item_name"] = selected_candidate.get("name")
-            interpretation = {
-                "intent": "add_items",
-                "items": [base_item, *carry_requested_items],
-                "confidence": 1.0,
-                "fallback_needed": False,
-                "_resolved_clarification": True,
-                "_carried_successful_items": carry_successful_items,
-            }
-            intent = "add_items"
-            session["pending_clarification"] = None
-            set_session_stage(session_id, None)
+            if selected_candidate is not None:
+                base_item = dict(pending_clarification.get("requested_item") or {})
+                base_item["item_name"] = selected_candidate.get("name")
+                interpretation = {
+                    "intent": "add_items",
+                    "items": [base_item, *carry_requested_items],
+                    "confidence": 1.0,
+                    "fallback_needed": False,
+                    "_resolved_clarification": True,
+                    "_carried_successful_items": carry_successful_items,
+                }
+                intent = "add_items"
+                session["pending_clarification"] = None
+                set_session_stage(session_id, None)
 
         elif clarification_type == "item_customization":
             base_item = dict(pending_clarification.get("requested_item") or {})
+            original_item = dict(pending_clarification.get("original_item") or base_item)
+            applied_labels = [
+                str(label).strip()
+                for label in (pending_clarification.get("applied_labels") or [])
+                if str(label).strip()
+            ]
+            item_display_name = (
+                pending_clarification.get("item_query")
+                or base_item.get("item_name")
+                or "this item"
+            )
             updated_item = apply_customization_response(
                 base_item,
                 normalized_message,
@@ -1925,6 +1998,55 @@ async def process_chat_message(
                     metadata={
                         "normalized_message": normalized_message,
                         "pipeline_stage": "clarification_item_customization_pending",
+                    },
+                )
+
+            if (
+                not carry_requested_items
+                and not pending_clarification.get("from_defaults_change")
+                and not pending_clarification.get("skip_defaults_confirmation")
+            ):
+                current_size = str(updated_item.get("size") or "").strip()
+                effective_labels = [
+                    label
+                    for label in applied_labels
+                    if not any(token in normalize_modifier_text(label) for token in ["small", "medium", "large"])
+                ]
+                if current_size:
+                    effective_labels.insert(0, current_size)
+
+                session["pending_clarification"] = {
+                    "type": "defaults_confirmation",
+                    "requested_item": updated_item,
+                    "original_item": original_item,
+                    "menu_detail": pending_clarification.get("menu_detail"),
+                    "applied_labels": effective_labels,
+                    "item_query": item_display_name,
+                }
+                session["last_items"] = [updated_item]
+                session["last_intent"] = "add_items"
+                set_session_stage(session_id, "defaults_confirmation")
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply=build_defaults_confirmation_prompt(
+                        item_display_name,
+                        effective_labels,
+                        user_customizations={
+                            "size": updated_item.get("size"),
+                            "options": updated_item.get("options", {}),
+                            "addons": updated_item.get("addons", []),
+                            "instructions": updated_item.get("instructions", ""),
+                        },
+                    ),
+                    intent="add_items",
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=effective_labels,
+                    suggestions=build_defaults_confirmation_suggestions(),
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "clarification_item_customization_resolved",
                     },
                 )
 
@@ -2074,6 +2196,7 @@ async def process_chat_message(
                     "menu_detail": menu_det,
                     "remaining_requested_items": carry_requested_items,
                     "already_added_items": carry_successful_items,
+                    "from_defaults_change": True,
                 }
                 session["last_items"] = [base_item]
                 session["last_intent"] = "add_items"
@@ -2329,7 +2452,7 @@ async def process_chat_message(
                 return ChatMessageResponse(
                     session_id=session_id,
                     status="ok",
-                    reply="I couldn't find a past checked-out order for your account yet.If you are not logged in please do so I can complete your request.",
+                    reply="I couldn't find a past checked-out order for your account yet. If you're not logged in, please log in so I can complete your request.",
                     intent=intent,
                     cart_updated=False,
                     cart_id=cart_result["cart_id"],
@@ -3362,7 +3485,10 @@ async def process_chat_message(
                             },
                         )
 
-                missing_variant_groups = [] if from_clarification else collect_missing_variant_groups(requested_item, menu_detail)
+                missing_variant_groups = [] if from_clarification else collect_missing_variant_groups(
+                    requested_item, menu_detail,
+                    include_multi_select=_is_frozen_yogurt(menu_detail),
+                )
                 if missing_variant_groups and not from_clarification:
                     item_display_name = matched_item.get("name", requested_item.get("item_name", "this item"))
                     clarification_item = {
@@ -3378,6 +3504,7 @@ async def process_chat_message(
                                 "type": "item_customization",
                                 "requested_item": clarification_item,
                                 "menu_detail": menu_detail,
+                                "skip_defaults_confirmation": True,
                                 "remaining_requested_items": remaining_requested_items,
                                 "already_added_items": list(successful_items),
                             }
@@ -3405,13 +3532,54 @@ async def process_chat_message(
                         clarification_item, menu_detail
                     )
 
+                    if still_required and not multi_item_request:
+                        if session is not None:
+                            session["pending_clarification"] = {
+                                "type": "defaults_confirmation",
+                                "requested_item": updated_defaults_item,
+                                "original_item": clarification_item,
+                                "menu_detail": menu_detail,
+                                "applied_labels": applied_labels,
+                                "item_query": item_display_name,
+                            }
+                            session["last_items"] = [updated_defaults_item]
+                            session["last_intent"] = "add_items"
+                        set_session_stage(session_id, "defaults_confirmation")
+                        return ChatMessageResponse(
+                            session_id=session_id,
+                            status="ok",
+                            reply=build_defaults_confirmation_prompt(
+                                item_display_name,
+                                applied_labels,
+                                user_customizations={
+                                    "size": updated_defaults_item.get("size"),
+                                    "options": updated_defaults_item.get("options", {}),
+                                    "addons": updated_defaults_item.get("addons", []),
+                                    "instructions": updated_defaults_item.get("instructions", ""),
+                                },
+                            ),
+                            intent="add_items",
+                            cart_updated=False,
+                            cart_id=current_cart_id,
+                            defaults_used=applied_labels,
+                            suggestions=build_defaults_confirmation_suggestions(),
+                            metadata={
+                                "normalized_message": normalized_message,
+                                "requested_items": requested_items,
+                                "pipeline_stage": "add_item_defaults_applied",
+                            },
+                        )
+
                     if still_required:
                         # Defaults applied for size/milk; still ask for other required groups
                         if session is not None:
                             session["pending_clarification"] = {
                                 "type": "item_customization",
                                 "requested_item": updated_defaults_item,
+                                "original_item": clarification_item,
                                 "menu_detail": menu_detail,
+                                "applied_labels": applied_labels,
+                                "item_query": item_display_name,
                                 "remaining_requested_items": remaining_requested_items,
                                 "already_added_items": list(successful_items),
                             }
@@ -3456,9 +3624,10 @@ async def process_chat_message(
                                     item_display_name,
                                     applied_labels,
                                     user_customizations={
-                                        "options": clarification_item.get("options", {}),
-                                        "addons": clarification_item.get("addons", []),
-                                        "instructions": clarification_item.get("instructions", ""),
+                                        "size": updated_defaults_item.get("size"),
+                                        "options": updated_defaults_item.get("options", {}),
+                                        "addons": updated_defaults_item.get("addons", []),
+                                        "instructions": updated_defaults_item.get("instructions", ""),
                                     },
                                 ),
                                 intent="add_items",
@@ -3501,6 +3670,7 @@ async def process_chat_message(
                             item_display_name,
                             [],
                             user_customizations={
+                                "size": requested_item.get("size"),
                                 "options": requested_item.get("options", {}),
                                 "addons": requested_item.get("addons", []),
                                 "instructions": requested_item.get("instructions", ""),

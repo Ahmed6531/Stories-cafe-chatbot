@@ -58,6 +58,7 @@ DETAIL_TRIGGER_PHRASES: list[str] = [
     "o you have",
     "o u have",
     "have you got",
+    "are there any",
     "tell me about",
     "tell me more",
     "tell me more about",
@@ -215,6 +216,11 @@ def _is_availability_question(message: str) -> bool:
         or msg.startswith("o you have")
         or msg.startswith("o u have")
         or msg.startswith("have you got")
+        or msg.startswith("do u offer")
+        or msg.startswith("do u")
+        or msg.startswith("do you")
+        or msg.startswith("are there any")
+        or bool(re.search(r"\bare\s+there\s+any\b", msg))
         or bool(re.search(r"\bis\s+.+\s+available\b", msg))
     )
 

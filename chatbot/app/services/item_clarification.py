@@ -54,6 +54,30 @@ def _group_key(group: dict[str, Any]) -> str:
     return "other"
 
 
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes"}
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return False
+
+
+def _as_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdigit():
+            return int(stripped)
+    return None
+
+
 def _option_aliases(option_name: str, group_key: str) -> list[str]:
     normalized_option = _normalize_text(option_name)
     aliases = [normalized_option]
@@ -203,6 +227,11 @@ def find_ambiguous_menu_matches(menu_items: list[dict[str, Any]], item_query: st
     ]
     if cleaned_tokens:
         normalized_query = " ".join(cleaned_tokens)
+
+    # Keep still-water shorthand direct: the add pipeline maps these to Rim 330ML.
+    # Do not trigger a "Did you mean Rim Sparkling Water?" clarification first.
+    if ("water" in normalized_query or "bottle" in normalized_query) and "sparkling" not in normalized_query:
+        return []
 
     exact_matches = [
         item for item in menu_items
@@ -447,7 +476,12 @@ def resolve_menu_choice(message: str, candidates: list[dict[str, Any]]) -> dict[
     return None
 
 
-def collect_missing_variant_groups(requested_item: dict[str, Any], menu_detail: dict[str, Any] | None) -> list[dict[str, Any]]:
+def collect_missing_variant_groups(
+    requested_item: dict[str, Any],
+    menu_detail: dict[str, Any] | None,
+    *,
+    include_multi_select: bool = False,
+) -> list[dict[str, Any]]:
     if not isinstance(menu_detail, dict):
         return []
 
@@ -466,13 +500,26 @@ def collect_missing_variant_groups(requested_item: dict[str, Any], menu_detail: 
             continue
 
         label = _normalize_text(_group_label(group))
-        is_required = bool(group.get("isRequired"))
-        tracked = any(
-            keyword in label
-            for keyword in ["size", "milk", "sugar", "topping", "flavor", "espresso", "add on", "add-on"]
-        )
-        if not (is_required or tracked):
-            continue
+        group_key = _group_key(group)
+        is_required = _as_bool(group.get("isRequired"))
+        raw_max_selections = _as_int(group.get("maxSelections"))
+        is_single_select = raw_max_selections == 1
+
+        if not include_multi_select:
+            # Keep espresso/add-on groups optional for conversational add flows.
+            if group_key == "addons" and any(keyword in label for keyword in ["espresso", "add on", "add-on"]):
+                continue
+
+            # Multi-select groups should not block quick add flows.
+            if not is_single_select:
+                continue
+
+            if not is_required:
+                continue
+        else:
+            # Full-clarification path (e.g., frozen yogurt): skip only purely optional toppings
+            # that the user has already answered, handled by _group_answered below.
+            pass
         if _group_answered(requested_item, group):
             continue
         missing_groups.append(group)
@@ -484,8 +531,7 @@ def build_customization_prompt(item_name: str, missing_groups: list[dict[str, An
     if not missing_groups:
         return f"Awesome choice. How would you like your {item_name}?"
 
-    # Checklist UI renders the concrete options, so keep the text concise.
-    return f"Great pick! Let’s customize your {item_name}. Please choose from the checklist below."
+    return f"Great pick! Let’s customize your {item_name}. Tell me your preferred options."
 
 
 def build_customization_suggestions(
@@ -704,7 +750,13 @@ def apply_smart_defaults(
             continue
 
         key = _group_key(group)
-        is_required = bool(group.get("isRequired"))
+        is_required = _as_bool(group.get("isRequired"))
+        raw_max_selections = _as_int(group.get("maxSelections"))
+        is_single_select = raw_max_selections == 1
+
+        # Never force defaults or clarification for multi-select groups.
+        if not is_single_select:
+            continue
 
         if key == "size":
             default_opt = _find_default_option(group, ["medium"])
@@ -744,9 +796,17 @@ def apply_smart_defaults(
                 still_required.append(group)
 
         else:
-            # Other groups (e.g. Temperature, Sauce): only block if required
+            # For any remaining required groups, apply the first active option
+            # as a safe default to keep simple "add item" flows conversational.
             if is_required:
-                still_required.append(group)
+                default_opt = _find_default_option(group, [])
+                if default_opt:
+                    existing = {_normalize_text(addon) for addon in updated_item["addons"] if addon}
+                    if _normalize_text(default_opt) not in existing:
+                        updated_item["addons"].append(default_opt)
+                    applied_labels.append(default_opt)
+                else:
+                    still_required.append(group)
 
     return updated_item, applied_labels, still_required
 
@@ -764,6 +824,9 @@ def build_defaults_confirmation_prompt(
         (lbl for lbl in applied_labels if any(kw in _normalize_text(lbl) for kw in _SIZE_KW)),
         None,
     )
+    user_size = str(user_customizations.get("size") or "").strip()
+    if not size_label and user_size:
+        size_label = user_size
     other_labels = [lbl for lbl in applied_labels if lbl != size_label]
 
     user_option_values: list[str] = []

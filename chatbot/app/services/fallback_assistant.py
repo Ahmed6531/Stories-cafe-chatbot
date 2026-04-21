@@ -23,7 +23,8 @@ GEMINI_MODEL_CANDIDATES = (
 FALLBACK_SYSTEM_PROMPT = (
     "You are Stories Cafe's barista and assistant. "
     "Reply to customers in a friendly, helpful, and concise way using complete sentences. "
-    "Do not invent policies, prices, or order status. "
+    "Do not invent availability, policies, prices, or order status. "
+    "Never claim an item is available unless availability is explicitly provided in the prompt context. "
     "If you are unsure, guide the user to menu, cart, or checkout actions."
 )
 
@@ -114,6 +115,74 @@ def _is_incomplete_reply(text: str) -> bool:
     return False
 
 
+def _looks_like_availability_question(user_message: str) -> bool:
+    msg = (user_message or "").strip().lower()
+    if not msg:
+        return False
+
+    if bool(re.search(r"\bis\s+.+\s+available\b", msg)):
+        return True
+
+    if any(
+        msg.startswith(prefix)
+        for prefix in (
+            "do you have",
+            "do u have",
+            "you have",
+            "u have",
+            "have you got",
+            "are there any",
+        )
+    ):
+        return True
+
+    # Common shorthand: "do u matcha?"
+    if bool(re.match(r"^do\s+u\s+[a-z0-9][a-z0-9\s\-']*\??$", msg)):
+        return True
+    if bool(re.match(r"^do\s+you\s+[a-z0-9][a-z0-9\s\-']*\??$", msg)):
+        return True
+
+    return False
+
+
+def _is_affirmative_availability_claim(reply_text: str) -> bool:
+    text = (reply_text or "").strip().lower()
+    if not text:
+        return False
+
+    has_negative_signal = bool(
+        re.search(r"\b(no|not|don't|do\s+not|cannot|can't|unsure|not\s+sure|not\s+certain)\b", text)
+    )
+    if has_negative_signal:
+        return False
+
+    has_availability_claim = bool(
+        re.search(
+            r"\b(yes|yep|yeah|sure|absolutely|of\s+course|definitely|we\s+do|we\s+have|available|on\s+our\s+menu|on\s+the\s+menu|we\s+serve|we\s+offer|you\s+can\s+find\s+it)\b",
+            text,
+        )
+    )
+    return has_availability_claim
+
+
+def _availability_guard_reply() -> str:
+    return (
+        "I do not want to give you incorrect info. "
+        "I cannot confirm that item's availability from the fallback assistant response. "
+        "Please ask me to check the menu item directly, and I will verify it for you."
+    )
+
+
+def _sanitize_fallback_reply(user_message: str, reply_text: str) -> str:
+    if not reply_text:
+        return reply_text
+
+    if _looks_like_availability_question(user_message) and _is_affirmative_availability_claim(reply_text):
+        return _availability_guard_reply()
+
+    return reply_text
+
+
 def _extract_openai_style_content(data: dict) -> str | None:
     choices = data.get("choices") if isinstance(data, dict) else None
     if not isinstance(choices, list) or not choices:
@@ -164,7 +233,7 @@ async def _generate_complete_reply_once(
     if not first:
         return None
 
-    first_clean = first.strip()
+    first_clean = _sanitize_fallback_reply(user_message, first.strip())
     if first_clean and not _is_incomplete_reply(first_clean):
         return first_clean
 
@@ -176,7 +245,7 @@ async def _generate_complete_reply_once(
     if not second:
         return _safe_static_reply(user_message)
 
-    second_clean = second.strip()
+    second_clean = _sanitize_fallback_reply(user_message, second.strip())
     if second_clean and not _is_incomplete_reply(second_clean):
         return second_clean
 
