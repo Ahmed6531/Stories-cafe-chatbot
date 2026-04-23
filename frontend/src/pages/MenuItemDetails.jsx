@@ -53,6 +53,20 @@ const MenuProps = {
 }
 function seedSelectionsFromCartItem(groups, selectedOptions) {
   const selections = {}
+  const optionNameGroupCounts = new Map()
+
+  for (const g of groups) {
+    const groupKey = String(g?.groupId || g?.refId || g?.id || '').trim()
+    for (const option of g.options || []) {
+      const optionName = String(option?.name || '').trim()
+      if (!optionName) continue
+
+      const knownGroups = optionNameGroupCounts.get(optionName) || new Set()
+      if (groupKey) knownGroups.add(groupKey)
+      optionNameGroupCounts.set(optionName, knownGroups)
+    }
+  }
+
   for (const g of groups) {
     const groupOptionNames = new Set((g.options || []).map((o) => o.name))
     const groupIds = new Set(
@@ -65,7 +79,9 @@ function seedSelectionsFromCartItem(groups, selectedOptions) {
       if (selectionGroupId) {
         return groupIds.has(selectionGroupId)
       }
-      return groupOptionNames.has(s.optionName)
+      const optionName = String(s?.optionName || '').trim()
+      const groupsWithOptionName = optionNameGroupCounts.get(optionName)
+      return groupOptionNames.has(optionName) && groupsWithOptionName?.size === 1
     })
     if (g.maxSelections === 1) {
       const match = matching[0]
@@ -646,9 +662,11 @@ const editLineId = searchParams.get('edit') || null
   }, [item?.id])
 
   const groups = useMemo(() => {
-    if (!item?.variantGroupDetails || item.variantGroupDetails.length === 0) return []
-    return item.variantGroupDetails.map((v) => ({
+    const variantGroups = item?.variantGroupDetails || item?.variants || []
+    if (variantGroups.length === 0) return []
+    return variantGroups.map((v) => ({
       ...v,
+      id: v.id || v.groupId || v.refId,
       options: Array.isArray(v.options) ? v.options : [],
     }))
   }, [item])

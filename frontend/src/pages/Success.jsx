@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { Box, Typography, useTheme } from '@mui/material'
 import { useOrderStatus } from '../hooks/useOrderStatus'
 import { getActiveOrder, clearActiveOrder } from '../utils/activeOrder'
+import { resetChatClientState } from '../utils/chatSession'
 
 const STATUS_CONFIG = {
   received: { label: 'Order confirmed', bg: '#f0f4ff', color: '#4b6bcc' },
@@ -23,6 +24,10 @@ export default function Success() {
   const { status, loading } = useOrderStatus(orderNumber)
   const cfg = STATUS_CONFIG[status]
   const isPolling = status === 'in_progress'
+
+  useEffect(() => {
+    resetChatClientState()
+  }, [])
 
   // Clear stored order once it reaches a terminal state
   useEffect(() => {

@@ -601,6 +601,34 @@ def _find_entry_group_info(menu_semantics: dict, entry: dict) -> dict | None:
     return None
 
 
+def _find_group_info_mentioned_in_value(menu_semantics: dict, value: str) -> dict | None:
+    normalized_value = normalize_modifier_text(value)
+    if not normalized_value:
+        return None
+
+    matching_groups = []
+    for group_info in menu_semantics.get("groups") or []:
+        label = normalize_modifier_text(group_info.get("label"))
+        if not label:
+            continue
+
+        label_tokens = set(label.split())
+        label_tokens.update(
+            token[:-1]
+            for token in list(label_tokens)
+            if token.endswith("s") and len(token) > 3
+        )
+        mentions_label = label in normalized_value
+        mentions_label_token = bool(label_tokens & set(normalized_value.split()))
+        if mentions_label or mentions_label_token:
+            matching_groups.append(group_info)
+
+    if len(matching_groups) == 1:
+        return matching_groups[0]
+
+    return None
+
+
 def _find_group_for_option(menu_semantics: dict, option_name: str, preferred_group: dict | None = None) -> dict | None:
     if isinstance(preferred_group, dict):
         preferred_options = {
@@ -661,6 +689,8 @@ def _resolve_customization_entry(
 
     group_hint = normalize_modifier_text(entry.get("group_hint"))
     target_group_info = _find_entry_group_info(menu_semantics, entry)
+    if not target_group_info:
+        target_group_info = _find_group_info_mentioned_in_value(menu_semantics, value)
     target_group = target_group_info.get("group") if isinstance(target_group_info, dict) else None
     requested_suboption = str(entry.get("suboption_value") or "").strip()
 

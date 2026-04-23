@@ -14,11 +14,14 @@ from app.services.orchestrator import (
 )
 from app.services.session_store import (
     get_guided_order_phase,
+    get_pending_operations,
     get_session,
     sessions,
     set_guided_order_groups,
     set_guided_order_item_id,
     set_guided_order_item_name,
+    set_pending_operations,
+    set_pending_operations_context,
     set_guided_order_optional_groups,
     set_guided_order_phase,
     set_guided_order_quantity,
@@ -833,6 +836,40 @@ class GuidedOrderingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolve_mock.await_count, 1)
         self.assertEqual(response.metadata["pipeline_stage"], "guided_ordering_aborted")
         self.assertIn("won't add", response.reply)
+        self.assertIsNone(get_session(session["session_id"]).get("stage"))
+
+    async def test_pending_ops_confirmation_exit_cancels_before_fallback(self) -> None:
+        session = get_session("pending-ops-exit")
+        set_session_stage(session["session_id"], "pending_ops_confirmation")
+        set_pending_operations(
+            session["session_id"],
+            [{"intent": "view_cart", "items": []}],
+        )
+        set_pending_operations_context(
+            session["session_id"],
+            {
+                "awaiting_pending_ops_confirmation": True,
+                "pending_ops_description": "view your cart",
+            },
+        )
+        resolve_mock = AsyncMock()
+        fallback_mock = AsyncMock(return_value="Fallback reply")
+
+        with patch("app.services.orchestrator.resolve_intent", new=resolve_mock), patch(
+            "app.services.orchestrator.generate_fallback_reply",
+            new=fallback_mock,
+        ):
+            response = await process_chat_message(
+                session_id=session["session_id"],
+                message="exit",
+                cart_id=None,
+                session=session,
+            )
+
+        self.assertEqual(resolve_mock.await_count, 0)
+        self.assertEqual(fallback_mock.await_count, 0)
+        self.assertEqual(response.metadata["pipeline_stage"], "pending_ops_confirmation_cancelled")
+        self.assertEqual(get_pending_operations(session["session_id"]), [])
         self.assertIsNone(get_session(session["session_id"]).get("stage"))
 
 

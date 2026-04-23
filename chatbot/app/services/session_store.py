@@ -564,3 +564,22 @@ def clear_pending_operations(session_id: str) -> None:
     session = get_session(session_id)
     session["pending_operations"] = []
     session["pending_operations_context"] = {}
+
+
+def reset_conversation_session(session_id: str) -> None:
+    session = get_session(session_id)
+    session["cart_id"] = None
+    session["last_items"] = []
+    session["last_intent"] = None
+    session["stage"] = None
+    session["checkout_initiated"] = False
+    session["pending_clarification"] = None
+    session["history"] = []
+    session["last_user_message"] = None
+    session["last_bot_response"] = None
+    session["last_matched_items"] = None
+    session["last_action_type"] = None
+    session["last_action_data"] = None
+    session.pop("last_checked_out_items", None)
+    clear_guided_order_session(session_id)
+    clear_pending_operations(session_id)

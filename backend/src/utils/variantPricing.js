@@ -129,6 +129,7 @@ export function calculateSelectedOptionsDelta(selectedOptions, variantGroups = [
 export function sortSelectedOptionsForDisplay(selectedOptions, variantGroups = []) {
   const original = sanitizeSelectedOptions(selectedOptions);
   const remainingSelections = [...original];
+  const variantGroupsById = createVariantGroupMap(variantGroups);
 
   const ordered = [];
 
@@ -139,11 +140,23 @@ export function sortSelectedOptionsForDisplay(selectedOptions, variantGroups = [
 
     options.forEach((option) => {
       for (let i = 0; i < remainingSelections.length; i += 1) {
-        if (remainingSelections[i].optionName !== option.name) {
+        const selection = remainingSelections[i];
+        const selectionGroup = selection.groupId
+          ? variantGroupsById.get(String(selection.groupId))
+          : null;
+
+        if (selectionGroup) {
+          if (
+            String(selectionGroup.groupId) !== String(group.groupId)
+            || selection.optionName !== option.name
+          ) {
+            continue;
+          }
+        } else if (selection.optionName !== option.name) {
           continue;
         }
 
-        ordered.push(remainingSelections[i]);
+        ordered.push(selection);
         remainingSelections.splice(i, 1);
         i -= 1;
       }

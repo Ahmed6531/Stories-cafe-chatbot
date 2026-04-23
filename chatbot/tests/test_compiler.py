@@ -28,6 +28,19 @@ def _latte_with_size_and_milk() -> list[dict]:
     ]
 
 
+def _frozen_yogurt_combo() -> list[dict]:
+    return [
+        fake_menu_item(
+            1,
+            "Frozen Yogurt Combo",
+            variant_groups=[
+                fake_variant_group("yogurt-flavors-standard", "Flavors", [("Mango", None), ("Chocolate", None)]),
+                fake_variant_group("yogurt-toppings", "Toppings", [("Mango", None), ("Pineapple", None)]),
+            ],
+        )
+    ]
+
+
 @pytest.mark.asyncio
 async def test_plain_add_compiles_to_line():
     results = await compile_operation(
@@ -58,6 +71,24 @@ async def test_add_with_resolved_modifiers_compiles_options():
     assert [(option.option_name, option.group_id) for option in line.selected_options] == [
         ("Medium", "size"),
         ("Oat Milk", "milk"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_add_with_duplicate_option_name_uses_group_word():
+    results = await compile_operation(
+        ParsedOperation(
+            intent="add_items",
+            items=[ParsedItemRequest(item_query="frozen yogurt combo", quantity=1, modifiers=["topping mango"])],
+        ),
+        {"last_items": []},
+        menu_items=_frozen_yogurt_combo(),
+    )
+    result = results[0]
+    assert isinstance(result, CompileSuccess)
+    line = result.operation.lines[0]
+    assert [(option.option_name, option.group_id) for option in line.selected_options] == [
+        ("Mango", "yogurt-toppings"),
     ]
 
 
@@ -190,6 +221,40 @@ async def test_remove_item_uses_cart_key_shape_from_tools_result():
     assert isinstance(result, CompileSuccess)
     assert result.operation.cart_line_id == "line-flat-white"
     assert result.operation.lines[0].menu_item_id == 22
+
+
+@pytest.mark.asyncio
+async def test_update_item_preserves_duplicate_option_groups():
+    results = await compile_operation(
+        ParsedOperation(
+            intent="update_item",
+            items=[ParsedItemRequest(item_query="frozen yogurt combo", quantity=None, modifiers=["topping mango"])],
+        ),
+        {"last_items": []},
+        cart={
+            "cart_id": "cart-1",
+            "cart": [
+                {
+                    "_id": "line-froyo",
+                    "menuItemId": 1,
+                    "name": "Frozen Yogurt Combo",
+                    "qty": 1,
+                    "selectedOptions": [
+                        {"optionName": "Mango", "groupId": "yogurt-flavors-standard"},
+                    ],
+                    "instructions": "",
+                }
+            ],
+        },
+        menu_items=_frozen_yogurt_combo(),
+    )
+    result = results[0]
+    assert isinstance(result, CompileSuccess)
+    line = result.operation.lines[0]
+    assert [(option.option_name, option.group_id) for option in line.selected_options] == [
+        ("Mango", "yogurt-flavors-standard"),
+        ("Mango", "yogurt-toppings"),
+    ]
 
 
 @pytest.mark.asyncio

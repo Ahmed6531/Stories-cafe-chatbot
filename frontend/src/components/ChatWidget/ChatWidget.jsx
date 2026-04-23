@@ -6,23 +6,13 @@ import Portal from '@mui/material/Portal'
 import VoiceInput from '../VoiceInput'
 import { MIC_MODE, useVoiceSession } from '../../hooks/useVoiceSession'
 import { normalizeTranscriptForRouting, normalizeTranscriptForUi } from '../../utils/voiceTranscript'
+import { CHAT_STORAGE_KEY, CHAT_STORAGE_TS_KEY, getOrCreateChatSessionId, resetChatClientState } from '../../utils/chatSession'
 import { useCart } from '../../state/useCart'
 
 const CHATBOT_URL = import.meta.env.VITE_CHATBOT_URL || 'http://localhost:8000'
-const CHAT_STORAGE_KEY = 'chatMessages'
-const CHAT_STORAGE_TS_KEY = 'chatMessagesSavedAt'
 const CHAT_TTL_MS = 24 * 60 * 60 * 1000
 const PARTIAL_TRANSCRIPT_DEBOUNCE_MS = 120
 const CHAT_PANEL_WIDTH = 420
-
-function getChatSessionId() {
-  let id = sessionStorage.getItem('chatSessionId')
-  if (!id) {
-    id = crypto.randomUUID()
-    sessionStorage.setItem('chatSessionId', id)
-  }
-  return id
-}
 
 // Collapse internal-only states into their user-facing equivalents:
 // connecting → listening (mic setup is a detail the user doesn't need to see)
@@ -610,8 +600,7 @@ export default function ChatWidget({
     clearPartials()
     setMessages([])
     setChipsVisible(true)
-    localStorage.removeItem(CHAT_STORAGE_KEY)
-    localStorage.removeItem(CHAT_STORAGE_TS_KEY)
+    resetChatClientState()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuccessRoute])
 
@@ -663,7 +652,7 @@ export default function ChatWidget({
       if (!prev.some((m) => m.bill && !m.billStale)) return prev
       return prev.map((m) => {
         if (!m.bill || m.billStale) return m
-        const optSig = (opts) => (opts || []).map((o) => `${o.optionName}:${o.suboptionName || ''}`).sort().join('|')
+        const optSig = (opts) => (opts || []).map((o) => `${o.groupId || ''}:${o.optionName}:${o.suboptionName || ''}`).sort().join('|')
         const billSig = m.bill.items
           .map((i) => `${i.item_name}:${i.quantity}:${optSig(i.selectedOptions)}:${i.instructions || ''}`)
           .sort()
@@ -726,7 +715,7 @@ export default function ChatWidget({
     try {
       const cartId = localStorage.getItem('cartId') || null
       const response = await axios.post(`${CHATBOT_URL}/chat/message`, {
-        session_id: getChatSessionId(),
+        session_id: getOrCreateChatSessionId(),
         message: routedText,
         cart_id: cartId,
       }, {

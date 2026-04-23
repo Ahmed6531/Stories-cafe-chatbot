@@ -199,6 +199,53 @@ class TestChatEndpointSessionPersistence(unittest.TestCase):
         self.assertIsNotNone(session)
         self.assertEqual(session.get("cart_id"), "cart-persisted")
 
+    def test_checkout_redirect_resets_conversation_session_state(self):
+        sid = "sid-checkout-reset"
+        session = session_store.get_session(sid)
+        session["last_items"] = [{"item_name": "latte"}]
+        session["last_intent"] = "add_items"
+        session["stage"] = "guided_ordering"
+        session["checkout_initiated"] = True
+        session["pending_clarification"] = {"type": "item_customization"}
+        session["history"] = [{"role": "user", "text": "old"}]
+        session["last_user_message"] = "old user"
+        session["last_bot_response"] = "old bot"
+        session["last_action_type"] = "add_items"
+        session["last_action_data"] = {"qty": 1}
+        session["pending_operations"] = [{"intent": "view_cart", "items": []}]
+        session["pending_operations_context"] = {"pending_ops_description": "view your cart"}
+
+        checkout_response = _make_response(
+            intent="confirm_checkout",
+            reply="Great! Taking you to checkout now.",
+            cart_updated=False,
+            cart_id="cart-old",
+        )
+        checkout_response.metadata["pipeline_stage"] = "checkout_redirect"
+
+        with (
+            patch(ORCHESTRATOR_TARGET, new=AsyncMock(return_value=checkout_response)),
+            patch(TTS_TARGET, new=AsyncMock(return_value=None)),
+        ):
+            resp = self.client.post("/chat/message", json={"session_id": sid, "message": "confirm"})
+
+        self.assertEqual(resp.status_code, 200)
+        reset = session_store.sessions.get(sid)
+        self.assertIsNotNone(reset)
+        self.assertIsNone(reset["cart_id"])
+        self.assertEqual(reset["last_items"], [])
+        self.assertIsNone(reset["last_intent"])
+        self.assertIsNone(reset["stage"])
+        self.assertFalse(reset["checkout_initiated"])
+        self.assertIsNone(reset["pending_clarification"])
+        self.assertEqual(reset["pending_operations"], [])
+        self.assertEqual(reset["pending_operations_context"], {})
+        self.assertEqual(reset["history"], [])
+        self.assertIsNone(reset["last_user_message"])
+        self.assertIsNone(reset["last_bot_response"])
+        self.assertIsNone(reset["last_action_type"])
+        self.assertIsNone(reset["last_action_data"])
+
 
 class TestChatEndpointCookieForwarding(unittest.TestCase):
     def setUp(self):

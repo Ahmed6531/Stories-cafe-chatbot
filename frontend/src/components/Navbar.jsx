@@ -7,10 +7,8 @@ import { styled, keyframes, useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Tooltip from '@mui/material/Tooltip'
 import ChatWidget from './ChatWidget/ChatWidget'
+import { resetChatClientState } from '../utils/chatSession'
 import '../styles/index.css'
-
-const CHAT_STORAGE_KEY = 'chatMessages'
-const CHAT_STORAGE_TS_KEY = 'chatMessagesSavedAt'
 
 const Topbar = styled('header')(({ theme }) => ({
   padding: '0 20px',
@@ -258,9 +256,7 @@ export default function Navbar() {
   const handleLogout = async () => {
     await logout()
     localStorage.removeItem('cartId')
-    localStorage.removeItem('chatSessionId')
-    localStorage.removeItem(CHAT_STORAGE_KEY)
-    localStorage.removeItem(CHAT_STORAGE_TS_KEY)
+    resetChatClientState()
     resetCart()
     if (location.pathname.startsWith('/dashboard')) {
       navigate('/')

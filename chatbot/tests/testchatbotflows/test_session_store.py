@@ -21,7 +21,10 @@ from app.services.session_store import (
     set_session_stage,
     get_checkout_initiated,
     set_checkout_initiated,
+    set_pending_operations,
+    set_pending_operations_context,
     set_session_cart_id,
+    reset_conversation_session,
     update_last_action,
 )
 
@@ -220,6 +223,64 @@ class TestUpdateLastAction(unittest.TestCase):
         )
         session = get_session("s13")
         self.assertEqual(session["last_action_data"], {})
+
+
+class TestConversationReset(unittest.TestCase):
+    def setUp(self):
+        _flush_sessions()
+
+    def test_reset_conversation_session_clears_chat_context(self):
+        session = get_session("s14")
+        session["cart_id"] = "cart-123"
+        session["last_items"] = [{"item_name": "latte"}]
+        session["last_intent"] = "add_items"
+        session["stage"] = "guided_ordering"
+        session["checkout_initiated"] = True
+        session["pending_clarification"] = {"type": "item_customization"}
+        session["history"] = [{"role": "user", "text": "hello"}]
+        session["last_user_message"] = "add a latte"
+        session["last_bot_response"] = "Sure"
+        session["last_matched_items"] = [{"item_name": "latte"}]
+        session["last_action_type"] = "add_items"
+        session["last_action_data"] = {"qty": 1}
+        session["guided_order_item_id"] = 8
+        session["guided_order_item_name"] = "Latte"
+        session["guided_order_groups"] = [{"name": "Milk"}]
+        session["guided_order_required_groups"] = [{"name": "Milk"}]
+        session["guided_order_optional_groups"] = [{"name": "Extras"}]
+        session["guided_order_selections"] = {"Milk": "Oat Milk"}
+        session["guided_order_defaulted_groups"] = ["Milk"]
+        session["guided_order_quantity"] = 1
+        session["last_checked_out_items"] = [{"name": "Latte"}]
+        set_pending_operations("s14", [{"intent": "view_cart", "items": []}])
+        set_pending_operations_context("s14", {"pending_ops_description": "view your cart"})
+
+        reset_conversation_session("s14")
+
+        reset = get_session("s14")
+        self.assertIsNone(reset["cart_id"])
+        self.assertEqual(reset["last_items"], [])
+        self.assertIsNone(reset["last_intent"])
+        self.assertIsNone(reset["stage"])
+        self.assertFalse(reset["checkout_initiated"])
+        self.assertIsNone(reset["pending_clarification"])
+        self.assertEqual(reset["history"], [])
+        self.assertIsNone(reset["last_user_message"])
+        self.assertIsNone(reset["last_bot_response"])
+        self.assertIsNone(reset["last_matched_items"])
+        self.assertIsNone(reset["last_action_type"])
+        self.assertIsNone(reset["last_action_data"])
+        self.assertIsNone(reset["guided_order_item_id"])
+        self.assertIsNone(reset["guided_order_item_name"])
+        self.assertEqual(reset["guided_order_groups"], [])
+        self.assertEqual(reset["guided_order_required_groups"], [])
+        self.assertEqual(reset["guided_order_optional_groups"], [])
+        self.assertEqual(reset["guided_order_selections"], {})
+        self.assertEqual(reset["guided_order_defaulted_groups"], [])
+        self.assertIsNone(reset["guided_order_quantity"])
+        self.assertEqual(reset["pending_operations"], [])
+        self.assertEqual(reset["pending_operations_context"], {})
+        self.assertNotIn("last_checked_out_items", reset)
 
 
 class _FakeRedisClient:

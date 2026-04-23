@@ -90,6 +90,16 @@ GUIDED_ABORT_WORDS = frozenset({
     "cancel that",
     "abort",
 })
+PENDING_OPS_CONFIRM_YES_WORDS = frozenset({
+    "yes", "yep", "yeah", "sure", "ok", "okay",
+    "go ahead", "do it", "sounds good", "please",
+    "yes please", "absolutely", "of course",
+})
+PENDING_OPS_CONFIRM_NO_WORDS = frozenset({
+    "no", "nope", "nah", "cancel", "nevermind",
+    "never mind", "forget it", "stop", "no thanks",
+    "exit", "quit", "close", "leave", "end chat",
+})
 GUIDED_DIRECT_WORDS = frozenset({
     "none",
     "skip",
@@ -203,6 +213,18 @@ def _extract_selected_group_id(option: dict | None) -> str:
     return str(option.get("groupId") or "").strip()
 
 
+def _variant_group_ref_values(group: dict | None) -> list[str]:
+    if not isinstance(group, dict):
+        return []
+
+    refs: list[str] = []
+    for raw_ref in (group.get("groupId"), group.get("refId"), group.get("id")):
+        ref = str(raw_ref or "").strip()
+        if ref and ref not in refs:
+            refs.append(ref)
+    return refs
+
+
 def cart_item_to_requested_item(cart_item: dict, menu_detail: dict | None) -> dict:
     requested_item = {
         "item_name": cart_item.get("name") or "",
@@ -218,11 +240,17 @@ def cart_item_to_requested_item(cart_item: dict, menu_detail: dict | None) -> di
     if not selected_options:
         return requested_item
 
-    option_name_to_group: dict[str, dict] = {}
+    groups_by_ref: dict[str, dict] = {}
+    option_name_to_groups: dict[str, list[dict]] = {}
     for group, option in iter_variant_options(menu_detail):
+        for group_ref in _variant_group_ref_values(group):
+            groups_by_ref[normalize_modifier_text(group_ref)] = group
+
         option_name = normalize_modifier_text(option.get("name"))
         if option_name:
-            option_name_to_group[option_name] = group
+            group_list = option_name_to_groups.setdefault(option_name, [])
+            if not any(existing is group for existing in group_list):
+                group_list.append(group)
 
     for selected_option in selected_options:
         option_name = _extract_option_name(selected_option)
@@ -231,7 +259,12 @@ def cart_item_to_requested_item(cart_item: dict, menu_detail: dict | None) -> di
         if not normalized_option_name:
             continue
 
-        group = option_name_to_group.get(normalized_option_name)
+        selection_group_id = _extract_selected_group_id(selected_option)
+        group = groups_by_ref.get(normalize_modifier_text(selection_group_id))
+        if not group:
+            matching_groups = option_name_to_groups.get(normalized_option_name, [])
+            if len(matching_groups) == 1:
+                group = matching_groups[0]
         group_key = get_variant_group_key(group)
         requested_item["customizations"].append(
             {
@@ -239,7 +272,7 @@ def cart_item_to_requested_item(cart_item: dict, menu_detail: dict | None) -> di
                 "value": option_name,
                 "group_hint": group_key if group_key != "other" else None,
                 "group_label": get_variant_group_label(group) if group else None,
-                "group_id": _extract_selected_group_id(selected_option) or get_variant_group_id(group) or None,
+                "group_id": selection_group_id or get_variant_group_id(group) or None,
                 "suboption_value": suboption_name or None,
                 "source": "selected_option",
             }
@@ -662,10 +695,50 @@ def _selection_summary_parts(selections: dict) -> list[str]:
     return parts
 
 
-def _build_selected_options_from_selections(selections: dict) -> list[dict]:
+def _guided_group_selection_keys(group: dict) -> list[str]:
+    keys: list[str] = []
+    for value in (guided_group_name(group), *_variant_group_ref_values(group)):
+        key = str(value or "").strip()
+        if key and key not in keys:
+            keys.append(key)
+    return keys
+
+
+def _build_selected_options_from_selections(selections: dict, groups: list[dict] | None = None) -> list[dict]:
     selected_options: list[dict] = []
-    for option_name in _selection_summary_parts(selections):
-        append_selected_option(selected_options, option_name)
+    consumed_keys: set[str] = set()
+
+    for group in groups or []:
+        if not isinstance(group, dict):
+            continue
+
+        selection_key = None
+        selection_value = None
+        for key in _guided_group_selection_keys(group):
+            if key in selections:
+                selection_key = key
+                selection_value = selections.get(key)
+                break
+
+        if selection_key is None:
+            continue
+
+        consumed_keys.add(selection_key)
+        group_name = guided_group_name(group)
+        group_id = get_variant_group_id(group) or None
+        for option_name in _selection_list(selection_value):
+            append_selected_option(
+                selected_options,
+                option_name,
+                group_name,
+                group_id=group_id,
+            )
+
+    for key, value in (selections or {}).items():
+        if key in consumed_keys:
+            continue
+        for option_name in _selection_list(value):
+            append_selected_option(selected_options, option_name)
     return selected_options
 
 
@@ -1131,7 +1204,13 @@ async def _finalize_guided_order(
             },
         )
 
-    selected_options = _build_selected_options_from_selections(selections)
+    selected_options = _build_selected_options_from_selections(
+        selections,
+        [
+            *get_guided_order_required_groups(session_id),
+            *get_guided_order_optional_groups(session_id),
+        ],
+    )
 
     try:
         cart_result = await add_item_to_cart(
@@ -1591,6 +1670,110 @@ async def _run_typed_compiler_executor_intent(
     )
 
 
+async def _handle_pending_ops_confirmation(
+    *,
+    session_id: str,
+    normalized_message: str,
+    normalized_phrase: str,
+    cart_id: str | None,
+    session: Session | None,
+    auth_cookie: str | None,
+) -> ChatMessageResponse:
+    if normalized_phrase in PENDING_OPS_CONFIRM_YES_WORDS:
+        set_session_stage(session_id, None)
+        pending_ops = get_pending_operations(session_id)
+        context = get_pending_operations_context(session_id)
+        accumulated = list(context.get("reply_parts") or [])
+
+        from app.schemas.actions import CompiledOperation
+        from app.services.executor import execute_compiled_operations
+
+        try:
+            compiled_pending = [CompiledOperation.model_validate(op) for op in pending_ops]
+        except Exception:
+            compiled_pending = []
+
+        clear_pending_operations(session_id)
+        if compiled_pending:
+            drain_result = await execute_compiled_operations(
+                operations=compiled_pending,
+                clarifications=[],
+                failures=[],
+                session_id=session_id,
+                cart_id=cart_id,
+                session=session,
+                auth_cookie=auth_cookie,
+            )
+            if drain_result.reply and drain_result.reply != "Done.":
+                accumulated.append(drain_result.reply)
+            cart_id = drain_result.cart_id or cart_id
+            if drain_result.needs_followup:
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply=" ".join(accumulated),
+                    intent="unknown",
+                    cart_updated=True,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "pending_ops_drain_guided",
+                    },
+                )
+
+        return ChatMessageResponse(
+            session_id=session_id,
+            status="ok",
+            reply="Done! Anything else?",
+            intent="unknown",
+            cart_updated=False,
+            cart_id=cart_id,
+            defaults_used=[],
+            suggestions=[],
+            metadata={
+                "normalized_message": normalized_message,
+                "pipeline_stage": "pending_ops_confirmation_done",
+            },
+        )
+
+    if normalized_phrase in PENDING_OPS_CONFIRM_NO_WORDS:
+        clear_pending_operations(session_id)
+        set_session_stage(session_id, None)
+        return ChatMessageResponse(
+            session_id=session_id,
+            status="ok",
+            reply="No problem! What else can I get you?",
+            intent="unknown",
+            cart_updated=False,
+            cart_id=cart_id,
+            defaults_used=[],
+            suggestions=[],
+            metadata={
+                "normalized_message": normalized_message,
+                "pipeline_stage": "pending_ops_confirmation_cancelled",
+            },
+        )
+
+    context = get_pending_operations_context(session_id)
+    ops_text = context.get("pending_ops_description", "those items")
+    return ChatMessageResponse(
+        session_id=session_id,
+        status="ok",
+        reply=f"Just to confirm - did you still want to {ops_text}? Say yes or no.",
+        intent="unknown",
+        cart_updated=False,
+        cart_id=cart_id,
+        defaults_used=[],
+        suggestions=[],
+        metadata={
+            "normalized_message": normalized_message,
+            "pipeline_stage": "pending_ops_confirmation_unclear",
+        },
+    )
+
+
 async def process_chat_message(
     session_id: str,
     message: str,
@@ -1647,6 +1830,16 @@ async def process_chat_message(
     resolved = None
     _skip_resolve = False
     guided_interrupted = False
+
+    if current_stage == "pending_ops_confirmation":
+        return await _handle_pending_ops_confirmation(
+            session_id=session_id,
+            normalized_message=normalized_message,
+            normalized_phrase=normalized_phrase,
+            cart_id=cart_id,
+            session=session,
+            auth_cookie=auth_cookie,
+        )
 
     if current_stage not in {"guided_ordering", "checkout_summary"}:
         static_reply = _get_static_reply(normalized_phrase)

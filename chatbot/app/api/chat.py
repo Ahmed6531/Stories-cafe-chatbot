@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from app.schemas.chat import ChatMessageRequest, ChatMessageResponse
 from app.services.orchestrator import process_chat_message
-from app.services.session_store import Session, clear_guided_order_session, get_session
+from app.services.session_store import Session, get_session, reset_conversation_session
 from app.services.tts.tts_service import tts_service
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -16,12 +16,7 @@ uvicorn_logger = logging.getLogger("uvicorn.error")
 
 def _update_session_from_response(session: Session, response: ChatMessageResponse) -> None:
     if response.metadata.get("pipeline_stage") == "checkout_redirect":
-        session["last_items"] = []
-        session["last_intent"] = None
-        session["cart_id"] = None
-        session["stage"] = None
-        session["checkout_initiated"] = False
-        clear_guided_order_session(session["session_id"])
+        reset_conversation_session(session["session_id"])
         return
 
     if response.cart_id is not None:
@@ -81,11 +76,12 @@ async def send_message(payload: ChatMessageRequest, request: Request) -> ChatMes
 
         _update_session_from_response(session, response)
 
-        history: list[dict[str, str]] = session.setdefault("history", [])
-        history.append({"role": "user", "text": payload.message})
-        history.append({"role": "bot", "text": response.reply})
-        if len(history) > 20:
-            session["history"] = history[-20:]
+        if pipeline_stage != "checkout_redirect":
+            history: list[dict[str, str]] = session.setdefault("history", [])
+            history.append({"role": "user", "text": payload.message})
+            history.append({"role": "bot", "text": response.reply})
+            if len(history) > 20:
+                session["history"] = history[-20:]
 
         audio = await tts_service.synthesize(response.reply)
         response.audio_base64 = audio

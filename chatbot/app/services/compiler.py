@@ -229,14 +229,19 @@ def _partition_unmatched_fragments(unmatched_fragments: list[str]) -> tuple[list
     return negations, actionable_unmatched
 
 
-def _resolve_modifiers_against_menu(item: ParsedItemRequest, menu_detail: dict | None) -> tuple[list[CompiledOption], str, list[str]]:
+def _resolve_customization_entries_against_menu(
+    entries: list[dict],
+    notes: list[str],
+    menu_detail: dict | None,
+    *,
+    item_query: str = "",
+) -> tuple[list[CompiledOption], str, list[str]]:
     menu_semantics = build_menu_semantics(menu_detail)
     selected_options: list[CompiledOption] = []
     instruction_parts: list[str] = []
     unmatched_fragments: list[str] = []
     group_selections: dict[str, set[str]] = {}
     resolved_size = None
-    entries = [_build_modifier_entry(modifier, menu_semantics) for modifier in item.modifiers if str(modifier).strip()]
     size_entries = [entry for entry in entries if entry.get("group_hint") == "size"]
     remaining_entries = [entry for entry in entries if entry.get("group_hint") != "size"]
 
@@ -274,10 +279,21 @@ def _resolve_modifiers_against_menu(item: ParsedItemRequest, menu_detail: dict |
         else:
             unmatched_fragments.append(str(entry.get("value") or "").strip())
 
-    note_fragments = [str(note).strip() for note in item.notes if str(note).strip()]
+    note_fragments = [str(note).strip() for note in notes if str(note).strip()]
     negation_fragments, actionable_unmatched = _partition_unmatched_fragments(unmatched_fragments)
     instructions = merge_instruction_text("; ".join(note_fragments), "; ".join(negation_fragments))
     return selected_options, instructions, actionable_unmatched
+
+
+def _resolve_modifiers_against_menu(item: ParsedItemRequest, menu_detail: dict | None) -> tuple[list[CompiledOption], str, list[str]]:
+    menu_semantics = build_menu_semantics(menu_detail)
+    entries = [_build_modifier_entry(modifier, menu_semantics) for modifier in item.modifiers if str(modifier).strip()]
+    return _resolve_customization_entries_against_menu(
+        entries,
+        item.notes,
+        menu_detail,
+        item_query=item.item_query,
+    )
 
 
 def _build_ambiguous_candidates(candidates: list[dict]) -> list[dict]:
@@ -618,44 +634,20 @@ async def _compile_update_item_operation(
         "instructions": "",
     }
     merged = merge_requested_item_customizations(current_item, override_item, menu_detail)
-    merged_modifiers: list[str] = []
-    seen_modifiers: set[str] = set()
+    merged_entries = [
+        entry
+        for entry in (merged.get("customizations") or [])
+        if isinstance(entry, dict) and entry.get("kind") == "selection"
+    ]
 
-    def append_modifier(value: str | None) -> None:
-        cleaned = str(value or "").strip()
-        normalized = normalize_modifier_text(cleaned)
-        if not normalized or normalized in seen_modifiers:
-            return
-        seen_modifiers.add(normalized)
-        merged_modifiers.append(cleaned)
-
-    merged_size = str(merged.get("size") or "").strip()
-    if merged_size:
-        append_modifier(merged_size)
-    merged_options = merged.get("options") if isinstance(merged.get("options"), dict) else {}
-    merged_milk = str(merged_options.get("milk") or "").strip()
-    if merged_milk:
-        append_modifier(merged_milk if "milk" in merged_milk.lower() else f"{merged_milk} milk")
-    for entry in merged.get("customizations") or []:
-        if not isinstance(entry, dict) or entry.get("kind") != "selection":
-            continue
-        group_hint = normalize_modifier_text(entry.get("group_hint"))
-        if group_hint in {"size", "milk", "sugar"}:
-            continue
-        append_modifier(entry.get("value"))
-    for addon in merged.get("addons") or []:
-        append_modifier(addon)
-
-    selected_options, instructions, actionable_unmatched = _resolve_modifiers_against_menu(
-        ParsedItemRequest(
-            item_query=resolved_item.item_query,
-            modifiers=merged_modifiers,
-            notes=[
-                fragment
-                for fragment in split_instruction_fragments(merged.get("instructions") or "")
-            ],
-        ),
+    selected_options, instructions, actionable_unmatched = _resolve_customization_entries_against_menu(
+        merged_entries,
+        [
+            fragment
+            for fragment in split_instruction_fragments(merged.get("instructions") or "")
+        ],
         menu_detail,
+        item_query=resolved_item.item_query,
     )
 
     return CompileSuccess(
