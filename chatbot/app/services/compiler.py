@@ -346,7 +346,7 @@ async def _compile_add_or_describe_item(
         if resolved_item.use_defaults:
             from app.services.item_clarification import apply_smart_defaults
 
-            defaulted_item, _defaults_used, still_required = apply_smart_defaults(
+            defaulted_item, defaults_used_list, still_required = apply_smart_defaults(
                 legacy_item,
                 menu_detail,
             )
@@ -388,10 +388,11 @@ async def _compile_add_or_describe_item(
                     lines=[
                         CompiledCartLine(
                             menuItemId=menu_item_id,
-                            qty=qty,
+                            qty=max(1, int(resolved_item.quantity or 1)),
                             selectedOptions=selected_options,
                             instructions=instructions,
                             unmatched_modifiers=actionable_unmatched,
+                            defaults_used=defaults_used_list,
                         )
                     ],
                     source_parsed=parsed,

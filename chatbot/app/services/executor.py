@@ -123,6 +123,7 @@ async def _execute_add_line(
         suffix = f" ({', '.join(opt_labels)})" if opt_labels else ""
         qty = wire["qty"]
         qty_prefix = f"{qty}x " if qty > 1 else ""
+        defaults_list = line.defaults_used
         size_upgrade: dict | None = None
         try:
             from app.services.upsell import get_size_upgrade_suggestion
@@ -148,9 +149,18 @@ async def _execute_add_line(
                 )
         except Exception:
             size_upgrade = None
+        if defaults_list:
+            defaults_summary = ", ".join(defaults_list)
+            reply = (
+                f"Added {qty_prefix}{item_name} to your cart "
+                f"({defaults_summary}). Sound good, or want to change anything?"
+            )
+        else:
+            reply = f"Added {qty_prefix}{item_name}{suffix} to your cart."
         return OpExecutionOutcome(
-            reply_fragment=f"Added {qty_prefix}{item_name}{suffix} to your cart.",
+            reply_fragment=reply,
             cart_updated=True,
+            defaults_used=line.defaults_used,
             size_upgrade=size_upgrade,
         )
     except ExpressAPIError as err:
@@ -223,6 +233,7 @@ async def _execute_add_operation(op: CompiledOperation, ctx: ExecutionContext) -
     success_parts: list[str] = []
     failure_parts: list[str] = []
     added_item_records: list[dict] = []
+    all_defaults: list[str] = []
     first_size_upgrade: dict | None = None
 
     for i, line in enumerate(op.lines):
@@ -237,6 +248,7 @@ async def _execute_add_operation(op: CompiledOperation, ctx: ExecutionContext) -
             failure_parts.append(outcome.reply_fragment)
         else:
             success_parts.append(outcome.reply_fragment)
+            all_defaults.extend(outcome.defaults_used)
             if first_size_upgrade is None and outcome.size_upgrade is not None:
                 first_size_upgrade = outcome.size_upgrade
             added_item_records.append({
@@ -261,6 +273,7 @@ async def _execute_add_operation(op: CompiledOperation, ctx: ExecutionContext) -
         cart_updated=bool(success_parts),
         failed=bool(failure_parts) and not bool(success_parts),
         suggestions=post_suggestions,
+        defaults_used=all_defaults,
         size_upgrade=first_size_upgrade,
     )
 

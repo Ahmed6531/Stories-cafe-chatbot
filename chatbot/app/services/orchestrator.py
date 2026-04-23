@@ -42,6 +42,7 @@ from app.utils.static_replies import STATIC_REPLY_TABLE
 from app.services.session_store import (
     Session,
     clear_guided_order_session,
+    get_guided_order_defaulted_groups,
     get_guided_order_phase,
     get_guided_order_item_id,
     get_guided_order_item_name,
@@ -58,6 +59,7 @@ from app.services.session_store import (
     set_guided_order_groups,
     set_guided_order_item_id,
     set_guided_order_item_name,
+    set_guided_order_defaulted_groups,
     set_guided_order_optional_groups,
     set_guided_order_quantity,
     set_guided_order_required_groups,
@@ -1209,11 +1211,14 @@ async def _finalize_guided_order(
         summary_parts.append(instructions_text)
     selection_summary = ", ".join(summary_parts)
     summary_suffix = f" ({selection_summary})" if selection_summary else ""
+    defaulted_groups = get_guided_order_defaulted_groups(session_id)
 
     clear_guided_order_session(session_id)
     set_session_stage(session_id, None)
 
     reply_text = f"Added {quantity}x {item_name}{summary_suffix} to your cart."
+    if defaulted_groups:
+        reply_text += f" I used the default for {', '.join(defaulted_groups)}. Sound good?"
     if cart_summary:
         reply_text += f"\n\nYour cart now contains:\n{cart_summary}"
 
@@ -1532,7 +1537,13 @@ async def _run_typed_compiler_executor_intent(
             },
         )
 
-    menu_items = await fetch_menu_items()
+    try:
+        menu_items = await fetch_menu_items()
+    except Exception:
+        if intent in {"remove_item", "update_quantity"}:
+            menu_items = []
+        else:
+            raise
     try:
         cart_raw = await get_cart(cart_id=cart_id)
     except Exception:
@@ -1754,7 +1765,12 @@ async def process_chat_message(
             },
         )
 
-    if not _skip_resolve and current_stage == "guided_ordering" and normalized_phrase in GUIDED_DEFAULT_ALL_WORDS:
+    if (
+        not _skip_resolve
+        and current_stage == "guided_ordering"
+        and get_guided_order_phase(session_id) != 1
+        and normalized_phrase in GUIDED_DEFAULT_ALL_WORDS
+    ):
         return await _finalize_guided_order(
             session_id,
             cart_id,
@@ -2278,6 +2294,7 @@ async def process_chat_message(
             step = get_guided_order_step(session_id)
             required_groups = get_guided_order_required_groups(session_id)
             optional_groups = get_guided_order_optional_groups(session_id)
+            defaulted_groups = get_guided_order_defaulted_groups(session_id)
 
             if item_id is None or not item_name or quantity is None:
                 clear_guided_order_session(session_id)
@@ -2341,27 +2358,31 @@ async def process_chat_message(
                     )
                 else:
                     current_group = required_groups[step]
-                    if is_guided_skip_response(current_response):
-                        return ChatMessageResponse(
-                            session_id=session_id,
-                            status="ok",
-                            reply=(
-                                f"This one is required - please choose from: "
-                                f"{_build_group_options_text(current_group)}."
-                            ),
-                            intent=intent,
-                            cart_updated=False,
-                            cart_id=cart_id,
-                            defaults_used=[],
-                            suggestions=[],
-                            metadata={
-                                "normalized_message": normalized_message,
-                                "current_group": current_group.get("name"),
-                                "pipeline_stage": "guided_ordering_required_clarify",
-                            },
-                        )
-
                     matched_names = _match_option_names_for_group(current_group, current_response)
+                    normalized_response = normalize_modifier_text(current_response)
+                    default_words_for_group = {
+                        "default",
+                        "defaults",
+                        "use default",
+                        "just default",
+                        "whatever",
+                        "no preference",
+                        "don't care",
+                        "any",
+                    }
+                    defaulted_this_group = False
+                    if not matched_names and (
+                        is_guided_skip_response(current_response)
+                        or normalized_response in GUIDED_DEFAULT_ALL_WORDS
+                        or normalized_response in default_words_for_group
+                    ):
+                        active_opts = active_variant_options(current_group)
+                        if active_opts:
+                            default_option_name = str(active_opts[0].get("name") or "").strip()
+                            if default_option_name:
+                                matched_names = [default_option_name]
+                                defaulted_this_group = True
+
                     if not matched_names:
                         return ChatMessageResponse(
                             session_id=session_id,
@@ -2384,6 +2405,14 @@ async def process_chat_message(
 
                     _set_group_selection(selections, current_group, matched_names, replace=True)
                     set_guided_order_selections(session_id, selections)
+                    if defaulted_this_group:
+                        current_group_name = guided_group_name(current_group)
+                        if current_group_name and not any(
+                            normalize_modifier_text(existing) == normalize_modifier_text(current_group_name)
+                            for existing in defaulted_groups
+                        ):
+                            defaulted_groups.append(current_group_name)
+                            set_guided_order_defaulted_groups(session_id, defaulted_groups)
                     next_step = step + 1
 
                     if next_step >= len(required_groups):

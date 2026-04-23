@@ -38,6 +38,7 @@ class Session(TypedDict):
     guided_order_required_groups: list[dict[str, Any]]
     guided_order_optional_groups: list[dict[str, Any]]
     guided_order_selections: dict[str, Any]
+    guided_order_defaulted_groups: list[str]
     guided_order_quantity: int | None
     last_user_message: str | None
     last_bot_response: str | None
@@ -75,6 +76,7 @@ def _default_session(session_id: str) -> dict[str, Any]:
         "guided_order_required_groups": [],
         "guided_order_optional_groups": [],
         "guided_order_selections": {},
+        "guided_order_defaulted_groups": [],
         "guided_order_quantity": None,
         "last_user_message": None,
         "last_bot_response": None,
@@ -150,7 +152,6 @@ def _ensure_session_shape(session: dict[str, Any]) -> dict[str, Any]:
         session.setdefault("guided_order_required_groups", [])
         session.setdefault("guided_order_optional_groups", [])
         session.setdefault("guided_order_selections", {})
-        session.setdefault("guided_order_quantity", None)
         session.setdefault("last_user_message", None)
         session.setdefault("last_bot_response", None)
         session.setdefault("last_matched_items", None)
@@ -159,6 +160,8 @@ def _ensure_session_shape(session: dict[str, Any]) -> dict[str, Any]:
         session.setdefault("pending_operations", [])
         session.setdefault("pending_operations_context", {})
         session["_schema_version"] = 1
+    session.setdefault("guided_order_defaulted_groups", [])
+    session.setdefault("guided_order_quantity", None)
     return session
 
 
@@ -498,6 +501,20 @@ def set_guided_order_selections(session_id: str, selections: dict[str, Any]) -> 
     session["guided_order_selections"] = dict(selections or {})
 
 
+def get_guided_order_defaulted_groups(session_id: str) -> list[str]:
+    session = get_session(session_id)
+    return list(session.get("guided_order_defaulted_groups") or [])
+
+
+def set_guided_order_defaulted_groups(session_id: str, groups: list[str]) -> None:
+    session = get_session(session_id)
+    session["guided_order_defaulted_groups"] = [
+        str(group).strip()
+        for group in (groups or [])
+        if str(group).strip()
+    ]
+
+
 def get_guided_order_quantity(session_id: str) -> int | None:
     session = get_session(session_id)
     quantity = session.get("guided_order_quantity")
@@ -519,6 +536,7 @@ def clear_guided_order_session(session_id: str) -> None:
     session["guided_order_required_groups"] = []
     session["guided_order_optional_groups"] = []
     session["guided_order_selections"] = {}
+    session["guided_order_defaulted_groups"] = []
     session["guided_order_quantity"] = None
 
 

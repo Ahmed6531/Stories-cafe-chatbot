@@ -580,7 +580,7 @@ async def resolve_intent(
 
     # ── Layer 3: LLM Intent Parser ────────────────────────────────────────────
     guided_current_group = None
-    guided_order_phase = 1
+    guided_order_phase = None
     guided_groups = session.get("guided_order_groups") or []
     guided_step = int(session.get("guided_order_step") or 0)
     guided_item_name = session.get("guided_order_item_name")
@@ -594,8 +594,23 @@ async def resolve_intent(
     elif session_stage == "guided_ordering":
         guided_current_group = "Special Instructions"
 
-    if session_id:
+    if session_id and session_stage == "guided_ordering":
         guided_order_phase = get_guided_order_phase(session_id)
+
+    last_bot_message = str(session.get("last_bot_response") or "").strip()[:200]
+    last_user_message = str(session.get("last_user_message") or "").strip()[:100]
+    last_added_items = [
+        str(item.get("item_name") or item.get("name") or "").strip()
+        for item in (session.get("last_items") or [])
+        if isinstance(item, dict)
+        and str(item.get("item_name") or item.get("name") or "").strip()
+    ][:3]
+    cart_item_names = [
+        str(item.get("item_name") or item.get("name") or "").strip()
+        for item in (session.get("cart_items") or [])
+        if isinstance(item, dict)
+        and str(item.get("item_name") or item.get("name") or "").strip()
+    ][:5]
 
     raw = await try_interpret_message(
         normalized,
@@ -604,6 +619,10 @@ async def resolve_intent(
             "guided_order_phase": guided_order_phase,
             "guided_current_group": guided_current_group,
             "guided_order_item_name": guided_item_name,
+            "last_bot_message": last_bot_message,
+            "last_user_message": last_user_message,
+            "last_added_items": last_added_items,
+            "cart_item_names": cart_item_names,
         },
     )
     if raw is None:

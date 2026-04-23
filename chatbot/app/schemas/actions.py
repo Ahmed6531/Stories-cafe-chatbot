@@ -66,11 +66,12 @@ class CompiledCartLine(BaseModel):
     )
     instructions: str = ""
     unmatched_modifiers: list[str] = Field(default_factory=list)
+    defaults_used: list[str] = Field(default_factory=list)
 
     def to_wire_payload(self) -> dict:
         return self.model_dump(
             by_alias=True,
-            exclude={"unmatched_modifiers"},
+            exclude={"unmatched_modifiers", "defaults_used"},
         )
 
 

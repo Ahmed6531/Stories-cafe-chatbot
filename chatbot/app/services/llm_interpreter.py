@@ -859,6 +859,26 @@ Rules:
    meaning they want the item added without customization - set
    use_defaults: true for that item. Do not set it for items where the
    user specified options.
+9. Short follow-up messages must be interpreted using the
+   "Recent conversation context" above:
+   - If the previous bot reply was a question or confirmation prompt
+     (contains "Sound good?", "Want to change?", "Did you mean?",
+     "Still want to", "Shall I", "Would you like"), and the user
+     replies with "yes", "yep", "sounds good", "perfect", "great",
+     "nvm sounds good", "all good", "looks good", "no thanks",
+     "nah", "nevermind" -> classify as "unknown" with reason
+     "acknowledged_bot_question". Do NOT classify as confirm_checkout
+     or any other intent.
+   - If the previous bot reply mentioned a specific item and the user
+     says "change it", "change that", "update it", "modify it" ->
+     classify as "update_item" with item_query set to the item name
+     from "Recently added items" or from the previous bot reply.
+   - If the user says "it", "that one", "same one", "the same" and
+     recently added items are listed -> set follow_up_ref to the
+     first recently added item name.
+   - If the previous bot reply asked "what size/milk/option" and
+     the user gives a direct answer -> classify as
+     "guided_order_response" with confidence >= 0.9.
 
 {context_block}
 {f"{menu_vocab_block}" + chr(10) if menu_vocab_block else ""}
@@ -892,26 +912,58 @@ async def try_interpret_message(
     import sys
 
     try:
-        print(f"[LLM INPUT] {redact(message)}", file=sys.stderr, flush=True)
         session_stage = None
         guided_order_phase = None
         guided_current_group = None
         guided_order_item_name = None
+        last_bot_message = ""
+        last_user_message = ""
+        last_added_items: list[str] = []
+        cart_item_names: list[str] = []
         if isinstance(context, dict):
             session_stage = context.get("session_stage")
             guided_order_phase = context.get("guided_order_phase")
             guided_current_group = context.get("guided_current_group")
             guided_order_item_name = context.get("guided_order_item_name")
+            last_bot_message = str(context.get("last_bot_message") or "")
+            last_user_message = str(context.get("last_user_message") or "")
+            raw_last_added_items = context.get("last_added_items") or []
+            if isinstance(raw_last_added_items, list):
+                last_added_items = [
+                    str(item).strip()
+                    for item in raw_last_added_items
+                    if str(item).strip()
+                ]
+            raw_cart_item_names = context.get("cart_item_names") or []
+            if isinstance(raw_cart_item_names, list):
+                cart_item_names = [
+                    str(item).strip()
+                    for item in raw_cart_item_names
+                    if str(item).strip()
+                ]
 
-        context_block = ""
+        context_parts: list[str] = []
+
         if session_stage or guided_order_phase is not None or guided_current_group or guided_order_item_name:
-            context_block = f"""
-Session context:
+            context_parts.append(f"""Ordering session context:
 - session_stage: {json.dumps(session_stage or "")}
 - guided_order_phase: {json.dumps(guided_order_phase)}
 - guided_current_group: {json.dumps(guided_current_group or "")}
-- guided_order_item_name: {json.dumps(guided_order_item_name or "")}
-"""
+- guided_order_item_name: {json.dumps(guided_order_item_name or "")}""")
+
+        if last_bot_message or last_user_message or last_added_items or cart_item_names:
+            conv_lines = ["Recent conversation context:"]
+            if last_user_message:
+                conv_lines.append(f'- Previous user message: "{last_user_message}"')
+            if last_bot_message:
+                conv_lines.append(f'- Previous bot reply: "{last_bot_message}"')
+            if last_added_items:
+                conv_lines.append(f"- Recently added items: {', '.join(last_added_items)}")
+            if cart_item_names:
+                conv_lines.append(f"- Current cart items: {', '.join(cart_item_names)}")
+            context_parts.append("\n".join(conv_lines))
+
+        context_block = "\n\n".join(context_parts)
 
         # Fetch menu vocabulary if not provided by caller
         if not menu_vocab_block:
@@ -921,6 +973,7 @@ Session context:
                 menu_vocab_block = ""
 
         prompt = _build_intent_prompt(context_block, message, menu_vocab_block)
+        print(f"[LLM INPUT] {redact(prompt)}", file=sys.stderr, flush=True)
         raw_text = await _generate_gemini_content_async(prompt)
         print(f"[LLM OUTPUT] {redact(raw_text)}", file=sys.stderr, flush=True)
         if not raw_text:
