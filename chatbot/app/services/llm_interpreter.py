@@ -827,6 +827,10 @@ Rules:
      pastry, dessert, etc.). Do NOT classify as "describe_item".
    - quantity changes like "make it 3", "change that to 2", "set the latte to 2" -> "update_quantity" (first such pattern note; do not treat as add_items)
    - removals like "take out X", "remove X", "cancel X", "delete X", "i don't want X anymore" -> "remove_item"
+   - "remove all X", "delete all X", "take out all X",
+     "get rid of all X", "remove every X" -> "remove_item" with
+     quantity: null. The execution layer will remove all matching
+     cart lines.
    - follow-up references like "same one", "that last one", "it", "that one", "another one of those" -> set the item's follow_up_ref to the exact phrase and leave item_query empty
 4. Confidence: use >=0.8 when clear, 0.6-0.79 when plausible but uncertain, <0.6 for ambiguity, mixed operations, or unclear references; never force high confidence when unsure.
 5. Quantity defaults: "a couple" -> 2, "a few" -> 3, "some" -> 2; if add_items has no quantity, use 1; put prep or serving requests in "instructions".

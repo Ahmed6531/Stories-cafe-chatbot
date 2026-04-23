@@ -49,6 +49,11 @@ def _compiled_clear() -> CompiledOperation:
     return CompiledOperation(intent="clear_cart", lines=[], source_parsed=parsed)
 
 
+def _compiled_remove_all(item_name: str) -> CompiledOperation:
+    parsed = _parsed_op("remove_item", [ParsedItemRequest(item_query=item_name, quantity=None)])
+    return CompiledOperation(intent="remove_item", lines=[], source_parsed=parsed)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Bug #1 — clear_cart must actually clear the cart in a multi-op sequence
 # ─────────────────────────────────────────────────────────────────────────────
@@ -203,3 +208,44 @@ def test_failure_to_reply_prefers_custom_message():
         message="I couldn't find 'flat white' in your cart.",
     )
     assert _failure_to_reply(failure, "flat white") == "I couldn't find 'flat white' in your cart."
+
+
+@pytest.mark.asyncio
+async def test_remove_all_removes_every_matching_cart_line(monkeypatch):
+    import app.services.tools as tools_mod
+
+    removed_lines: list[str] = []
+
+    async def fake_get_cart(cart_id=None):
+        return {
+            "cart_id": cart_id,
+            "cart": [
+                {"lineId": "cookie-warmed", "name": "Cookie", "qty": 1, "menuItemId": 31},
+                {"lineId": "cookie-plain", "name": "Cookie", "qty": 1, "menuItemId": 31},
+                {"lineId": "latte", "name": "Latte", "qty": 1, "menuItemId": 8},
+            ],
+        }
+
+    async def fake_remove_item_from_cart(line_id, cart_id):
+        removed_lines.append(line_id)
+        return {"cart_id": cart_id, "cart": []}
+
+    monkeypatch.setattr(tools_mod, "get_cart", fake_get_cart)
+    monkeypatch.setattr(tools_mod, "remove_item_from_cart", fake_remove_item_from_cart)
+
+    session_id = "test-remove-all"
+    session = get_session(session_id)
+
+    result = await execute_compiled_operations(
+        operations=[_compiled_remove_all("all cookies")],
+        clarifications=[],
+        failures=[],
+        session_id=session_id,
+        cart_id="cart-cookie",
+        session=session,
+        auth_cookie=None,
+    )
+
+    assert result.reply == "Removed all 2 Cookie from your cart."
+    assert result.cart_updated is True
+    assert removed_lines == ["cookie-warmed", "cookie-plain"]

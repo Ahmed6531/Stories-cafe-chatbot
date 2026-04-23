@@ -1294,6 +1294,17 @@ async def _finalize_guided_order(
 
     clear_guided_order_session(session_id)
     set_session_stage(session_id, None)
+    # Update last_items so follow-up refs ("make it two", "same again")
+    # resolve to the item just added via guided ordering.
+    _guided_session = get_session(session_id)
+    _guided_session["last_items"] = [
+        {
+            "item_name": item_name,
+            "quantity": quantity,
+            "menu_item_id": item_id,
+        }
+    ]
+    _guided_session["last_intent"] = "add_items"
 
     reply_text = f"Added {quantity}x {item_name}{summary_suffix} to your cart."
     if defaulted_groups:

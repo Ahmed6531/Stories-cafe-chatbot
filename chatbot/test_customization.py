@@ -498,10 +498,17 @@ class GuidedOrderingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(final_response.cart_updated)
         self.assertEqual(final_response.metadata["pipeline_stage"], "guided_ordering_done")
         self.assertIn("Added 1x Latte", final_response.reply)
+        self.assertEqual(
+            session["last_items"],
+            [{"item_name": "Latte", "quantity": 1, "menu_item_id": 8}],
+        )
         call_kwargs = add_to_cart_mock.await_args.kwargs
         self.assertEqual(
             call_kwargs["selected_options"],
-            [{"optionName": "Medium"}, {"optionName": "Oat Milk"}],
+            [
+                {"optionName": "Medium", "groupName": "Choose Size"},
+                {"optionName": "Oat Milk", "groupName": "Milk"},
+            ],
         )
         self.assertEqual(call_kwargs["instructions"], "")
 

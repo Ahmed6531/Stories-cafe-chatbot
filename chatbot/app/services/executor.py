@@ -280,16 +280,24 @@ async def _execute_add_operation(op: CompiledOperation, ctx: ExecutionContext) -
 
 async def _execute_remove(op: CompiledOperation, ctx: ExecutionContext) -> OpExecutionOutcome:
     # Phase 5: move tool imports to a shared module.
-    from app.services.tools import get_cart, remove_item_from_cart, update_cart_item_quantity
+    from app.services.tools import get_cart, remove_item_from_cart, update_cart_item_quantity, find_menu_item_by_name
 
     line = op.lines[0] if op.lines else None
     cart_line_id = op.cart_line_id
+    source_item = op.source_parsed.items[0] if op.source_parsed and op.source_parsed.items else None
+    item_name_query = source_item.item_query if source_item else "item"
+    remove_qty = source_item.quantity if source_item else None
+    normalized_query = str(item_name_query or "").strip().lower()
+    remove_all = remove_qty is None and cart_line_id is None
 
-    if cart_line_id is None:
-        # Fallback: look up by item name in cart.
-        if not op.source_parsed or not op.source_parsed.items:
-            return OpExecutionOutcome(reply_fragment="Nothing to remove.", failed=True)
-        item_name = op.source_parsed.items[0].item_query
+    if remove_all:
+        match_query = normalized_query
+        for prefix in ("all ", "every "):
+            if match_query.startswith(prefix):
+                match_query = match_query[len(prefix):].strip()
+                break
+        match_query = match_query or item_name_query
+
         cart_result = await get_cart(cart_id=ctx.cart_id)
         cart_items = cart_result.get("cart") or []
         if not cart_items:
@@ -297,8 +305,63 @@ async def _execute_remove(op: CompiledOperation, ctx: ExecutionContext) -> OpExe
                 reply_fragment="Your cart is empty — nothing to remove.",
                 failed=True,
             )
-        # Phase 5: move find_menu_item_by_name to a shared module.
-        from app.services.tools import find_menu_item_by_name
+
+        matching_lines = []
+        for cart_item in cart_items:
+            matched = await find_menu_item_by_name(
+                [cart_item],
+                match_query,
+                include_unavailable=True,
+            )
+            if matched:
+                line_id = cart_item.get("lineId") or cart_item.get("_id")
+                if line_id:
+                    matching_lines.append((line_id, cart_item.get("name") or item_name_query))
+
+        if not matching_lines:
+            return OpExecutionOutcome(
+                reply_fragment=f"I couldn't find {match_query} in your cart.",
+                failed=True,
+            )
+
+        display_name = matching_lines[0][1]
+        removed_count = 0
+        for line_id, _ in matching_lines:
+            try:
+                result = await remove_item_from_cart(
+                    line_id=line_id,
+                    cart_id=ctx.cart_id,
+                )
+                ctx.cart_id = result["cart_id"]
+                removed_count += 1
+                ctx.cart_updated = True
+            except Exception:
+                continue
+
+        if removed_count == 0:
+            return OpExecutionOutcome(
+                reply_fragment=f"Couldn't remove {display_name} right now.",
+                failed=True,
+            )
+
+        count_str = f"all {removed_count} " if removed_count > 1 else ""
+        return OpExecutionOutcome(
+            reply_fragment=f"Removed {count_str}{display_name} from your cart.",
+            cart_updated=True,
+        )
+
+    if cart_line_id is None:
+        # Fallback: look up by item name in cart.
+        if source_item is None:
+            return OpExecutionOutcome(reply_fragment="Nothing to remove.", failed=True)
+        item_name = item_name_query
+        cart_result = await get_cart(cart_id=ctx.cart_id)
+        cart_items = cart_result.get("cart") or []
+        if not cart_items:
+            return OpExecutionOutcome(
+                reply_fragment="Your cart is empty — nothing to remove.",
+                failed=True,
+            )
         matched = await find_menu_item_by_name(
             cart_items,
             item_name,
@@ -316,7 +379,6 @@ async def _execute_remove(op: CompiledOperation, ctx: ExecutionContext) -> OpExe
         return OpExecutionOutcome(reply_fragment=f"Couldn't remove that item right now.", failed=True)
 
     # Handle partial quantity removal.
-    remove_qty = (op.source_parsed.items[0].quantity if op.source_parsed and op.source_parsed.items else None)
     if remove_qty and remove_qty > 0 and line and line.qty > remove_qty:
         result = await update_cart_item_quantity(
             line_id=cart_line_id,

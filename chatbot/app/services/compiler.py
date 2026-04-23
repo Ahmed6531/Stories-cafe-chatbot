@@ -454,6 +454,23 @@ async def _compile_cart_target_operation(parsed: ParsedOperation, session: dict,
     resolved_item = _resolve_follow_up_item(target_item, parsed.intent, session)
     if isinstance(resolved_item, CompileNeedsClarification):
         return resolved_item
+    normalized_target_query = normalize_modifier_text(resolved_item.item_query)
+    if (
+        parsed.intent == "remove_item"
+        and resolved_item.quantity is None
+        and (
+            normalized_target_query.startswith("all ")
+            or normalized_target_query.startswith("every ")
+        )
+    ):
+        return CompileSuccess(
+            operation=CompiledOperation(
+                intent=parsed.intent,
+                lines=[],
+                cart_line_id=None,
+                source_parsed=parsed,
+            )
+        )
     matched_cart_item = await tools_service.find_menu_item_by_name(
         cart_items,
         resolved_item.item_query,
