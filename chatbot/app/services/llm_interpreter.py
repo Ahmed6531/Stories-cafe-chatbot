@@ -820,6 +820,27 @@ Rules:
    - Phase 4 (instructions): short instruction replies or skip words like "none" should be "guided_order_response" with confidence 0.9 or higher.
    In all guided phases, item_query should be null and the reply is a follow-up to guided_current_group / guided_order_item_name.
    Exception: if the user is clearly asking for a different action like clearing the cart or checking out, classify that action normally instead.
+2b. VARIANT CHANGES DURING GUIDED ORDERING: When session_stage is
+    "guided_ordering" and the user requests a change to the size,
+    milk, or any variant option for the item currently being built
+    (guided_order_item_name), this is ALWAYS "guided_order_response",
+    NOT "update_item".
+
+    Examples during guided ordering for "Iced Latte":
+    - "wait make it medium instead" -> guided_order_response
+    - "actually I want skim milk" -> guided_order_response
+    - "can we make it medium instead, and for milk I want skim milk"
+      -> ONE guided_order_response operation with modifiers: ["Medium", "Skim Milk"]
+    - "change that to large" -> guided_order_response
+
+    When the user names multiple variant options in one message during
+    guided ordering (for example, "medium and skim milk"), return ONE
+    guided_order_response operation with all options in the modifiers
+    array, not separate operations.
+
+    Use "update_item" ONLY when the user is modifying an item that
+    is already confirmed in their cart, not one currently being
+    customized through guided ordering.
 3. Natural language patterns:
    - "repeat my last order", "same as before", "order again", "same thing again" -> "repeat_order"
    - "what's good", "surprise me", "any suggestions", "what do you recommend" -> "recommendation_query"
@@ -829,6 +850,29 @@ Rules:
      "what [category] options do you have" → "list_category_items"
      when the word matches a menu category (coffee, tea, food, drinks,
      pastry, dessert, etc.). Do NOT classify as "describe_item".
+     For list_category_items, ALWAYS populate items with exactly one
+     entry containing the category name, even if the user has a typo:
+       "what salds do you have" →
+         intent: "list_category_items",
+         items: [{{"item_query": "salad", "quantity": null, ...}}]
+       "wht cofee do you have" →
+         intent: "list_category_items",
+         items: [{{"item_query": "coffee", "quantity": null, ...}}]
+       "what teas do you have" →
+         intent: "list_category_items",
+         items: [{{"item_query": "tea", "quantity": null, ...}}]
+
+     CRITICAL: Never return items: [] for list_category_items. Never
+     return "describe_item" when the user is asking what items exist in
+     a category (words like "have", "got", "offer", "serve",
+     "available", "options", "do you have", "what [category]").
+     describe_item is only for asking about a SPECIFIC named item
+     ("what's in the croissant", "describe the latte", "tell me about
+     the greek salad").
+
+     The category in item_query should be the normalized singular form:
+     "salads" → "salad", "coffees" → "coffee", "teas" → "tea",
+     "pastries" → "pastry" or "pastries" (keep as-is if unsure).
    - quantity changes like "make it 3", "change that to 2", "set the latte to 2" -> "update_quantity" (first such pattern note; do not treat as add_items)
    - removals like "take out X", "remove X", "cancel X", "delete X", "i don't want X anymore" -> "remove_item"
    - "remove all X", "delete all X", "take out all X",

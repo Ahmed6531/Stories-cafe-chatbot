@@ -83,6 +83,13 @@ class CompileFailure:
 
 CompileResult = CompileSuccess | CompileNeedsClarification | CompileFailure
 
+_PASSIVE_COMPILE_INTENTS = frozenset({
+    "view_cart",
+    "list_category_items",
+    "list_categories",
+    "recommendation_query",
+})
+
 
 def _split_legacy_modifier_buckets(modifiers: list[str]) -> tuple[str | None, str | None, list[str]]:
     size_words = {"small", "medium", "large", "regular", "tall", "grande", "venti", "short", "xl", "extra large"}
@@ -221,8 +228,6 @@ async def _get_menu_detail(
 ) -> dict | None:
     if isinstance(matched_item.get("variantGroupDetails"), list) or isinstance(matched_item.get("variants"), list):
         return matched_item
-    if not matched_item.get("variantGroups"):
-        return matched_item
     for menu_item in menu_items or []:
         if not isinstance(menu_item, dict):
             continue
@@ -233,6 +238,8 @@ async def _get_menu_detail(
             if not menu_item.get("variantGroups"):
                 return menu_item
             break
+    if not matched_item.get("variantGroups"):
+        return matched_item
     return await tools_service.fetch_menu_item_detail(menu_item_id)
 
 
@@ -770,6 +777,17 @@ async def compile_operation(
     cart: dict | None = None,
     menu_items: list[dict] | None = None,
 ) -> list[CompileResult]:
+    if parsed.intent in _PASSIVE_COMPILE_INTENTS:
+        return [
+            CompileSuccess(
+                operation=CompiledOperation(
+                    intent=parsed.intent,
+                    lines=[],
+                    source_parsed=parsed,
+                )
+            )
+        ]
+
     menu_items = menu_items if menu_items is not None else await tools_service.fetch_menu_items()
     if parsed.intent == "add_items":
         return [await _compile_add_or_describe_item(parsed, item, session=session, menu_items=menu_items) for item in parsed.items]

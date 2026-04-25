@@ -232,7 +232,7 @@ class TestAddItemsFlow(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(response.cart_updated)
         self.assertEqual(response.intent, "add_items")
         self.assertEqual(response.metadata["pipeline_stage"], "guided_ordering_start")
-        self.assertIn("What choose size", response.reply)
+        self.assertIn("What size", response.reply)
         add_mock.assert_not_awaited()
 
 

@@ -49,6 +49,19 @@ _CONFIRM_CHECKOUT_PHRASES: frozenset[str] = frozenset({
     "let's go",
 })
 
+_RECOMMENDATION_PHRASES: frozenset[str] = frozenset({
+    "what's good",
+    "whats good",
+    "what's good today",
+    "whats good today",
+    "surprise me",
+})
+
+_REPEAT_ORDER_PHRASES: frozenset[str] = frozenset({
+    "repeat my last order",
+    "repeat my order",
+})
+
 _BARE_AFFIRMATIONS: frozenset[str] = frozenset({
     "yes",
     "yep",
@@ -206,6 +219,12 @@ _RE_LIST_CATEGORY = re.compile(
     r"|^do\s+you\s+have\s+any\s+(\w+)(?:\s*\?)?$"
 )
 
+_MULTI_INTENT_SIGNALS = re.compile(
+    r"\b(?:add|remove|delete|update|change|checkout|describe|"
+    r"tell me about|what(?:'s| is) in)\b",
+    re.IGNORECASE,
+)
+
 # "do you have X" / "is X in stock" / "is X available" / "is X on the menu"
 _RE_AVAILABILITY = re.compile(
     r"^(?:do\s+you\s+(?:have|sell|serve|carry)|have\s+you\s+got|is\s+there|you\s+have)\s+(.+?)(?:\s*\?)?$"
@@ -258,7 +277,7 @@ _CATEGORY_QUERY_WORDS: frozenset[str] = frozenset({
     "what", "which", "show", "list", "see", "browse", "view",
     "have", "got", "get", "any", "do", "does", "provide",
     "sell", "carry", "offer", "serve", "available", "options",
-    "items", "menu", "kinds", "types", "choices",
+    "items", "menu", "kind", "kinds", "type", "types", "choices",
 })
 
 
@@ -267,6 +286,28 @@ async def _get_category_names_for_routing() -> list[str]:
 
     signal = await get_menu_signal()
     return sorted(signal.category_names, key=len, reverse=True)
+
+
+def _build_category_match_map(category_names: list[str]) -> dict[str, str]:
+    """
+    Returns lowercase category match variants keyed to the canonical DB name.
+    Handles exact names and simple plural/singular forms.
+    """
+    mapping: dict[str, str] = {}
+    for name in category_names:
+        lower = str(name or "").strip().lower()
+        if not lower:
+            continue
+        mapping[lower] = name
+
+        if lower.endswith("ies"):
+            mapping[lower[:-3] + "y"] = name
+            mapping[lower[:-3] + "ie"] = name
+        elif lower.endswith("es") and len(lower) > 3:
+            mapping[lower[:-2]] = name
+        elif lower.endswith("s") and len(lower) > 2:
+            mapping[lower[:-1]] = name
+    return mapping
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -293,6 +334,18 @@ async def _layer2_deterministic(
             intent="confirm_checkout",
             source="deterministic",
             reason="deterministic_match:confirm_checkout",
+        )
+    if normalized in _RECOMMENDATION_PHRASES:
+        return _make_resolved(
+            intent="recommendation_query",
+            source="deterministic",
+            reason="deterministic_match:recommendation_query",
+        )
+    if normalized in _REPEAT_ORDER_PHRASES:
+        return _make_resolved(
+            intent="repeat_order",
+            source="deterministic",
+            reason="deterministic_match:repeat_order",
         )
 
     if session_stage != "guided_ordering" and session is not None and _is_ordinal_reference(normalized):
@@ -434,13 +487,23 @@ async def _layer2_deterministic(
     normalized_words = set(normalized.split())
 
     matched_category = None
-    for cat_name in category_names:
-        if re.search(rf"(?<!\w){re.escape(cat_name)}(?!\w)", normalized):
-            matched_category = cat_name
+    category_match_map = _build_category_match_map(category_names)
+    for match_form, canonical_name in sorted(
+        category_match_map.items(), key=lambda item: -len(item[0])
+    ):
+        if re.search(rf"(?<!\w){re.escape(match_form)}(?!\w)", normalized):
+            matched_category = canonical_name
             break
 
-    if matched_category:
-        is_bare_category = normalized.strip("?").strip() == matched_category
+    if matched_category and not _MULTI_INTENT_SIGNALS.search(normalized):
+        bare_category = normalized.strip("?").strip()
+        is_bare_category = (
+            bare_category == matched_category.lower()
+            or (
+                bare_category in category_match_map
+                and category_match_map[bare_category] == matched_category
+            )
+        )
         has_query_word = bool(normalized_words & _CATEGORY_QUERY_WORDS)
 
         if is_bare_category or has_query_word:

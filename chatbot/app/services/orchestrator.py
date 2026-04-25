@@ -44,6 +44,7 @@ from app.services.session_store import (
     Session,
     clear_guided_order_session,
     get_guided_order_defaulted_groups,
+    get_guided_order_groups,
     get_guided_order_phase,
     get_guided_order_item_id,
     get_guided_order_item_name,
@@ -961,6 +962,52 @@ def _phase3_heuristic(
         return None
 
     # ── Finalize words ────────────────────────────────────────────────
+    finalize_suffixes = (
+        ", that is all", ", that's all", ", done", " that is all",
+        " that's all", " and that's it", " and that is it",
+        " and done", ", and done", " i'm good", " im good",
+        " all good", " nothing else",
+    )
+    msg_without_suffix = msg
+    has_finalize_suffix = False
+    for suffix in finalize_suffixes:
+        if msg.endswith(suffix):
+            msg_without_suffix = msg[: -len(suffix)].strip().rstrip(",").strip()
+            has_finalize_suffix = True
+            break
+
+    # Ordinal references in phase 3 resolve against current group options,
+    # not against last_visible_choices from passive category/recommendation lists.
+    ordinal_map = {
+        "first": 0, "1st": 0, "number one": 0, "the first": 0,
+        "second": 1, "2nd": 1, "number two": 1, "the second": 1,
+        "third": 2, "3rd": 2, "number three": 2, "the third": 2,
+        "fourth": 3, "4th": 3, "number four": 3, "the fourth": 3,
+        "last": -1, "the last": -1, "last one": -1,
+    }
+    for ordinal_phrase, ordinal_index in sorted(
+        ordinal_map.items(), key=lambda item: -len(item[0])
+    ):
+        if re.search(rf"(?<!\w){re.escape(ordinal_phrase)}(?!\w)", msg_without_suffix):
+            for group in optional_groups:
+                opts = active_variant_options(group)
+                if not opts:
+                    continue
+                idx = ordinal_index if ordinal_index >= 0 else len(opts) - 1
+                if 0 <= idx < len(opts):
+                    option_name = opts[idx].get("name", "")
+                    if option_name:
+                        result = {
+                            "action": "select",
+                            "group_name": guided_group_name(group),
+                            "selections": [option_name],
+                            "reply_hint": None,
+                        }
+                        if has_finalize_suffix:
+                            result["action"] = "finalize_after_select"
+                        return result
+            break
+
     phase3_done_words = frozenset({
         "done", "add it", "add to cart", "add", "skip", "none",
         "yes", "yep", "yeah", "that's it", "nothing else",
@@ -1204,6 +1251,17 @@ def build_guided_order_groups(menu_detail: dict | None) -> tuple[list[dict], lis
     return required_groups, optional_groups
 
 
+_GROUP_LABEL_PREFIXES = re.compile(
+    r"^(?:choose|select|pick|your|preferred?)\s+",
+    re.IGNORECASE,
+)
+
+
+def _normalize_group_label(label: str) -> str:
+    """Strip redundant prefix verbs from DB group names for display."""
+    return _GROUP_LABEL_PREFIXES.sub("", label).strip()
+
+
 def build_guided_order_prompt(
     item_name: str,
     group: dict,
@@ -1212,7 +1270,7 @@ def build_guided_order_prompt(
     allow_skip: bool = True,
 ) -> str:
     option_names = _build_group_options_text(group)
-    group_name = (guided_group_name(group) or "option").lower()
+    group_name = _normalize_group_label(guided_group_name(group) or "option").lower()
     max_selections = _group_max_selections(group)
     count_hint = ""
     if max_selections and max_selections > 1:
@@ -1240,7 +1298,7 @@ def build_optional_review_prompt(
     lines.append("Would you like to customize anything else?")
 
     for group in optional_groups:
-        group_label = group.get("name") or "Option"
+        group_label = _normalize_group_label(group.get("name") or "Option")
         max_selections = _group_max_selections(group)
         count_hint = f" (up to {max_selections})" if max_selections and max_selections > 1 else ""
         option_names = _build_group_options_text(group)
@@ -1468,7 +1526,6 @@ async def _finalize_guided_order(
         except Exception:
             guided_size_upgrade = None
 
-    cart_summary = build_cart_summary(cart_result["cart"])
     summary_parts = _selection_summary_parts(selections)
     if instructions_text:
         summary_parts.append(instructions_text)
@@ -1498,8 +1555,6 @@ async def _finalize_guided_order(
     reply_text = f"Added {quantity}x {item_name}{summary_suffix} to your cart."
     if defaulted_groups:
         reply_text += f" I used the default for {', '.join(defaulted_groups)}. Sound good?"
-    if cart_summary:
-        reply_text += f"\n\nYour cart now contains:\n{cart_summary}"
 
     # Check if there are pending operations to drain via executor.
     pending_ops_raw = get_pending_operations(session_id)
@@ -1513,6 +1568,32 @@ async def _finalize_guided_order(
             session=get_session(session_id),
         )
         if pending_compile_results:
+            from app.services.compiler import CompileSuccess
+
+            logger.info({
+                "stage": "guided_ordering_drain_start",
+                "session_id": session_id,
+                "draining_count": len(pending_compile_results),
+                "ops": [
+                    {
+                        "intent": (
+                            result.operation.intent
+                            if isinstance(result, CompileSuccess)
+                            else type(result).__name__
+                        ),
+                        "items": [
+                            item.item_query
+                            for item in (
+                                result.operation.source_parsed.items
+                                if isinstance(result, CompileSuccess)
+                                and result.operation.source_parsed
+                                else []
+                            )
+                        ],
+                    }
+                    for result in pending_compile_results
+                ],
+            })
             drain_result = await execute_compiled_operations(
                 compile_results=pending_compile_results,
                 session_id=session_id,
@@ -1521,7 +1602,7 @@ async def _finalize_guided_order(
                 auth_cookie=None,
             )
             if drain_result.reply and drain_result.reply != "Done.":
-                reply_text = reply_text + " " + drain_result.reply
+                reply_text = reply_text + "\n\n" + drain_result.reply
             cart_result = {
                 "cart_id": drain_result.cart_id or cart_result["cart_id"],
                 "cart": cart_result.get("cart", []),
@@ -1535,7 +1616,7 @@ async def _finalize_guided_order(
                     cart_updated=True,
                     cart_id=drain_result.cart_id,
                     defaults_used=[],
-                    suggestions=post_add_suggestions,
+                    suggestions=[],
                     metadata={
                         "normalized_message": normalized_message,
                         "size_upgrade": guided_size_upgrade,
@@ -1662,27 +1743,40 @@ def extract_quantity_value(message: str) -> int | None:
 
 def _sort_operations_by_priority(operations: list[dict]) -> list[dict]:
     """
-    Enforces execution order regardless of LLM message order:
-      1. clear_cart        — always first
-      2. remove_item       — immediate, in LLM order
-      3. update_quantity   — immediate, in LLM order
-      4. add_items         — in LLM order, may trigger guided ordering
-      5. view_cart         — after all adds
-      6. checkout          — always last
-
-    Any other intent preserves its original LLM position between
-    add_items and view_cart.
+    Execution order:
+      Active ops (mutate cart or produce scoped info before add):
+        0  clear_cart
+        1  remove_item
+        2  update_quantity
+        3  update_item
+        4  add_items / add_item / repeat_order
+        5  checkout / confirm_checkout
+        6  describe_item          ← info needed before guided ordering
+      Passive ops (render inline after all active ops complete):
+        7  view_cart
+        8  list_category_items
+        9  list_categories
+        10 recommendation_query
+      Fallthrough:
+        99 everything else
     """
     PRIORITY = {
-        "clear_cart": 0,
-        "remove_item": 1,
-        "update_quantity": 2,
-        "add_items": 3,
-        "view_cart": 4,
-        "checkout": 5,
-        "confirm_checkout": 5,
+        "clear_cart":           0,
+        "remove_item":          1,
+        "update_quantity":      2,
+        "update_item":          3,
+        "add_items":            4,
+        "add_item":             4,
+        "repeat_order":         4,
+        "checkout":             5,
+        "confirm_checkout":     5,
+        "describe_item":        6,
+        "view_cart":            7,
+        "list_category_items":  8,
+        "list_categories":      9,
+        "recommendation_query": 10,
     }
-    DEFAULT_PRIORITY = 3
+    DEFAULT_PRIORITY = 99
 
     indexed = list(enumerate(operations))
     indexed.sort(key=lambda entry: (
@@ -1693,6 +1787,197 @@ def _sort_operations_by_priority(operations: list[dict]) -> list[dict]:
 
 
 
+
+
+# Intents that mutate cart state or need to run before guided ordering.
+ACTIVE_INTENTS: frozenset[str] = frozenset({
+    "clear_cart",
+    "remove_item",
+    "update_quantity",
+    "update_item",
+    "add_items",
+    "add_item",
+    "repeat_order",
+    "checkout",
+    "confirm_checkout",
+    "describe_item",
+})
+
+# Intents that render data inline without mutating cart state or
+# setting session stage. Always execute after active ops complete.
+PASSIVE_INTENTS: frozenset[str] = frozenset({
+    "view_cart",
+    "list_category_items",
+    "list_categories",
+    "recommendation_query",
+})
+
+
+async def _render_passive_op(
+    op: dict,
+    *,
+    session_id: str,
+    cart_id: str | None,
+    session: dict | None,
+    normalized_message: str,
+) -> str:
+    """
+    Renders a single passive operation inline and returns its reply text.
+    Does NOT set session stage. Sets last_visible_choices for list ops
+    so follow-up ordinal refs work.
+    """
+    from app.services.tools import fetch_featured_items, fetch_menu_items, get_cart
+    from app.services.suggestions import (
+        extract_recommendation_category,
+        extract_recommendation_query_terms,
+        filter_by_category,
+        suggest_complementary_items,
+        suggest_popular_items,
+    )
+    from app.services.upsell import get_upsell_suggestions
+
+    op_intent = op.get("intent") or ""
+    items = op.get("items") or []
+
+    if op_intent == "view_cart":
+        try:
+            cart_result = await get_cart(cart_id=cart_id)
+            summary = build_cart_summary(cart_result["cart"])
+            return f"Here's your cart:\n{summary}" if summary else "Your cart is empty."
+        except Exception:
+            return "I couldn't load your cart right now."
+
+    if op_intent == "list_category_items":
+        category_query = ""
+        if items:
+            category_query = (
+                str(items[0].get("category") or items[0].get("item_query") or "")
+                .strip().lower()
+            )
+        if not category_query:
+            return "Which category are you interested in?"
+        try:
+            menu_items = await fetch_menu_items()
+        except Exception:
+            return "I couldn't load the menu right now."
+        matched = [
+            item for item in menu_items
+            if isinstance(item, dict)
+            and item.get("isAvailable", True)
+            and category_query in str(
+                (item.get("category") or {}).get("name", item.get("category", ""))
+            ).lower()
+        ]
+        if matched:
+            cat_label = (
+                matched[0].get("category", {}).get("name", category_query)
+                if isinstance(matched[0].get("category"), dict)
+                else category_query.title()
+            )
+            lines = [
+                f"- {item['name']}  ({_fmt_price(item.get('basePrice'))})"
+                for item in matched[:12]
+            ]
+            reply = f"Here's what we have in {cat_label}:\n" + "\n".join(lines)
+            if len(matched) > 12:
+                reply += f"\n...and {len(matched) - 12} more."
+            set_last_visible_choices(session_id, matched[:12], source="list_category_items")
+            return reply
+        set_last_visible_choices(session_id, [], source="list_category_items")
+        return f"I couldn't find items in '{category_query}'."
+
+    if op_intent == "list_categories":
+        try:
+            menu_items = await fetch_menu_items()
+        except Exception:
+            return "I couldn't load the menu right now."
+        seen: set = set()
+        categories: list[str] = []
+        for item in menu_items:
+            cat = item.get("category")
+            name = (cat.get("name") if isinstance(cat, dict) else str(cat or "")).strip()
+            if name and name.lower() not in seen:
+                seen.add(name.lower())
+                categories.append(name)
+        categories.sort()
+        if categories:
+            return "Here's what we serve:\n" + "\n".join(f"- {c}" for c in categories)
+        return "We have a wide selection. What are you in the mood for?"
+
+    if op_intent == "recommendation_query":
+        try:
+            featured_items = await fetch_featured_items()
+            cart_result = await get_cart(cart_id=cart_id)
+            cart_items = cart_result["cart"]
+            menu_items = await fetch_menu_items()
+        except Exception:
+            return "I couldn't load recommendations right now."
+        rec_category = extract_recommendation_category(normalized_message)
+        rec_query_terms = extract_recommendation_query_terms(normalized_message)
+        menu_items_by_name = {
+            (item.get("name") or "").lower(): item
+            for item in menu_items
+            if isinstance(item, dict) and item.get("name")
+        }
+        popular = suggest_popular_items(featured_items, limit=6)
+        complementary: list[dict] = []
+        if cart_items:
+            complementary = suggest_complementary_items(menu_items, cart_items[-1], limit=4)
+        upsell = await get_upsell_suggestions(
+            session_id=session_id,
+            intent=op_intent,
+            cart_items=cart_items,
+            menu_items=menu_items,
+            anchor_menu_item=cart_items[-1] if cart_items else None,
+        )
+        raw_suggestions = popular + complementary + upsell
+        all_suggestions = raw_suggestions
+
+        if rec_category or rec_query_terms:
+            all_suggestions = filter_by_category(
+                all_suggestions, rec_category, menu_items_by_name, rec_query_terms
+            )
+            if not all_suggestions and rec_query_terms and rec_category:
+                all_menu = [
+                    {"type": "menu_search", "item_name": i.get("name"), "menu_item_id": i.get("id")}
+                    for i in menu_items if isinstance(i, dict) and i.get("name")
+                ]
+                all_suggestions = filter_by_category(
+                    all_menu, rec_category, menu_items_by_name, rec_query_terms
+                )
+                if not all_suggestions:
+                    all_suggestions = filter_by_category(
+                        raw_suggestions, rec_category, menu_items_by_name, []
+                    )
+
+        if not all_suggestions and rec_query_terms and not rec_category:
+            all_menu = [
+                {"type": "menu_search", "item_name": i.get("name"), "menu_item_id": i.get("id")}
+                for i in menu_items if isinstance(i, dict) and i.get("name")
+            ]
+            all_suggestions = filter_by_category(
+                all_menu, None, menu_items_by_name, rec_query_terms
+            )
+
+        seen_names: set[str] = set()
+        filtered: list[dict] = []
+        for s in all_suggestions:
+            name = (s.get("item_name") or "").strip()
+            if not name or name.lower() in seen_names:
+                continue
+            seen_names.add(name.lower())
+            filtered.append(s)
+            if len(filtered) == 4:
+                break
+
+        set_last_visible_choices(session_id, filtered, source="recommendation")
+        if filtered:
+            return "Here are some picks you might like:\n" + "\n".join(
+                f"- {s['item_name']}" for s in filtered
+            )
+        return "I can help with suggestions once you add an item to your cart."
+
+    return ""
 
 
 def _legacy_item_to_modifiers(item: dict) -> list[str]:
@@ -1760,6 +2045,9 @@ def _resolved_to_parsed_request(resolved: dict, intent: str, session: dict, mess
                 and _message_explicitly_removes_all(message, item_query)
             ):
                 item_query = f"all {item_query}"
+
+            if op_intent in {"list_category_items", "list_categories"} and not item_query:
+                item_query = str(item.get("category") or "").strip()
 
             items.append(
                 ParsedItemRequest(
@@ -1831,6 +2119,18 @@ async def _compile_pending_operations_for_drain(
         compile_results.extend(
             await compile_operation(op.source_parsed, active_session, cart_raw, menu_items)
         )
+    logger.debug({
+        "stage": "pending_drain_compiled",
+        "session_id": session_id,
+        "results": [
+            type(result).__name__ + (
+                ":" + result.operation.intent
+                if isinstance(result, CompileSuccess)
+                else ""
+            )
+            for result in compile_results
+        ],
+    })
     return compile_results
 
 
@@ -2117,6 +2417,21 @@ async def process_chat_message(
         set_session_stage(session_id, None)
 
         pending_ops = get_pending_operations(session_id)
+        logger.info({
+            "stage": "guided_ordering_abort_pending_ops",
+            "session_id": session_id,
+            "pending_count": len(pending_ops),
+            "pending_ops": [
+                {
+                    "intent": op.get("intent"),
+                    "items": [
+                        item.get("item_query") or item.get("item_name")
+                        for item in (op.get("source_parsed", {}).get("items") or [])
+                    ],
+                }
+                for op in pending_ops
+            ],
+        })
         if pending_ops:
             # Build natural language description of remaining ops
             op_descriptions: list[str] = []
@@ -2256,18 +2571,90 @@ async def process_chat_message(
 
     try:
         if get_session_stage(session_id) == "guided_ordering" and intent != "guided_order_response":
-            clear_guided_order_session(session_id)
-            clear_pending_operations(session_id)
-            set_session_stage(session_id, None)
-            guided_interrupted = True
-            logger.info(
-                {
-                    "stage": "guided_ordering_interrupted",
+            if intent in PASSIVE_INTENTS:
+                passive_ops = [
+                    op for op in (resolved.get("operations") or [])
+                    if op.get("intent") in PASSIVE_INTENTS
+                ]
+                if not passive_ops:
+                    passive_ops = [
+                        {
+                            "intent": intent,
+                            "items": resolved.get("items") or [],
+                        }
+                    ]
+
+                passive_parts: list[str] = []
+                for passive_op in passive_ops:
+                    part = await _render_passive_op(
+                        passive_op,
+                        session_id=session_id,
+                        cart_id=cart_id,
+                        session=session,
+                        normalized_message=normalized_message,
+                    )
+                    if part:
+                        passive_parts.append(part)
+                passive_reply = "\n\n".join(passive_parts)
+
+                phase = get_guided_order_phase(session_id)
+                step = get_guided_order_step(session_id)
+                groups = get_guided_order_groups(session_id)
+                item_name = get_guided_order_item_name(session_id)
+                group = groups[step] if groups and 0 <= step < len(groups) else None
+
+                if group and item_name:
+                    guided_question = build_guided_order_prompt(
+                        item_name,
+                        group,
+                        include_item_name=False,
+                        allow_skip=phase in {2, 3},
+                    )
+                    combined_reply = (
+                        passive_reply + "\n\n" + guided_question
+                        if passive_reply
+                        else guided_question
+                    )
+                else:
+                    combined_reply = passive_reply or "What would you like?"
+
+                logger.info({
+                    "stage": "passive_during_guided_ordering",
                     "session_id": session_id,
-                    "new_intent": intent,
-                    "normalized_message": normalized_message,
-                }
-            )
+                    "intent": intent,
+                    "passive_count": len(passive_ops),
+                    "guided_phase": phase,
+                    "guided_step": step,
+                    "guided_item": item_name,
+                })
+                update_last_action(session_id, normalized_message, combined_reply, intent)
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply=combined_reply,
+                    intent=intent,
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": f"passive_during_guided_{intent}",
+                    },
+                )
+            else:
+                clear_guided_order_session(session_id)
+                clear_pending_operations(session_id)
+                set_session_stage(session_id, None)
+                guided_interrupted = True
+                logger.info(
+                    {
+                        "stage": "guided_ordering_interrupted",
+                        "session_id": session_id,
+                        "new_intent": intent,
+                        "normalized_message": normalized_message,
+                    }
+                )
 
         # ── resolved nullability guard ────────────────────────────────────────
         if resolved is None:
@@ -3361,6 +3748,32 @@ async def process_chat_message(
                 intent=intent,
             )
 
+        # ── Multi-op passive+active gate ─────────────────────────────────────
+        # When the LLM returns multiple ops and at least one is active and one
+        # is passive, route through _run_typed_compiler_executor_intent so
+        # active ops execute first. Without this, the top-level passive intent
+        # handlers return early and silently drop the active ops.
+        _all_ops = resolved.get("operations") or []
+        _has_active = any(op.get("intent") in ACTIVE_INTENTS for op in _all_ops)
+        _has_passive = any(op.get("intent") in PASSIVE_INTENTS for op in _all_ops)
+
+        if len(_all_ops) > 1 and _has_active and _has_passive:
+            _active_intent = next(
+                op.get("intent") for op in _all_ops
+                if op.get("intent") in ACTIVE_INTENTS
+            )
+            return await _run_typed_compiler_executor_intent(
+                session_id=session_id,
+                normalized_message=normalized_message,
+                resolved=resolved,
+                intent=_active_intent,
+                session=session,
+                cart_id=cart_id,
+                auth_cookie=auth_cookie,
+                missing_reply="I'm not sure what you'd like to do.",
+                missing_stage="multi_op_missing",
+            )
+
         if intent == "clear_cart":
             existing_cart = await get_cart(cart_id=cart_id)
             if not existing_cart["cart"]:
@@ -3683,7 +4096,6 @@ async def process_chat_message(
 
             if categories:
                 reply_text = "Here's what we serve:\n" + "\n".join(f"- {c}" for c in categories)
-                reply_text += "\n\nAsk me about any category and I'll show you what's available!"
             else:
                 reply_text = "We have a wide selection of food and drinks. What are you in the mood for?"
 
@@ -3712,7 +4124,11 @@ async def process_chat_message(
             )
 
         if intent == "list_category_items":
-            category_query = ((resolved.get("items") or [{}])[0].get("category") or "").strip().lower()
+            _first_item = (resolved.get("items") or [{}])[0]
+            category_query = (
+                str(_first_item.get("category") or _first_item.get("item_query") or "")
+                .strip().lower()
+            )
             menu_items = await fetch_menu_items()
 
             matched = []
@@ -3737,8 +4153,6 @@ async def process_chat_message(
                 reply_text = f"Here's what we have in {cat_label}:\n" + "\n".join(lines)
                 if len(matched) > 12:
                     reply_text += f"\n...and {len(matched) - 12} more. What catches your eye?"
-                else:
-                    reply_text += "\n\nWant to add something?"
                 suggestions = [{"item_name": item["name"]} for item in matched[:4]]
                 set_last_visible_choices(
                     session_id,

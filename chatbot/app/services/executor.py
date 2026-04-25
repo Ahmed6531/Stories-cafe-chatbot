@@ -45,6 +45,13 @@ from app.services.session_store import (
 
 logger = logging.getLogger(__name__)
 
+_PASSIVE_EXECUTOR_INTENTS = frozenset({
+    "view_cart",
+    "list_category_items",
+    "list_categories",
+    "recommendation_query",
+})
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Data structures
 # ─────────────────────────────────────────────────────────────────────────────
@@ -567,6 +574,13 @@ async def _execute_view_cart(op: CompiledOperation, ctx: ExecutionContext) -> Op
     return OpExecutionOutcome(reply_fragment="Your cart is empty.")
 
 
+def _fmt_price(price) -> str:
+    try:
+        return f"L.L {int(float(price or 0)):,}"
+    except (TypeError, ValueError):
+        return ""
+
+
 async def _execute_checkout(op: CompiledOperation, ctx: ExecutionContext) -> OpExecutionOutcome:
     # Phase 5: move orchestrator helpers to a shared module.
     from app.services.orchestrator import build_cart_summary, _build_bill
@@ -609,40 +623,171 @@ async def _execute_describe(op: CompiledOperation, ctx: ExecutionContext) -> OpE
 
 
 async def _execute_list_categories(op: CompiledOperation, ctx: ExecutionContext) -> OpExecutionOutcome:
-    from app.services.http_client import ExpressAPIError, ExpressHttpClient
+    from app.services.tools import fetch_menu_items
 
     try:
-        client = ExpressHttpClient()
-        data, _ = await client.get("/menu/categories")
-        categories = data.get("categories", []) if isinstance(data, dict) else []
-        names = [str(c.get("name") or "").strip() for c in categories if isinstance(c, dict) and c.get("name")]
-        if names:
-            return OpExecutionOutcome(reply_fragment="Here are our categories: " + ", ".join(names) + ".")
-        return OpExecutionOutcome(reply_fragment="I couldn't find any categories right now.")
-    except ExpressAPIError:
-        return OpExecutionOutcome(reply_fragment="I couldn't load the menu categories right now.")
+        menu_items = await fetch_menu_items()
+    except Exception:
+        return OpExecutionOutcome(reply_fragment="I couldn't load the menu right now.")
+
+    seen: set = set()
+    categories = []
+    for item in menu_items:
+        cat = item.get("category")
+        name = (
+            cat.get("name") if isinstance(cat, dict) else str(cat or "")
+        ).strip()
+        if name and name.lower() not in seen:
+            seen.add(name.lower())
+            categories.append(name)
+    categories.sort()
+
+    if categories:
+        reply = (
+            "Here's what we serve:\n"
+            + "\n".join(f"- {category}" for category in categories)
+        )
+        return OpExecutionOutcome(reply_fragment=reply)
+    return OpExecutionOutcome(
+        reply_fragment="We have a wide selection. What are you in the mood for?"
+    )
 
 
 async def _execute_list_category_items(op: CompiledOperation, ctx: ExecutionContext) -> OpExecutionOutcome:
     # Phase 5: move fetch_menu_items to a shared module.
     from app.services.tools import fetch_menu_items
+    from app.services.session_store import set_last_visible_choices
 
     category_query = ""
     if op.source_parsed and op.source_parsed.items:
-        category_query = op.source_parsed.items[0].item_query.lower().strip()
+        first_item = op.source_parsed.items[0]
+        category_query = str(first_item.item_query or "").strip().lower()
 
-    all_items = await fetch_menu_items()
     if not category_query:
         return OpExecutionOutcome(reply_fragment="Which category are you interested in?")
 
-    matched = [
-        item for item in all_items
-        if isinstance(item, dict) and category_query in str(item.get("category") or "").lower()
-    ]
-    if not matched:
-        return OpExecutionOutcome(reply_fragment=f"I couldn't find items in '{category_query}'.")
-    names = [str(item.get("name") or "").strip() for item in matched[:10] if item.get("name")]
-    return OpExecutionOutcome(reply_fragment=f"Items in {category_query}: " + ", ".join(names) + ".")
+    try:
+        all_items = await fetch_menu_items()
+    except Exception:
+        return OpExecutionOutcome(reply_fragment="I couldn't load the menu right now.")
+
+    matched = []
+    for item in all_items:
+        if not isinstance(item, dict) or not item.get("isAvailable", True):
+            continue
+        category = item.get("category")
+        category_name = (
+            category.get("name")
+            if isinstance(category, dict)
+            else str(category or "")
+        )
+        if category_query in str(category_name).lower():
+            matched.append(item)
+    if matched:
+        cat_label = (
+            matched[0].get("category", {}).get("name", category_query.title())
+            if isinstance(matched[0].get("category"), dict)
+            else category_query.title()
+        )
+        lines = [
+            f"- {item['name']}  ({_fmt_price(item.get('basePrice'))})"
+            for item in matched[:12]
+            if item.get("name")
+        ]
+        reply = f"Here's what we have in {cat_label}:\n" + "\n".join(lines)
+        if len(matched) > 12:
+            reply += f"\n...and {len(matched) - 12} more."
+        set_last_visible_choices(
+            ctx.session_id, matched[:12], source="list_category_items"
+        )
+        return OpExecutionOutcome(reply_fragment=reply)
+
+    set_last_visible_choices(ctx.session_id, [], source="list_category_items")
+    return OpExecutionOutcome(
+        reply_fragment=f"I couldn't find items in '{category_query}'."
+    )
+
+
+async def _execute_recommendation_query(op: CompiledOperation, ctx: ExecutionContext) -> OpExecutionOutcome:
+    """
+    Inline recommendation renderer for passive drain.
+    Mirrors orchestrator recommendation_query behavior without setting stage.
+    """
+    from app.services.suggestions import (
+        extract_recommendation_category,
+        extract_recommendation_query_terms,
+        filter_by_category,
+        suggest_complementary_items,
+        suggest_popular_items,
+    )
+    from app.services.upsell import get_upsell_suggestions
+    from app.services.tools import fetch_menu_items, fetch_featured_items, get_cart
+    from app.services.session_store import set_last_visible_choices
+
+    normalized_message = ""
+    if op.source_parsed and op.source_parsed.items:
+        normalized_message = op.source_parsed.items[0].item_query or ""
+
+    try:
+        featured_items = await fetch_featured_items()
+        cart_result = await get_cart(cart_id=ctx.cart_id)
+        cart_items = cart_result["cart"]
+        menu_items = await fetch_menu_items()
+    except Exception:
+        return OpExecutionOutcome(
+            reply_fragment="I couldn't load recommendations right now."
+        )
+
+    rec_category = extract_recommendation_category(normalized_message)
+    rec_query_terms = extract_recommendation_query_terms(normalized_message)
+    menu_items_by_name = {
+        (item.get("name") or "").lower(): item
+        for item in menu_items
+        if isinstance(item, dict) and item.get("name")
+    }
+    popular = suggest_popular_items(featured_items, limit=6)
+    complementary = []
+    if cart_items:
+        complementary = suggest_complementary_items(
+            menu_items, cart_items[-1], limit=4
+        )
+    upsell = await get_upsell_suggestions(
+        session_id=ctx.session_id,
+        intent="recommendation_query",
+        cart_items=cart_items,
+        menu_items=menu_items,
+        anchor_menu_item=cart_items[-1] if cart_items else None,
+    )
+    raw_suggestions = popular + complementary + upsell
+    all_suggestions = raw_suggestions
+
+    if rec_category or rec_query_terms:
+        all_suggestions = filter_by_category(
+            all_suggestions, rec_category, menu_items_by_name, rec_query_terms
+        )
+
+    seen_names: set[str] = set()
+    filtered: list[dict] = []
+    for suggestion in all_suggestions:
+        name = (suggestion.get("item_name") or "").strip()
+        if not name or name.lower() in seen_names:
+            continue
+        seen_names.add(name.lower())
+        filtered.append(suggestion)
+        if len(filtered) == 4:
+            break
+
+    set_last_visible_choices(ctx.session_id, filtered, source="recommendation")
+
+    if filtered:
+        lines = [f"- {suggestion['item_name']}" for suggestion in filtered]
+        return OpExecutionOutcome(
+            reply_fragment="Here are some picks you might like:\n"
+            + "\n".join(lines)
+        )
+    return OpExecutionOutcome(
+        reply_fragment="I can help with suggestions once you add an item to your cart."
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -662,6 +807,7 @@ _HANDLERS: dict[str, Callable[..., Awaitable[OpExecutionOutcome]]] = {
     "describe_item": _execute_describe,
     "list_categories": _execute_list_categories,
     "list_category_items": _execute_list_category_items,
+    "recommendation_query": _execute_recommendation_query,
 }
 
 
@@ -674,6 +820,10 @@ def _pipeline_stage_for_intent(intent: str) -> str:
         "update_item": "update_item_done",
         "clear_cart": "clear_cart_done",
         "view_cart": "view_cart_done",
+        "list_category_items": "list_category_items_done",
+        "list_categories": "list_categories_done",
+        "recommendation_query": "recommendation_done",
+        "describe_item": "describe_done",
     }.get(intent, "executor_done")
 
 
@@ -746,6 +896,23 @@ async def _setup_guided_ordering(
     # Persist remaining compiled ops so the guided-ordering completion can drain them.
     if remaining_ops:
         set_pending_operations(ctx.session_id, [op.model_dump() for op in remaining_ops])
+        logger.info({
+            "stage": "guided_ordering_pending_ops_queued",
+            "session_id": ctx.session_id,
+            "item_name": item_name,
+            "pending_count": len(remaining_ops),
+            "pending_ops": [
+                {
+                    "intent": op.intent,
+                    "items": [
+                        item.item_query
+                        for item in (op.source_parsed.items if op.source_parsed else [])
+                    ],
+                    "has_lines": bool(op.lines),
+                }
+                for op in remaining_ops
+            ],
+        })
 
     set_guided_order_item_id(ctx.session_id, menu_item_id)
     set_guided_order_item_name(ctx.session_id, item_name)
@@ -932,7 +1099,8 @@ async def execute_compiled_operations(
                 continue
 
         op = result.operation
-        intent_for_response = op.intent
+        if op.intent not in _PASSIVE_EXECUTOR_INTENTS or intent_for_response == "unknown":
+            intent_for_response = op.intent
         handler = _HANDLERS.get(op.intent)
         if handler is None:
             logger.warning({"stage": "executor_unknown_intent", "intent": op.intent})
