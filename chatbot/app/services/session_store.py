@@ -45,6 +45,8 @@ class Session(TypedDict):
     last_matched_items: list[dict[str, Any]] | None
     last_action_type: str | None
     last_action_data: dict[str, Any] | None
+    last_visible_choices: list[dict[str, Any]]
+    last_recommendation_items: list[str]
     _schema_version: int
     pending_operations: list[dict]
     pending_operations_context: dict
@@ -83,6 +85,8 @@ def _default_session(session_id: str) -> dict[str, Any]:
         "last_matched_items": None,
         "last_action_type": None,
         "last_action_data": None,
+        "last_visible_choices": [],
+        "last_recommendation_items": [],
         "_schema_version": 1,
         "pending_operations": [],
         "pending_operations_context": {},
@@ -157,9 +161,13 @@ def _ensure_session_shape(session: dict[str, Any]) -> dict[str, Any]:
         session.setdefault("last_matched_items", None)
         session.setdefault("last_action_type", None)
         session.setdefault("last_action_data", None)
+        session.setdefault("last_visible_choices", [])
+        session.setdefault("last_recommendation_items", [])
         session.setdefault("pending_operations", [])
         session.setdefault("pending_operations_context", {})
         session["_schema_version"] = 1
+    session.setdefault("last_visible_choices", [])
+    session.setdefault("last_recommendation_items", [])
     session.setdefault("guided_order_defaulted_groups", [])
     session.setdefault("guided_order_quantity", None)
     return session
@@ -421,6 +429,55 @@ def update_last_action(
     session["last_action_data"] = action_data or {}
 
 
+def _visible_choice_name(choice: Any) -> str:
+    if isinstance(choice, str):
+        return choice.strip()
+    if not isinstance(choice, dict):
+        return ""
+    return str(
+        choice.get("item_name")
+        or choice.get("name")
+        or choice.get("label")
+        or choice.get("category")
+        or ""
+    ).strip()
+
+
+def set_last_visible_choices(
+    session_id: str,
+    choices: list[Any],
+    *,
+    source: str = "",
+) -> None:
+    session = get_session(session_id)
+    normalized: list[dict[str, Any]] = []
+    for index, choice in enumerate(choices or [], start=1):
+        name = _visible_choice_name(choice)
+        if not name:
+            continue
+        entry: dict[str, Any] = {
+            "index": index,
+            "label": name,
+            "item_name": name,
+        }
+        if source:
+            entry["source"] = source
+        if isinstance(choice, dict):
+            menu_item_id = choice.get("menu_item_id") or choice.get("id") or choice.get("_id")
+            if menu_item_id is not None:
+                entry["menu_item_id"] = menu_item_id
+        normalized.append(entry)
+
+    session["last_visible_choices"] = normalized
+    session["last_recommendation_items"] = [choice["item_name"] for choice in normalized]
+
+
+def clear_last_visible_choices(session_id: str) -> None:
+    session = get_session(session_id)
+    session["last_visible_choices"] = []
+    session["last_recommendation_items"] = []
+
+
 def get_guided_order_item_id(session_id: str) -> int | str | None:
     session = get_session(session_id)
     return session.get("guided_order_item_id")
@@ -580,6 +637,8 @@ def reset_conversation_session(session_id: str) -> None:
     session["last_matched_items"] = None
     session["last_action_type"] = None
     session["last_action_data"] = None
+    session["last_visible_choices"] = []
+    session["last_recommendation_items"] = []
     session.pop("last_checked_out_items", None)
     clear_guided_order_session(session_id)
     clear_pending_operations(session_id)

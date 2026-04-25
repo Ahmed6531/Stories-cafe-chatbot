@@ -1,5 +1,6 @@
 # app/services/orchestrator.py
 
+import asyncio
 import logging
 import re
 import httpx
@@ -66,6 +67,7 @@ from app.services.session_store import (
     set_guided_order_selections,
     set_guided_order_step,
     set_checkout_initiated,
+    set_last_visible_choices,
     update_last_action,
     get_pending_operations,
     set_pending_operations,
@@ -116,6 +118,72 @@ GUIDED_DIRECT_WORDS = frozenset({
     "nothing else",
     "looks good",
 })
+
+
+def _log_add_items_compile_results(
+    *,
+    session_id: str,
+    normalized_message: str,
+    parsed_request,
+    compile_results: list,
+) -> None:
+    parsed_debug = []
+    for operation in getattr(parsed_request, "operations", []) or []:
+        parsed_debug.append({
+            "intent": getattr(operation, "intent", None),
+            "items": [
+                {
+                    "item_query": getattr(item, "item_query", ""),
+                    "quantity": getattr(item, "quantity", None),
+                    "modifiers": getattr(item, "modifiers", []),
+                    "use_defaults": getattr(item, "use_defaults", False),
+                }
+                for item in getattr(operation, "items", []) or []
+            ],
+        })
+
+    result_debug = []
+    for result in compile_results:
+        entry = {"kind": type(result).__name__}
+        operation = getattr(result, "operation", None)
+        if operation is not None:
+            entry["intent"] = getattr(operation, "intent", None)
+            entry["compiled_lines"] = [
+                {
+                    "menu_item_id": getattr(line, "menu_item_id", None),
+                    "qty": getattr(line, "qty", None),
+                    "selected_options_count": len(getattr(line, "selected_options", []) or []),
+                    "defaults_used": getattr(line, "defaults_used", []),
+                }
+                for line in getattr(operation, "lines", []) or []
+            ]
+        else:
+            entry["reason"] = getattr(result, "reason", None)
+            source_item = getattr(result, "source_item", None)
+            if source_item is not None:
+                entry["source_item"] = {
+                    "item_query": getattr(source_item, "item_query", ""),
+                    "quantity": getattr(source_item, "quantity", None),
+                    "modifiers": getattr(source_item, "modifiers", []),
+                    "use_defaults": getattr(source_item, "use_defaults", False),
+                }
+            matched_item = getattr(result, "matched_menu_item", None)
+            if isinstance(matched_item, dict):
+                entry["matched_menu_item_id"] = matched_item.get("id") or matched_item.get("_id")
+                entry["matched_menu_item_name"] = matched_item.get("name")
+                variant_refs = matched_item.get("variantGroups")
+                variant_details = matched_item.get("variantGroupDetails") or matched_item.get("variants")
+                entry["variant_group_refs_count"] = len(variant_refs) if isinstance(variant_refs, list) else 0
+                entry["variant_group_details_count"] = len(variant_details) if isinstance(variant_details, list) else 0
+        result_debug.append(entry)
+
+    logger.info({
+        "stage": "add_items_compile_results",
+        "session_id": session_id,
+        "normalized_message": normalized_message,
+        "parsed_request": parsed_debug,
+        "compile_results": result_debug,
+    })
 GUIDED_DEFAULT_ALL_WORDS = frozenset({
     "default",
     "defaults",
@@ -952,6 +1020,75 @@ def _phase3_heuristic(
 
     normalized_search = normalize_modifier_text(search_text)
 
+    # ── Multi-option split (e.g. "shot decaffe and caramel drizzle") ─
+    # Split on " and " and "," and try to match each segment independently
+    # across all optional groups. If ALL segments match, return combined.
+    _split_separators = _re.compile(r"\s*(?:,\s*|\s+and\s+)\s*", _re.IGNORECASE)
+    segments = [s.strip() for s in _split_separators.split(search_text) if s.strip()]
+
+    if len(segments) > 1:
+        multi_matches: list[str] = []
+        multi_group_names: list[str] = []
+        all_matched = True
+        used_option_keys: set[str] = set()
+
+        for segment in segments:
+            seg_normalized = normalize_modifier_text(segment)
+            seg_matched = False
+
+            for group in optional_groups:
+                for option in active_variant_options(group):
+                    opt_name = option.get("name", "")
+                    if normalize_modifier_text(opt_name) == seg_normalized:
+                        opt_key = normalize_modifier_text(opt_name)
+                        if opt_key not in used_option_keys:
+                            multi_matches.append(opt_name)
+                            multi_group_names.append(guided_group_name(group))
+                            used_option_keys.add(opt_key)
+                            seg_matched = True
+                            break
+                if seg_matched:
+                    break
+
+            if not seg_matched:
+                best_opt = None
+                best_grp = None
+                best_score = 0
+                for group in optional_groups:
+                    for option in active_variant_options(group):
+                        score = score_variant_option(
+                            group,
+                            option,
+                            candidates=[seg_normalized],
+                            allow_contains=True,
+                        )
+                        if score > best_score:
+                            best_score = score
+                            best_opt = option
+                            best_grp = group
+                if best_opt and best_score >= 60:
+                    opt_key = normalize_modifier_text(best_opt.get("name", ""))
+                    if opt_key not in used_option_keys:
+                        multi_matches.append(best_opt.get("name", ""))
+                        multi_group_names.append(guided_group_name(best_grp))
+                        used_option_keys.add(opt_key)
+                        seg_matched = True
+
+            if not seg_matched:
+                all_matched = False
+                break
+
+        if all_matched and multi_matches:
+            result = {
+                "action": "select",
+                "group_name": multi_group_names[0] if len(set(multi_group_names)) == 1 else None,
+                "selections": multi_matches,
+                "reply_hint": None,
+            }
+            if has_finalize_suffix:
+                result["action"] = "finalize_after_select"
+            return result
+
     # ── Exact option name match ───────────────────────────────────────
     for group in optional_groups:
         for option in active_variant_options(group):
@@ -1169,6 +1306,49 @@ def build_cart_summary(cart_items: list[dict]) -> str:
     return "\n".join(cart_lines)
 
 
+async def _observe_guided_order_combo(
+    *,
+    cart_id: str | None,
+    item_id,
+) -> None:
+    try:
+        from app.services.tools import get_cart as _get_cart
+        from app.services.tools import observe_combo
+
+        _combo_cart = await _get_cart(cart_id=cart_id)
+        _existing_ids = [
+            str(item.get("menuItemId") or item.get("menu_item_id") or "")
+            for item in (_combo_cart.get("cart") or [])
+            if isinstance(item, dict)
+            and str(item.get("menuItemId") or item.get("menu_item_id") or "") != str(item_id)
+            and (item.get("menuItemId") or item.get("menu_item_id"))
+        ]
+        if _existing_ids:
+            await observe_combo(
+                anchor_menu_item_ids=_existing_ids,
+                suggested_menu_item_id=str(item_id),
+                source="cart_add",
+            )
+    except Exception:
+        pass
+
+
+def _schedule_guided_order_combo_observation(
+    *,
+    cart_id: str | None,
+    item_id,
+) -> None:
+    try:
+        asyncio.create_task(
+            _observe_guided_order_combo(
+                cart_id=cart_id,
+                item_id=item_id,
+            )
+        )
+    except Exception:
+        pass
+
+
 async def _finalize_guided_order(
     session_id: str,
     cart_id: str | None,
@@ -1219,6 +1399,10 @@ async def _finalize_guided_order(
             selected_options=selected_options,
             instructions=instructions_text,
             cart_id=cart_id,
+        )
+        _schedule_guided_order_combo_observation(
+            cart_id=cart_result["cart_id"],
+            item_id=item_id,
         )
     except ExpressAPIError as add_err:
         if is_out_of_stock_error(add_err):
@@ -1302,6 +1486,11 @@ async def _finalize_guided_order(
             "item_name": item_name,
             "quantity": quantity,
             "menu_item_id": item_id,
+            "selected_options": [
+                opt if isinstance(opt, dict) else {"optionName": str(opt)}
+                for opt in selected_options
+            ],
+            "instructions": instructions_text or "",
         }
     ]
     _guided_session["last_intent"] = "add_items"
@@ -1316,17 +1505,16 @@ async def _finalize_guided_order(
     pending_ops_raw = get_pending_operations(session_id)
     if pending_ops_raw:
         from app.services.executor import execute_compiled_operations
-        from app.schemas.actions import CompiledOperation
-        try:
-            pending_ops_compiled = [CompiledOperation.model_validate(op) for op in pending_ops_raw]
-        except Exception:
-            pending_ops_compiled = []
         clear_pending_operations(session_id)
-        if pending_ops_compiled:
+        pending_compile_results = await _compile_pending_operations_for_drain(
+            pending_ops_raw=pending_ops_raw,
+            session_id=session_id,
+            cart_id=cart_result["cart_id"],
+            session=get_session(session_id),
+        )
+        if pending_compile_results:
             drain_result = await execute_compiled_operations(
-                operations=pending_ops_compiled,
-                clarifications=[],
-                failures=[],
+                compile_results=pending_compile_results,
                 session_id=session_id,
                 cart_id=cart_result["cart_id"],
                 session=get_session(session_id),
@@ -1451,20 +1639,6 @@ Rules:
     return parsed
 
 
-def _is_recordable_combo_pair(anchor_item: dict | None, new_item: dict | None) -> bool:
-    """
-    Returns True if two menu items are worth recording as a combo pair.
-    Excludes cases where either item is missing or they are the same item.
-    """
-    if not isinstance(anchor_item, dict) or not isinstance(new_item, dict):
-        return False
-    anchor_id = anchor_item.get("id") or anchor_item.get("_id")
-    new_id = new_item.get("id") or new_item.get("_id")
-    if anchor_id is None or new_id is None:
-        return False
-    return str(anchor_id) != str(new_id)
-
-
 def extract_quantity_value(message: str) -> int | None:
     """
     Extracts a single explicit quantity from a normalized message string.
@@ -1537,7 +1711,26 @@ def _legacy_item_to_modifiers(item: dict) -> list[str]:
     return mods
 
 
-def _resolved_to_parsed_request(resolved: dict, intent: str, session: dict):
+def _message_explicitly_removes_all(message: str | None, item_query: str) -> bool:
+    if not message or not item_query:
+        return False
+
+    normalized_message = normalize_modifier_text(message)
+    normalized_query = normalize_modifier_text(item_query)
+    if not normalized_message or not normalized_query:
+        return False
+
+    query_pattern = re.escape(normalized_query)
+    patterns = [
+        rf"\bremove\s+(?:all|every)\s+(?:the\s+)?{query_pattern}\b",
+        rf"\bdelete\s+(?:all|every)\s+(?:the\s+)?{query_pattern}\b",
+        rf"\btake\s+out\s+(?:all|every)\s+(?:the\s+)?{query_pattern}\b",
+        rf"\bget\s+rid\s+of\s+(?:all|every)\s+(?:the\s+)?{query_pattern}\b",
+    ]
+    return any(re.search(pattern, normalized_message) for pattern in patterns)
+
+
+def _resolved_to_parsed_request(resolved: dict, intent: str, session: dict, message: str | None = None):
     """Convert a resolve_intent result dict to a ParsedRequest for the compiler."""
     from app.schemas.actions import ParsedRequest, ParsedOperation, ParsedItemRequest
 
@@ -1554,30 +1747,42 @@ def _resolved_to_parsed_request(resolved: dict, intent: str, session: dict):
     ops = []
     for raw_op in raw_ops:
         op_intent = str(raw_op.get("intent") or "unknown")
-        items = [
-            ParsedItemRequest(
-                item_query=str(item.get("item_query") or item.get("item_name") or "").strip(),
-                quantity=(
-                    int(item.get("quantity") or 1)
-                    if op_intent == "add_items"
-                    else item.get("quantity")
-                ),
-                modifiers=(
-                    [str(m).strip() for m in item["modifiers"] if str(m).strip()]
-                    if isinstance(item.get("modifiers"), list)
-                    else _legacy_item_to_modifiers(item)
-                ),
-                notes=(
-                    [str(n).strip() for n in item["notes"] if str(n).strip()]
-                    if isinstance(item.get("notes"), list)
-                    else split_instruction_fragments(item.get("instructions"))
-                ),
-                follow_up_ref=item.get("follow_up_ref"),
-                use_defaults=bool(item.get("use_defaults", False)),
+        items = []
+        for item in (raw_op.get("items") or []):
+            if not isinstance(item, dict):
+                continue
+            item_query = str(item.get("item_query") or item.get("item_name") or "").strip()
+            if (
+                op_intent == "remove_item"
+                and item.get("quantity") is None
+                and item_query
+                and not normalize_modifier_text(item_query).startswith(("all ", "every "))
+                and _message_explicitly_removes_all(message, item_query)
+            ):
+                item_query = f"all {item_query}"
+
+            items.append(
+                ParsedItemRequest(
+                    item_query=item_query,
+                    quantity=(
+                        int(item.get("quantity") or 1)
+                        if op_intent == "add_items"
+                        else item.get("quantity")
+                    ),
+                    modifiers=(
+                        [str(m).strip() for m in item["modifiers"] if str(m).strip()]
+                        if isinstance(item.get("modifiers"), list)
+                        else _legacy_item_to_modifiers(item)
+                    ),
+                    notes=(
+                        [str(n).strip() for n in item["notes"] if str(n).strip()]
+                        if isinstance(item.get("notes"), list)
+                        else split_instruction_fragments(item.get("instructions"))
+                    ),
+                    follow_up_ref=item.get("follow_up_ref"),
+                    use_defaults=bool(item.get("use_defaults", False)),
+                )
             )
-            for item in (raw_op.get("items") or [])
-            if isinstance(item, dict)
-        ]
         ops.append(ParsedOperation(intent=op_intent, items=items))
 
     if not ops:
@@ -1587,6 +1792,46 @@ def _resolved_to_parsed_request(resolved: dict, intent: str, session: dict):
         operations=ops,
         confidence=float(resolved.get("confidence") or 1.0),
     )
+
+
+async def _compile_pending_operations_for_drain(
+    *,
+    pending_ops_raw: list[dict],
+    session_id: str,
+    cart_id: str | None,
+    session: Session | None,
+) -> list:
+    from app.schemas.actions import CompiledOperation
+    from app.services.compiler import CompileSuccess, compile_operation
+    from app.services.tools import fetch_menu_items, get_cart
+
+    try:
+        compiled_pending = [CompiledOperation.model_validate(op) for op in pending_ops_raw]
+    except Exception:
+        return []
+
+    if not compiled_pending:
+        return []
+
+    if not any(not op.lines for op in compiled_pending):
+        return [CompileSuccess(operation=op) for op in compiled_pending]
+
+    menu_items = await fetch_menu_items()
+    try:
+        cart_raw = await get_cart(cart_id=cart_id)
+    except Exception:
+        cart_raw = {"cart_id": cart_id, "cart": []}
+
+    active_session = session if isinstance(session, dict) else get_session(session_id)
+    compile_results = []
+    for op in compiled_pending:
+        if op.lines:
+            compile_results.append(CompileSuccess(operation=op))
+            continue
+        compile_results.extend(
+            await compile_operation(op.source_parsed, active_session, cart_raw, menu_items)
+        )
+    return compile_results
 
 
 async def _run_typed_compiler_executor_intent(
@@ -1601,16 +1846,11 @@ async def _run_typed_compiler_executor_intent(
     missing_reply: str,
     missing_stage: str,
 ) -> ChatMessageResponse:
-    from app.services.compiler import (
-        CompileFailure,
-        CompileNeedsClarification,
-        CompileSuccess,
-        compile_operation,
-    )
+    from app.services.compiler import compile_operation
     from app.services.executor import execute_compiled_operations
     from app.services.tools import fetch_menu_items, get_cart
 
-    parsed_request = _resolved_to_parsed_request(resolved, intent, session)
+    parsed_request = _resolved_to_parsed_request(resolved, intent, session, normalized_message)
     if not parsed_request or not parsed_request.operations:
         return ChatMessageResponse(
             session_id=session_id,
@@ -1645,14 +1885,8 @@ async def _run_typed_compiler_executor_intent(
             await compile_operation(op, session, cart_raw, menu_items)
         )
 
-    ops_ok = [result.operation for result in compile_results if isinstance(result, CompileSuccess)]
-    clarifications = [result for result in compile_results if isinstance(result, CompileNeedsClarification)]
-    failures = [result for result in compile_results if isinstance(result, CompileFailure)]
-
     exec_result = await execute_compiled_operations(
-        operations=ops_ok,
-        clarifications=clarifications,
-        failures=failures,
+        compile_results=compile_results,
         session_id=session_id,
         cart_id=cart_id,
         session=session,
@@ -1696,20 +1930,18 @@ async def _handle_pending_ops_confirmation(
         context = get_pending_operations_context(session_id)
         accumulated = list(context.get("reply_parts") or [])
 
-        from app.schemas.actions import CompiledOperation
         from app.services.executor import execute_compiled_operations
 
-        try:
-            compiled_pending = [CompiledOperation.model_validate(op) for op in pending_ops]
-        except Exception:
-            compiled_pending = []
-
         clear_pending_operations(session_id)
-        if compiled_pending:
+        pending_compile_results = await _compile_pending_operations_for_drain(
+            pending_ops_raw=pending_ops,
+            session_id=session_id,
+            cart_id=cart_id,
+            session=session,
+        )
+        if pending_compile_results:
             drain_result = await execute_compiled_operations(
-                operations=compiled_pending,
-                clarifications=[],
-                failures=[],
+                compile_results=pending_compile_results,
                 session_id=session_id,
                 cart_id=cart_id,
                 session=session,
@@ -1890,21 +2122,31 @@ async def process_chat_message(
             op_descriptions: list[str] = []
             for pending_op in pending_ops:
                 pending_intent = pending_op.get("intent")
-                pending_items = pending_op.get("items") or []
-                if pending_intent == "add_items" and pending_items:
+                source_parsed = pending_op.get("source_parsed") or {}
+                parsed_items = source_parsed.get("items") or []
+                if pending_intent == "add_items" and parsed_items:
                     names = [
-                        item.get("item_name") or "item"
-                        for item in pending_items
+                        item.get("item_query") or item.get("item_name") or "item"
+                        for item in parsed_items
                         if isinstance(item, dict)
                     ]
                     for name in names:
-                        op_descriptions.append(f"add a {name}")
-                elif pending_intent == "remove_item" and pending_items:
-                    name = pending_items[0].get("item_name") or "item"
+                        if name and name != "item":
+                            op_descriptions.append(f"add a {name}")
+                elif pending_intent == "remove_item" and parsed_items:
+                    name = (
+                        parsed_items[0].get("item_query")
+                        or parsed_items[0].get("item_name")
+                        or "item"
+                    )
                     op_descriptions.append(f"remove the {name}")
-                elif pending_intent == "update_quantity" and pending_items:
-                    name = pending_items[0].get("item_name") or "item"
-                    qty = pending_items[0].get("quantity")
+                elif pending_intent == "update_quantity" and parsed_items:
+                    name = (
+                        parsed_items[0].get("item_query")
+                        or parsed_items[0].get("item_name")
+                        or "item"
+                    )
+                    qty = parsed_items[0].get("quantity")
                     op_descriptions.append(
                         f"update {name} to {qty}" if qty else f"update {name}"
                     )
@@ -2015,6 +2257,7 @@ async def process_chat_message(
     try:
         if get_session_stage(session_id) == "guided_ordering" and intent != "guided_order_response":
             clear_guided_order_session(session_id)
+            clear_pending_operations(session_id)
             set_session_stage(session_id, None)
             guided_interrupted = True
             logger.info(
@@ -2126,6 +2369,11 @@ async def process_chat_message(
                     pending_clarification.get("candidates") or [],
                 )
                 if not selected_candidate:
+                    set_last_visible_choices(
+                        session_id,
+                        pending_clarification.get("candidates") or [],
+                        source="menu_choice",
+                    )
                     return ChatMessageResponse(
                         session_id=session_id,
                         status="ok",
@@ -2399,18 +2647,17 @@ async def process_chat_message(
                 accumulated = list(context.get("reply_parts") or [])
 
                 from app.services.executor import execute_compiled_operations
-                from app.schemas.actions import CompiledOperation
                 from app.services.session_store import clear_pending_operations as _clr_pend
-                try:
-                    compiled_pending = [CompiledOperation.model_validate(op) for op in pending_ops]
-                except Exception:
-                    compiled_pending = []
                 _clr_pend(session_id)
-                if compiled_pending:
+                pending_compile_results = await _compile_pending_operations_for_drain(
+                    pending_ops_raw=pending_ops,
+                    session_id=session_id,
+                    cart_id=cart_id,
+                    session=session,
+                )
+                if pending_compile_results:
                     drain_result = await execute_compiled_operations(
-                        operations=compiled_pending,
-                        clarifications=[],
-                        failures=[],
+                        compile_results=pending_compile_results,
                         session_id=session_id,
                         cart_id=cart_id,
                         session=session,
@@ -2521,10 +2768,67 @@ async def process_chat_message(
             current_response = normalized_message
             if phase == 1:
                 if not required_groups:
-                    phase = 3 if len(optional_groups) == 1 else (2 if optional_groups else 4)
-                    set_guided_order_phase(session_id, phase)
-                    set_guided_order_step(session_id, 0)
-                    set_guided_order_groups(session_id, optional_groups if optional_groups else [])
+                    if len(optional_groups) == 1:
+                        set_guided_order_phase(session_id, 3)
+                        set_guided_order_step(session_id, 0)
+                        set_guided_order_groups(session_id, optional_groups)
+                        first_group = optional_groups[0]
+                        return ChatMessageResponse(
+                            session_id=session_id,
+                            status="ok",
+                            reply=build_guided_order_prompt(
+                                item_name, first_group,
+                                include_item_name=False,
+                                allow_skip=True,
+                            ),
+                            intent=intent,
+                            cart_updated=False,
+                            cart_id=cart_id,
+                            defaults_used=[],
+                            suggestions=[],
+                            metadata={
+                                "normalized_message": normalized_message,
+                                "pipeline_stage": "guided_ordering_continue",
+                            },
+                        )
+                    elif optional_groups:
+                        set_guided_order_phase(session_id, 2)
+                        set_guided_order_step(session_id, 0)
+                        set_guided_order_groups(session_id, optional_groups)
+                        return ChatMessageResponse(
+                            session_id=session_id,
+                            status="ok",
+                            reply=build_optional_review_prompt(
+                                item_name, selections, optional_groups
+                            ),
+                            intent=intent,
+                            cart_updated=False,
+                            cart_id=cart_id,
+                            defaults_used=[],
+                            suggestions=[],
+                            metadata={
+                                "normalized_message": normalized_message,
+                                "pipeline_stage": "guided_ordering_review",
+                            },
+                        )
+                    else:
+                        set_guided_order_phase(session_id, 4)
+                        set_guided_order_step(session_id, 0)
+                        set_guided_order_groups(session_id, [])
+                        return ChatMessageResponse(
+                            session_id=session_id,
+                            status="ok",
+                            reply=build_guided_instructions_prompt(item_name),
+                            intent=intent,
+                            cart_updated=False,
+                            cart_id=cart_id,
+                            defaults_used=[],
+                            suggestions=[],
+                            metadata={
+                                "normalized_message": normalized_message,
+                                "pipeline_stage": "guided_ordering_instructions",
+                            },
+                        )
                 elif step >= len(required_groups):
                     if optional_groups:
                         set_guided_order_phase(session_id, 2)
@@ -3088,9 +3392,54 @@ async def process_chat_message(
                 session["last_items"] = []
                 session["last_intent"] = None
                 session["pending_clarification"] = None
+                clear_pending_operations(session_id)
                 set_session_stage(session_id, None)
 
             update_last_action(session_id, normalized_message, "Your cart is now empty.", intent, action_data={"cleared": True})
+
+            _FOLLOW_UP_INTENTS = {"add_items", "remove_item", "update_quantity", "update_item"}
+            remaining_operations = [
+                op for op in (resolved.get("operations") or [])
+                if op.get("intent") != "clear_cart"
+            ]
+            first_remaining_intent = remaining_operations[0].get("intent", "unknown") if remaining_operations else ""
+
+            if remaining_operations and first_remaining_intent in _FOLLOW_UP_INTENTS:
+                remaining_resolved = {
+                    **resolved,
+                    "intent": first_remaining_intent,
+                    "items": remaining_operations[0].get("items") or [],
+                    "operations": remaining_operations,
+                    "route_to_fallback": False,
+                }
+                follow_up = await _run_typed_compiler_executor_intent(
+                    session_id=session_id,
+                    normalized_message=normalized_message,
+                    resolved=remaining_resolved,
+                    intent=first_remaining_intent,
+                    session=session,
+                    cart_id=cart_result["cart_id"],
+                    auth_cookie=auth_cookie,
+                    missing_reply="Done. What would you like to add?",
+                    missing_stage="clear_cart_follow_up_missing",
+                )
+                combined_reply = f"Your cart is now empty. {follow_up.reply}"
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    status="ok",
+                    reply=combined_reply,
+                    intent=follow_up.intent,
+                    cart_updated=True,
+                    cart_id=follow_up.cart_id,
+                    defaults_used=follow_up.defaults_used,
+                    suggestions=follow_up.suggestions,
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "cart": cart_result["cart"],
+                        "pipeline_stage": "clear_cart_with_follow_up",
+                        **follow_up.metadata,
+                    },
+                )
 
             return ChatMessageResponse(
                 session_id=session_id,
@@ -3287,6 +3636,20 @@ async def process_chat_message(
                 else:
                     reply_text = "I can help with suggestions once you add an item to your cart."
 
+            set_last_visible_choices(
+                session_id,
+                filtered_suggestions if suggestion_lines else [],
+                source="recommendation",
+            )
+            update_last_action(
+                session_id,
+                normalized_message,
+                reply_text,
+                intent,
+                matched_items=filtered_suggestions,
+                action_data={"visible_choices": filtered_suggestions},
+            )
+
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
@@ -3323,6 +3686,14 @@ async def process_chat_message(
                 reply_text += "\n\nAsk me about any category and I'll show you what's available!"
             else:
                 reply_text = "We have a wide selection of food and drinks. What are you in the mood for?"
+
+            update_last_action(
+                session_id,
+                normalized_message,
+                reply_text,
+                intent,
+                action_data={"categories": categories},
+            )
 
             return ChatMessageResponse(
                 session_id=session_id,
@@ -3369,6 +3740,11 @@ async def process_chat_message(
                 else:
                     reply_text += "\n\nWant to add something?"
                 suggestions = [{"item_name": item["name"]} for item in matched[:4]]
+                set_last_visible_choices(
+                    session_id,
+                    matched[:12],
+                    source="list_category_items",
+                )
             else:
                 # Soft fallback: list categories instead
                 seen2: set = set()
@@ -3388,6 +3764,16 @@ async def process_chat_message(
                 else:
                     reply_text = f"I couldn't find '{category_query}' on the menu. What are you in the mood for?"
                 suggestions = []
+                set_last_visible_choices(session_id, [], source="list_category_items")
+
+            update_last_action(
+                session_id,
+                normalized_message,
+                reply_text,
+                intent,
+                matched_items=suggestions,
+                action_data={"category_query": category_query, "visible_choices": suggestions},
+            )
 
             return ChatMessageResponse(
                 session_id=session_id,
@@ -3601,7 +3987,7 @@ async def process_chat_message(
 
         if intent in {"add_items", "add_item", "repeat_order"}:
             from app.services.executor import execute_compiled_operations
-            from app.services.compiler import compile_operation, CompileSuccess, CompileNeedsClarification, CompileFailure
+            from app.services.compiler import compile_operation
 
             if intent == "repeat_order":
                 from app.schemas.actions import ParsedItemRequest, ParsedOperation, ParsedRequest
@@ -3699,12 +4085,98 @@ async def process_chat_message(
                         },
                     )
 
+                # Items with stored options → add directly (preserve customizations)
+                # Items without stored options → go through normal compile path
+                direct_add_items = [
+                    item for item in items_to_repeat
+                    if item.get("selectedOptions")
+                ]
+                compile_add_items = [
+                    item for item in items_to_repeat
+                    if not item.get("selectedOptions")
+                ]
+
+                # Direct-add path: bypass compiler to preserve stored customizations
+                direct_reply_parts: list[str] = []
+                for item in direct_add_items:
+                    try:
+                        from app.services.tools import find_menu_item_by_name, add_item_to_cart as _add_item
+                        _menu_for_direct = await fetch_menu_items()
+                        matched = await find_menu_item_by_name(_menu_for_direct, item["name"])
+                        if not matched:
+                            direct_reply_parts.append(
+                                f"I couldn't find {item['name']} on the menu anymore."
+                            )
+                            continue
+                        _direct_menu_item_id = matched.get("id") or matched.get("_id")
+                        if _direct_menu_item_id is None:
+                            continue
+                        _cart_result_repeat = await _add_item(
+                            menu_item_id=_direct_menu_item_id,
+                            qty=item["qty"],
+                            selected_options=item["selectedOptions"],
+                            instructions=item.get("instructions") or "",
+                            cart_id=cart_id,
+                        )
+                        cart_id = _cart_result_repeat["cart_id"]
+                        _opts = item.get("selectedOptions") or []
+                        _opt_labels = [
+                            str(o.get("optionName") or "").strip()
+                            for o in _opts
+                            if isinstance(o, dict) and o.get("optionName")
+                        ]
+                        _suffix = f" ({', '.join(_opt_labels)})" if _opt_labels else ""
+                        _qty_prefix = f"{item['qty']}x " if item["qty"] > 1 else ""
+                        direct_reply_parts.append(
+                            f"Added {_qty_prefix}{item['name']}{_suffix} to your cart."
+                        )
+                    except Exception as _repeat_err:
+                        if isinstance(_repeat_err, ExpressAPIError) and is_out_of_stock_error(_repeat_err):
+                            direct_reply_parts.append(
+                                f"{item['name']} is out of stock right now."
+                            )
+                        else:
+                            direct_reply_parts.append(
+                                f"Couldn't re-add {item['name']} right now."
+                            )
+
+                if direct_add_items and not compile_add_items:
+                    _combined_reply = " ".join(direct_reply_parts)
+                    if session is not None:
+                        session["cart_id"] = cart_id
+                        session["last_items"] = [
+                            {
+                                "item_name": item["name"],
+                                "quantity": item["qty"],
+                                "menu_item_id": None,
+                                "selected_options": item.get("selectedOptions") or [],
+                                "instructions": item.get("instructions") or "",
+                            }
+                            for item in direct_add_items
+                        ]
+                    update_last_action(session_id, normalized_message, _combined_reply, intent)
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="ok",
+                        reply=_combined_reply,
+                        intent="repeat_order",
+                        cart_updated=True,
+                        cart_id=cart_id,
+                        defaults_used=[],
+                        suggestions=[],
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "pipeline_stage": "repeat_order_done",
+                        },
+                    )
+
+                # Compile path for items without stored options
                 repeat_items = [
                     ParsedItemRequest(
                         item_query=item["name"],
                         quantity=item["qty"],
                     )
-                    for item in items_to_repeat
+                    for item in compile_add_items
                 ]
                 repeat_request = ParsedRequest(
                     operations=[ParsedOperation(intent="add_items", items=repeat_items)],
@@ -3723,14 +4195,8 @@ async def process_chat_message(
                         await compile_operation(_cop, session, _cart_raw, _menu_for_compile)
                     )
 
-                _ops_ok = [r.operation for r in _compile_results if isinstance(r, CompileSuccess)]
-                _clarifs = [r for r in _compile_results if isinstance(r, CompileNeedsClarification)]
-                _fails = [r for r in _compile_results if isinstance(r, CompileFailure)]
-
                 exec_result = await execute_compiled_operations(
-                    operations=_ops_ok,
-                    clarifications=_clarifs,
-                    failures=_fails,
+                    compile_results=_compile_results,
                     session_id=session_id,
                     cart_id=cart_id,
                     session=session,
@@ -3738,13 +4204,17 @@ async def process_chat_message(
                 )
                 if session is not None:
                     session["cart_id"] = exec_result.cart_id
-                update_last_action(session_id, normalized_message, exec_result.reply, intent)
+                _final_reply = (
+                    " ".join(direct_reply_parts) + " " + exec_result.reply
+                    if direct_reply_parts else exec_result.reply
+                )
+                update_last_action(session_id, normalized_message, _final_reply, intent)
                 return ChatMessageResponse(
                     session_id=session_id,
                     status="ok",
-                    reply=exec_result.reply,
+                    reply=_final_reply,
                     intent=exec_result.intent_for_response or "repeat_order",
-                    cart_updated=exec_result.cart_updated,
+                    cart_updated=exec_result.cart_updated or bool(direct_reply_parts),
                     cart_id=exec_result.cart_id,
                     defaults_used=exec_result.defaults_used,
                     suggestions=exec_result.suggestions,
@@ -3752,7 +4222,7 @@ async def process_chat_message(
                 )
 
             # ── Compile + execute path ────────────────────────────────────
-            parsed_request = _resolved_to_parsed_request(resolved, intent, session)
+            parsed_request = _resolved_to_parsed_request(resolved, intent, session, normalized_message)
             if parsed_request is None or not parsed_request.operations:
                 return ChatMessageResponse(
                     session_id=session_id, status="ok",
@@ -3772,15 +4242,15 @@ async def process_chat_message(
                 _compile_results.extend(
                     await compile_operation(_cop, session, _cart_raw, _menu_for_compile)
                 )
-
-            _ops_ok = [r.operation for r in _compile_results if isinstance(r, CompileSuccess)]
-            _clarifs = [r for r in _compile_results if isinstance(r, CompileNeedsClarification)]
-            _fails = [r for r in _compile_results if isinstance(r, CompileFailure)]
+            _log_add_items_compile_results(
+                session_id=session_id,
+                normalized_message=normalized_message,
+                parsed_request=parsed_request,
+                compile_results=_compile_results,
+            )
 
             exec_result = await execute_compiled_operations(
-                operations=_ops_ok,
-                clarifications=_clarifs,
-                failures=_fails,
+                compile_results=_compile_results,
                 session_id=session_id,
                 cart_id=cart_id,
                 session=session,

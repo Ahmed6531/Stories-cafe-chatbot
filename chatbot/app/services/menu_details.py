@@ -254,11 +254,19 @@ def _resolve_ordinal_reference(message: str, session: dict | None) -> str:
     if not isinstance(session, dict):
         return ""
 
-    candidates = session.get("last_recommendation_items")
-    if not isinstance(candidates, list):
-        return ""
-
-    names = [str(name).strip() for name in candidates if isinstance(name, str) and str(name).strip()]
+    visible_choices = session.get("last_visible_choices")
+    if isinstance(visible_choices, list) and visible_choices:
+        names = [
+            str(choice.get("item_name") or choice.get("label") or "").strip()
+            for choice in visible_choices
+            if isinstance(choice, dict)
+            and str(choice.get("item_name") or choice.get("label") or "").strip()
+        ]
+    else:
+        candidates = session.get("last_recommendation_items")
+        if not isinstance(candidates, list):
+            return ""
+        names = [str(name).strip() for name in candidates if isinstance(name, str) and str(name).strip()]
     if not names:
         return ""
 

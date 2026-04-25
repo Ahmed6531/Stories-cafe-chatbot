@@ -10,12 +10,23 @@ Fixes three bugs from the Phase 3 review:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
-from app.schemas.actions import CompiledCartLine, CompiledOperation
-from app.services.compiler import CompileFailure, CompileNeedsClarification
+from app.schemas.actions import (
+    CompiledCartLine,
+    CompiledOperation,
+    ParsedItemRequest,
+    ParsedOperation,
+)
+from app.services.compiler import (
+    CompileFailure,
+    CompileNeedsClarification,
+    CompileResult,
+    CompileSuccess,
+)
 from app.services.session_store import (
     clear_pending_operations,
     get_session,
@@ -179,6 +190,60 @@ async def _execute_add_line(
         )
 
 
+async def _observe_added_item_combos(
+    *,
+    cart_id: str | None,
+    added_item_records: list[dict],
+) -> None:
+    try:
+        from app.services.tools import get_cart, observe_combo
+
+        cart_result = await get_cart(cart_id=cart_id)
+        existing_items = cart_result.get("cart") or []
+
+        new_menu_item_ids = [
+            str(record["menu_item_id"])
+            for record in added_item_records
+            if record.get("menu_item_id") is not None
+        ]
+        existing_menu_item_ids = [
+            str(item.get("menuItemId") or item.get("menu_item_id") or "")
+            for item in existing_items
+            if isinstance(item, dict)
+            and str(item.get("menuItemId") or item.get("menu_item_id") or "")
+            not in new_menu_item_ids
+            and (item.get("menuItemId") or item.get("menu_item_id"))
+        ]
+
+        if not existing_menu_item_ids:
+            return
+
+        for new_id in new_menu_item_ids:
+            await observe_combo(
+                anchor_menu_item_ids=existing_menu_item_ids,
+                suggested_menu_item_id=new_id,
+                source="cart_add",
+            )
+    except Exception:
+        pass
+
+
+def _schedule_combo_observation(
+    *,
+    cart_id: str | None,
+    added_item_records: list[dict],
+) -> None:
+    try:
+        asyncio.create_task(
+            _observe_added_item_combos(
+                cart_id=cart_id,
+                added_item_records=added_item_records,
+            )
+        )
+    except Exception:
+        pass
+
+
 async def _build_post_add_suggestions(
     ctx: ExecutionContext,
     added_item_records: list[dict],
@@ -251,16 +316,26 @@ async def _execute_add_operation(op: CompiledOperation, ctx: ExecutionContext) -
             all_defaults.extend(outcome.defaults_used)
             if first_size_upgrade is None and outcome.size_upgrade is not None:
                 first_size_upgrade = outcome.size_upgrade
+            wire = line.to_wire_payload()
             added_item_records.append({
                 "item_name": str(item_name).strip().lower(),
+                "name": str(item_name).strip(),
                 "quantity": line.qty,
                 "menu_item_id": line.menu_item_id,
+                "selected_options": wire.get("selectedOptions") or [],
+                "instructions": wire.get("instructions") or "",
             })
 
     # Bug #3 fix: update last_items after every add so follow-up refs work.
     if added_item_records:
         ctx.session["last_items"] = added_item_records
         ctx.session["last_intent"] = "add_items"
+
+    if added_item_records and ctx.cart_updated:
+        _schedule_combo_observation(
+            cart_id=ctx.cart_id,
+            added_item_records=added_item_records,
+        )
 
     post_suggestions: list[dict] = []
     if added_item_records and first_size_upgrade is None:
@@ -640,6 +715,34 @@ async def _setup_guided_ordering(
 
     required_groups, optional_groups = build_guided_order_groups(menu_detail)
 
+    from app.services.orchestrator import guided_group_name
+    from app.services.menu_utils import get_variant_group_id
+
+    # Pre-populate selections from already-specified modifiers so guided ordering
+    # only asks for groups that are actually missing.
+    pre_selections: dict = {}
+    pre_satisfied_group_names: set[str] = set()
+
+    if source_item and source_item.modifiers and menu_detail:
+        from app.services.compiler import _resolve_modifiers_against_menu
+
+        pre_resolved_options, _, _ = _resolve_modifiers_against_menu(source_item, menu_detail)
+        satisfied_group_ids: set[str] = {
+            str(opt.group_id or "")
+            for opt in pre_resolved_options
+            if opt.group_id
+        }
+        for group in required_groups:
+            group_id = get_variant_group_id(group) or ""
+            if group_id and group_id in satisfied_group_ids:
+                for opt in pre_resolved_options:
+                    if str(opt.group_id or "") == group_id:
+                        group_name = guided_group_name(group)
+                        if group_name:
+                            pre_selections[group_name] = opt.option_name
+                            pre_satisfied_group_names.add(group_name)
+                        break
+
     # Persist remaining compiled ops so the guided-ordering completion can drain them.
     if remaining_ops:
         set_pending_operations(ctx.session_id, [op.model_dump() for op in remaining_ops])
@@ -649,14 +752,25 @@ async def _setup_guided_ordering(
     set_guided_order_quantity(ctx.session_id, quantity)
     set_guided_order_required_groups(ctx.session_id, required_groups)
     set_guided_order_optional_groups(ctx.session_id, optional_groups)
-    set_guided_order_selections(ctx.session_id, {})
+    set_guided_order_selections(ctx.session_id, pre_selections)
     set_guided_order_step(ctx.session_id, 0)
     set_session_stage(ctx.session_id, "guided_ordering")
 
-    if required_groups:
+    unsatisfied_required = [
+        g for g in required_groups
+        if guided_group_name(g) not in pre_satisfied_group_names
+    ]
+
+    if unsatisfied_required:
         set_guided_order_phase(ctx.session_id, 1)
         set_guided_order_groups(ctx.session_id, required_groups)
-        first_group = required_groups[0]
+        first_unsatisfied_step = next(
+            (i for i, g in enumerate(required_groups)
+             if guided_group_name(g) not in pre_satisfied_group_names),
+            0,
+        )
+        set_guided_order_step(ctx.session_id, first_unsatisfied_step)
+        first_group = required_groups[first_unsatisfied_step]
         return build_guided_order_prompt(item_name, first_group, include_item_name=True, allow_skip=False)
     elif len(optional_groups) == 1:
         set_guided_order_phase(ctx.session_id, 3)
@@ -666,7 +780,39 @@ async def _setup_guided_ordering(
     else:
         set_guided_order_phase(ctx.session_id, 2)
         set_guided_order_groups(ctx.session_id, optional_groups)
-        return build_optional_review_prompt(item_name, {}, optional_groups)
+        return build_optional_review_prompt(item_name, pre_selections, optional_groups)
+
+
+def _requeue_guided_clarification(
+    clarification: CompileNeedsClarification,
+) -> CompiledOperation | None:
+    if clarification.reason != "missing_required_group":
+        return None
+
+    matched_item = clarification.matched_menu_item or {}
+    source_item = clarification.source_item
+    item_name = str(
+        matched_item.get("name")
+        or (source_item.item_query if source_item else "")
+        or ""
+    ).strip()
+    if not item_name:
+        return None
+
+    quantity = int(source_item.quantity or 1) if source_item else 1
+    requeued_item = (
+        source_item.model_copy(update={"item_query": item_name, "quantity": quantity})
+        if isinstance(source_item, ParsedItemRequest)
+        else ParsedItemRequest(item_query=item_name, quantity=quantity)
+    )
+    return CompiledOperation(
+        intent="add_items",
+        lines=[],
+        source_parsed=ParsedOperation(
+            intent="add_items",
+            items=[requeued_item],
+        ),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -675,24 +821,27 @@ async def _setup_guided_ordering(
 
 
 async def execute_compiled_operations(
-    operations: list[CompiledOperation],
-    clarifications: list[CompileNeedsClarification],
-    failures: list[CompileFailure],
+    compile_results: list[CompileResult] | None = None,
+    *,
     session_id: str,
     cart_id: str | None,
     session: dict,
     auth_cookie: str | None,
+    operations: list[CompiledOperation] | None = None,
+    clarifications: list[CompileNeedsClarification] | None = None,
+    failures: list[CompileFailure] | None = None,
 ) -> ExecutionResult:
     """
-    Execute a sequence of compiled operations against the cart backend.
+    Execute a sequence of ordered compile results against the cart backend.
 
     Behavior:
-      - Operations execute in order. Each produces a reply fragment.
+      - Compile results execute in order. Each success produces a reply fragment.
       - CompileFailure results are rendered as failure messages (no short-circuit
         except for clear_cart failures, which do short-circuit).
       - CompileNeedsClarification(reason="missing_required_group") triggers
-        guided ordering: remaining ops are persisted and this function returns
-        with needs_followup=True.
+        guided ordering after earlier ordered results have already been
+        processed. Remaining successful ops are persisted and this function
+        returns with needs_followup=True.
       - CompileNeedsClarification(reason="ambiguous_item") returns the
         disambiguation prompt.
       - CompileNeedsClarification(reason="unmatched_modifiers") adds the item
@@ -700,6 +849,12 @@ async def execute_compiled_operations(
 
     Returns ExecutionResult with a joined reply and metadata.
     """
+    if compile_results is None:
+        compile_results = []
+        compile_results.extend(CompileFailure(**failure.__dict__) for failure in (failures or []))
+        compile_results.extend(CompileNeedsClarification(**clarification.__dict__) for clarification in (clarifications or []))
+        compile_results.extend(CompileSuccess(operation=op) for op in (operations or []))
+
     ctx = ExecutionContext(
         session_id=session_id,
         cart_id=cart_id,
@@ -713,63 +868,70 @@ async def execute_compiled_operations(
     first_size_upgrade: dict | None = None
     intent_for_response = "unknown"
 
-    # Render compile failures.
-    for failure in failures:
-        item_name = (failure.source_item.item_query if failure.source_item else None) or "item"
-        msg = _failure_to_reply(failure, item_name)
-        reply_parts.append(msg)
+    for index, result in enumerate(compile_results):
+        if isinstance(result, CompileFailure):
+            item_name = (result.source_item.item_query if result.source_item else None) or "item"
+            msg = _failure_to_reply(result, item_name)
+            reply_parts.append(msg)
+            continue
 
-    # Handle clarifications before executing operations.
-    for i, clarification in enumerate(clarifications):
-        if clarification.reason == "missing_required_group":
-            # Start guided ordering. Queue remaining operations as pending.
-            remaining_ops = operations  # all ops not yet executed
-            prompt = await _setup_guided_ordering(clarification, ctx, remaining_ops)
-            # Prepend any already-accumulated reply so user sees full context.
-            full_reply = (" ".join(reply_parts) + " " + prompt).strip() if reply_parts else prompt
-            return ExecutionResult(
-                reply=full_reply,
-                cart_updated=ctx.cart_updated,
-                cart_id=ctx.cart_id,
-                intent_for_response="add_items",
-                needs_followup=True,
-                followup_stage="guided_ordering",
-                suggestions=all_suggestions,
-                defaults_used=all_defaults,
-                metadata={"pipeline_stage": "guided_ordering_start"},
-            )
+        if isinstance(result, CompileNeedsClarification):
+            if result.reason == "missing_required_group":
+                remaining_ops: list[CompiledOperation] = []
+                for pending in compile_results[index + 1 :]:
+                    if isinstance(pending, CompileSuccess):
+                        remaining_ops.append(pending.operation)
+                    elif isinstance(pending, CompileNeedsClarification):
+                        requeued_op = _requeue_guided_clarification(pending)
+                        if requeued_op is not None:
+                            remaining_ops.append(requeued_op)
+                prompt = await _setup_guided_ordering(result, ctx, remaining_ops)
+                full_reply = (" ".join(reply_parts) + " " + prompt).strip() if reply_parts else prompt
+                return ExecutionResult(
+                    reply=full_reply,
+                    cart_updated=ctx.cart_updated,
+                    cart_id=ctx.cart_id,
+                    intent_for_response="add_items",
+                    needs_followup=True,
+                    followup_stage="guided_ordering",
+                    suggestions=all_suggestions,
+                    defaults_used=all_defaults,
+                    metadata={"pipeline_stage": "guided_ordering_start"},
+                )
 
-        elif clarification.reason == "ambiguous_item":
-            from app.services.item_clarification import build_menu_choice_prompt
-            candidates = clarification.candidates or []
-            item_name = (clarification.source_item.item_query if clarification.source_item else None) or "item"
-            prompt = build_menu_choice_prompt(item_name, candidates)
-            full_reply = (" ".join(reply_parts) + " " + prompt).strip() if reply_parts else prompt
-            return ExecutionResult(
-                reply=full_reply,
-                cart_updated=ctx.cart_updated,
-                cart_id=ctx.cart_id,
-                intent_for_response="add_items",
-                needs_followup=True,
-                followup_stage="item_clarification",
-                suggestions=all_suggestions,
-                defaults_used=all_defaults,
-                metadata={"pipeline_stage": "add_item_needs_menu_choice"},
-            )
+            if result.reason == "ambiguous_item":
+                from app.services.item_clarification import build_menu_choice_prompt
+                from app.services.session_store import set_last_visible_choices
 
-        elif clarification.reason == "unmatched_modifiers":
-            # Add the item with what was matched; append a note about unmatched modifiers.
-            unmatched = clarification.unmatched_modifiers or []
-            if unmatched:
-                note = f"Note: I couldn't match {', '.join(repr(m) for m in unmatched)} to any option — want me to add that as a note?"
-                reply_parts.append(note)
+                candidates = result.candidates or []
+                item_name = (result.source_item.item_query if result.source_item else None) or "item"
+                prompt = build_menu_choice_prompt(item_name, candidates)
+                full_reply = (" ".join(reply_parts) + " " + prompt).strip() if reply_parts else prompt
+                set_last_visible_choices(ctx.session_id, candidates, source="menu_choice")
+                return ExecutionResult(
+                    reply=full_reply,
+                    cart_updated=ctx.cart_updated,
+                    cart_id=ctx.cart_id,
+                    intent_for_response="add_items",
+                    needs_followup=True,
+                    followup_stage="item_clarification",
+                    suggestions=all_suggestions,
+                    defaults_used=all_defaults,
+                    metadata={"pipeline_stage": "add_item_needs_menu_choice"},
+                )
 
-        # follow_up_unresolvable: include an informational message.
-        elif clarification.reason == "follow_up_unresolvable":
-            reply_parts.append("I'm not sure which item you're referring to. Could you specify the item name?")
+            if result.reason == "unmatched_modifiers":
+                unmatched = result.unmatched_modifiers or []
+                if unmatched:
+                    note = f"Note: I couldn't match {', '.join(repr(m) for m in unmatched)} to any option - want me to add that as a note?"
+                    reply_parts.append(note)
+                continue
 
-    # Execute operations in order.
-    for i, op in enumerate(operations):
+            if result.reason == "follow_up_unresolvable":
+                reply_parts.append("I'm not sure which item you're referring to. Could you specify the item name?")
+                continue
+
+        op = result.operation
         intent_for_response = op.intent
         handler = _HANDLERS.get(op.intent)
         if handler is None:
@@ -787,7 +949,6 @@ async def execute_compiled_operations(
         if first_size_upgrade is None and outcome.size_upgrade is not None:
             first_size_upgrade = outcome.size_upgrade
 
-        # clear_cart failure is terminal: stop executing subsequent ops.
         if op.intent == "clear_cart" and outcome.failed:
             break
 

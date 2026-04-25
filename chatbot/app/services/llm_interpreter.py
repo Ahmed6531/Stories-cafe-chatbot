@@ -653,7 +653,11 @@ def _should_use_heuristic_items(parsed_items: list[Dict[str, Any]], heuristic_it
         parsed_quantity = parsed_item.get("quantity") or 1
         heuristic_quantity = heuristic_item.get("quantity") or 1
 
-        if parsed_name != heuristic_name or parsed_quantity != heuristic_quantity:
+        if parsed_name != heuristic_name:
+            return True
+        if parsed_quantity != heuristic_quantity:
+            if parsed_quantity > 1 and heuristic_quantity == 1:
+                continue
             return True
 
     return False
@@ -865,6 +869,10 @@ Rules:
    user specified options.
 9. Short follow-up messages must be interpreted using the
    "Recent conversation context" above:
+   - If "Visible choices shown to the user" is present, ordinal
+     references like "first one", "second one", "number 3", or
+     "the last one" must resolve ONLY from that visible list. Never
+     resolve ordinal references from the hidden Current menu context.
    - If the previous bot reply was a question or confirmation prompt
      (contains "Sound good?", "Want to change?", "Did you mean?",
      "Still want to", "Shall I", "Would you like"), and the user
@@ -924,6 +932,7 @@ async def try_interpret_message(
         last_user_message = ""
         last_added_items: list[str] = []
         cart_item_names: list[str] = []
+        visible_choices: list[str] = []
         if isinstance(context, dict):
             session_stage = context.get("session_stage")
             guided_order_phase = context.get("guided_order_phase")
@@ -945,6 +954,13 @@ async def try_interpret_message(
                     for item in raw_cart_item_names
                     if str(item).strip()
                 ]
+            raw_visible_choices = context.get("visible_choices") or []
+            if isinstance(raw_visible_choices, list):
+                visible_choices = [
+                    str(item).strip()
+                    for item in raw_visible_choices
+                    if str(item).strip()
+                ]
 
         context_parts: list[str] = []
 
@@ -955,7 +971,7 @@ async def try_interpret_message(
 - guided_current_group: {json.dumps(guided_current_group or "")}
 - guided_order_item_name: {json.dumps(guided_order_item_name or "")}""")
 
-        if last_bot_message or last_user_message or last_added_items or cart_item_names:
+        if last_bot_message or last_user_message or last_added_items or cart_item_names or visible_choices:
             conv_lines = ["Recent conversation context:"]
             if last_user_message:
                 conv_lines.append(f'- Previous user message: "{last_user_message}"')
@@ -965,6 +981,9 @@ async def try_interpret_message(
                 conv_lines.append(f"- Recently added items: {', '.join(last_added_items)}")
             if cart_item_names:
                 conv_lines.append(f"- Current cart items: {', '.join(cart_item_names)}")
+            if visible_choices:
+                choice_lines = [f"  {index}. {name}" for index, name in enumerate(visible_choices, start=1)]
+                conv_lines.append("Visible choices shown to the user:\n" + "\n".join(choice_lines))
             context_parts.append("\n".join(conv_lines))
 
         context_block = "\n\n".join(context_parts)

@@ -79,6 +79,9 @@ def _latte_requested_item():
 class TestAddItemsFlow(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         _flush_sessions()
+        self.redis_patch = patch.object(session_store, "_get_redis_client", return_value=None)
+        self.redis_patch.start()
+        self.addCleanup(self.redis_patch.stop)
 
     async def test_add_items_happy_path_sets_cart_updated(self):
         session = fake_session("s-add")
@@ -150,6 +153,87 @@ class TestAddItemsFlow(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertFalse(response.cart_updated)
+
+    async def test_add_plain_latte_with_real_variant_detail_starts_guided_ordering(self):
+        session = fake_session("s-add-guided-real")
+        session_store.sessions["s-add-guided-real"] = session
+        menu_items = [{
+            "id": 8,
+            "name": "Latte",
+            "isAvailable": True,
+            "category": {"name": "Coffee"},
+            "variantGroups": [
+                "coffee-size-standard",
+                "coffee-espresso-options",
+                "coffee-milk-options",
+                "coffee-add-ons",
+            ],
+        }]
+        latte_detail = {
+            "id": 8,
+            "name": "Latte",
+            "isAvailable": True,
+            "category": {"name": "Coffee"},
+            "variantGroups": [
+                "coffee-size-standard",
+                "coffee-espresso-options",
+                "coffee-milk-options",
+                "coffee-add-ons",
+            ],
+            "variantGroupDetails": [
+                {
+                    "groupId": "coffee-size-standard",
+                    "name": "Choose Size",
+                    "isRequired": True,
+                    "maxSelections": 1,
+                    "options": [
+                        {"name": "Small", "isActive": True},
+                        {"name": "Medium", "isActive": True},
+                    ],
+                },
+                {
+                    "groupId": "coffee-espresso-options",
+                    "name": "Espresso Options",
+                    "isRequired": False,
+                    "maxSelections": None,
+                    "options": [
+                        {"name": "Shot Decaffe", "isActive": True},
+                        {"name": "Add Shot", "isActive": True},
+                    ],
+                },
+            ],
+        }
+
+        add_mock = AsyncMock(return_value=fake_cart())
+        with (
+            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response(
+                "add_items",
+                [{
+                    "item_name": "latte",
+                    "quantity": 1,
+                    "modifiers": [],
+                    "notes": [],
+                    "follow_up_ref": None,
+                    "use_defaults": False,
+                }],
+            ))),
+            patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=menu_items)),
+            patch(MENU_DETAIL_TARGET, new=AsyncMock(return_value=latte_detail)),
+            patch(ADD_CART_TARGET, new=add_mock),
+            patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
+        ):
+            response = await process_chat_message(
+                session_id="s-add-guided-real",
+                message="add latte",
+                cart_id=None,
+                session=session,
+            )
+
+        self.assertFalse(response.cart_updated)
+        self.assertEqual(response.intent, "add_items")
+        self.assertEqual(response.metadata["pipeline_stage"], "guided_ordering_start")
+        self.assertIn("What choose size", response.reply)
+        add_mock.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

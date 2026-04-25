@@ -18,6 +18,7 @@ external call.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -46,6 +47,8 @@ from app.services.menu_utils import (
     split_instruction_fragments,
 )
 from app.services import tools as tools_service
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -178,6 +181,21 @@ def _compiled_options_from_cart(candidate: dict) -> list[CompiledOption]:
     return compiled
 
 
+def _compiled_options_from_session(selected_options: list[dict]) -> list[CompiledOption]:
+    compiled: list[CompiledOption] = []
+    for option in selected_options:
+        if not isinstance(option, dict) or not option.get("optionName"):
+            continue
+        compiled.append(
+            CompiledOption(
+                optionName=str(option.get("optionName")),
+                suboptionName=(str(option.get("suboptionName")) if option.get("suboptionName") else None),
+                groupId=(str(option.get("groupId")) if option.get("groupId") else None),
+            )
+        )
+    return compiled
+
+
 def _resolve_follow_up_item(item: ParsedItemRequest, intent: str, session: dict) -> ParsedItemRequest | CompileNeedsClarification:
     if not item.follow_up_ref or item.item_query.strip():
         return item
@@ -196,9 +214,25 @@ def _resolve_follow_up_item(item: ParsedItemRequest, intent: str, session: dict)
     return item.model_copy(update={"item_query": item_query, "quantity": quantity})
 
 
-async def _get_menu_detail(matched_item: dict, menu_item_id: int | str) -> dict | None:
+async def _get_menu_detail(
+    matched_item: dict,
+    menu_item_id: int | str,
+    menu_items: list[dict] | None = None,
+) -> dict | None:
     if isinstance(matched_item.get("variantGroupDetails"), list) or isinstance(matched_item.get("variants"), list):
         return matched_item
+    if not matched_item.get("variantGroups"):
+        return matched_item
+    for menu_item in menu_items or []:
+        if not isinstance(menu_item, dict):
+            continue
+        candidate_id = _coerce_menu_item_id(menu_item.get("id") or menu_item.get("_id"))
+        if candidate_id == menu_item_id:
+            if isinstance(menu_item.get("variantGroupDetails"), list) or isinstance(menu_item.get("variants"), list):
+                return menu_item
+            if not menu_item.get("variantGroups"):
+                return menu_item
+            break
     return await tools_service.fetch_menu_item_detail(menu_item_id)
 
 
@@ -318,6 +352,14 @@ async def _compile_add_or_describe_item(
     resolved_item = _resolve_follow_up_item(item, parsed.intent, session)
     if isinstance(resolved_item, CompileNeedsClarification):
         return resolved_item
+    session_items = session.get("last_items") or []
+    session_item = (
+        session_items[0]
+        if isinstance(session_items, list) and session_items and isinstance(session_items[0], dict)
+        else {}
+    )
+    prev_selected_options = session_item.get("selected_options") or []
+    prev_instructions = str(session_item.get("instructions") or "").strip()
     matched_item = await tools_service.find_menu_item_by_name(
         menu_items,
         resolved_item.item_query,
@@ -349,7 +391,44 @@ async def _compile_add_or_describe_item(
     menu_item_id = _coerce_menu_item_id(matched_item.get("id") or matched_item.get("_id"))
     if menu_item_id is None:
         return CompileFailure(reason="menu_item_id_missing", source_item=resolved_item)
-    menu_detail = await _get_menu_detail(matched_item, menu_item_id)
+    if item.follow_up_ref and prev_selected_options:
+        compiled_prev_options = _compiled_options_from_session(prev_selected_options)
+        if compiled_prev_options:
+            return CompileSuccess(
+                operation=CompiledOperation(
+                    intent=parsed.intent,
+                    lines=[
+                        CompiledCartLine(
+                            menuItemId=menu_item_id,
+                            qty=max(1, int(resolved_item.quantity or 1)),
+                            selectedOptions=compiled_prev_options,
+                            instructions=prev_instructions,
+                        )
+                    ],
+                    source_parsed=parsed,
+                )
+            )
+    menu_detail = await _get_menu_detail(matched_item, menu_item_id, menu_items)
+    variant_refs = matched_item.get("variantGroups") if isinstance(matched_item.get("variantGroups"), list) else []
+    variant_details = (
+        menu_detail.get("variantGroupDetails")
+        if isinstance(menu_detail, dict) and isinstance(menu_detail.get("variantGroupDetails"), list)
+        else menu_detail.get("variants")
+        if isinstance(menu_detail, dict) and isinstance(menu_detail.get("variants"), list)
+        else []
+    )
+    logger.info({
+        "stage": "add_item_compile_menu_detail",
+        "intent": parsed.intent,
+        "item_query": resolved_item.item_query,
+        "requested_quantity": resolved_item.quantity,
+        "modifiers": resolved_item.modifiers,
+        "use_defaults": resolved_item.use_defaults,
+        "matched_menu_item_id": menu_item_id,
+        "matched_menu_item_name": matched_item.get("name"),
+        "variant_group_refs_count": len(variant_refs),
+        "variant_group_details_count": len(variant_details),
+    })
     qty = int(resolved_item.quantity or 1)
     if qty <= 0:
         return CompileFailure(
@@ -601,7 +680,7 @@ async def _compile_update_item_operation(
     if menu_item_id is None:
         return CompileFailure(reason="menu_item_id_missing", source_item=resolved_item)
 
-    menu_detail = await _get_menu_detail(matched_cart_item, menu_item_id)
+    menu_detail = await _get_menu_detail(matched_cart_item, menu_item_id, menu_items)
 
     from app.services.orchestrator import cart_item_to_requested_item, merge_requested_item_customizations
 

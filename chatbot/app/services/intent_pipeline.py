@@ -141,6 +141,43 @@ def _extract_explicit_quantity(normalized_message: str) -> int | None:
     return _NUMBER_WORDS.get(token)
 
 
+_ORDINAL_INDEX_PATTERNS: tuple[tuple[int, tuple[str, ...]], ...] = (
+    (0, ("first one", "1st", "number one", "the first")),
+    (1, ("second one", "2nd", "number two", "the second")),
+    (2, ("third one", "3rd", "number three", "the third")),
+    (3, ("fourth one", "4th", "number four", "the fourth")),
+)
+
+
+def _ordinal_index_from_message(normalized_message: str) -> int | None:
+    for index, phrases in _ORDINAL_INDEX_PATTERNS:
+        if any(re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", normalized_message) for phrase in phrases):
+            return index
+    if re.search(r"(?<!\w)(last one|the last)(?!\w)", normalized_message):
+        return -1
+    return None
+
+
+def _is_ordinal_reference(normalized_message: str) -> bool:
+    return _ordinal_index_from_message(normalized_message) is not None
+
+
+def _visible_choice_for_ordinal(normalized_message: str, session: dict) -> dict | None:
+    index = _ordinal_index_from_message(normalized_message)
+    if index is None:
+        return None
+    choices = session.get("last_visible_choices") or []
+    if not isinstance(choices, list) or not choices:
+        return None
+    if index == -1:
+        choice = choices[-1]
+    elif 0 <= index < len(choices):
+        choice = choices[index]
+    else:
+        return None
+    return choice if isinstance(choice, dict) else None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Layer 2 — Regex patterns for menu-data queries
 # These are deterministic but require extraction, so separate from the frozen sets.
@@ -201,6 +238,18 @@ _RE_CORRECTION_STAGED = re.compile(
     re.IGNORECASE,
 )
 
+_RE_ADD_ONE_MORE = re.compile(
+    r"^(?:"
+    r"add\s+(?:one|1|another)\s+more"
+    r"|one\s+more\s+(?:of\s+(?:the\s+|that\s+)?)?(?:same|those|it|that)?"
+    r"|another\s+one"
+    r"|same\s+again"
+    r"|one\s+more\s+please"
+    r"|add\s+another"
+    r")(?:\s+please)?$",
+    re.IGNORECASE,
+)
+
 # ── Dynamic category cache ────────────────────────────────────────
 # Built from live menu data. Refreshed every 5 minutes.
 # Falls back to hardcoded set if fetch fails.
@@ -227,6 +276,7 @@ async def _get_category_names_for_routing() -> list[str]:
 async def _layer2_deterministic(
     normalized: str,
     session_stage: str | None = None,
+    session: dict | None = None,
 ) -> Optional[dict]:
     """
     Exact-phrase match only.  No substring scanning, no regex.
@@ -243,6 +293,38 @@ async def _layer2_deterministic(
             intent="confirm_checkout",
             source="deterministic",
             reason="deterministic_match:confirm_checkout",
+        )
+
+    if session_stage != "guided_ordering" and session is not None and _is_ordinal_reference(normalized):
+        visible_choice = _visible_choice_for_ordinal(normalized, session)
+        if visible_choice:
+            item_name = str(visible_choice.get("item_name") or visible_choice.get("label") or "").strip()
+            if item_name:
+                ordinal_intent = "describe_item" if re.search(r"\b(what|tell|describe|details?|about)\b", normalized) else "add_items"
+                return _make_resolved(
+                    intent=ordinal_intent,
+                    confidence=1.0,
+                    items=[{
+                        "item_name": item_name,
+                        "item_query": item_name,
+                        "quantity": 1 if ordinal_intent == "add_items" else None,
+                        "modifiers": [],
+                        "notes": [],
+                        "follow_up_ref": None,
+                        "use_defaults": False,
+                    }],
+                    needs_clarification=False,
+                    reason="deterministic_visible_choice_ordinal",
+                    source="deterministic",
+                    route_to_fallback=False,
+                )
+        return _make_resolved(
+            intent="unknown",
+            confidence=1.0,
+            needs_clarification=True,
+            reason="visible_choice_ordinal_unresolvable",
+            source="deterministic",
+            route_to_fallback=True,
         )
 
     # ── Regex section ────────────────────────────────────────────────────────
@@ -317,6 +399,34 @@ async def _layer2_deterministic(
                 source="layer2_correction",
                 route_to_fallback=False,
             )
+
+    if _RE_ADD_ONE_MORE.match(normalized) and session is not None:
+        last_items = session.get("last_items") or []
+        if isinstance(last_items, list) and last_items:
+            last_item = last_items[0] if isinstance(last_items[0], dict) else None
+            item_name = str(
+                (last_item or {}).get("item_name")
+                or (last_item or {}).get("name")
+                or ""
+            ).strip()
+            if item_name:
+                return _make_resolved(
+                    intent="add_items",
+                    confidence=1.0,
+                    items=[{
+                        "item_name": item_name,
+                        "item_query": item_name,
+                        "quantity": 1,
+                        "modifiers": [],
+                        "notes": [],
+                        "follow_up_ref": item_name,
+                        "use_defaults": False,
+                    }],
+                    needs_clarification=False,
+                    reason="add_one_more_pattern",
+                    source="layer2_add_one_more",
+                    route_to_fallback=False,
+                )
 
     # If the message contains a known menu category name and a query-like
     # word, route to list_category_items without the LLM.
@@ -458,6 +568,33 @@ def _layer4_resolve(
     # This remains load-bearing for legacy resolved dict flows that still need
     # item back-references materialized before later intent-specific branches.
     # The compiler duplicates this logic for the typed path.
+    visible_choice = _visible_choice_for_ordinal(normalized_message, session)
+    if visible_choice and result["intent"] in {"add_items", "describe_item"}:
+        item_name = str(visible_choice.get("item_name") or visible_choice.get("label") or "").strip()
+        if item_name:
+            result["items"] = [{
+                "item_name": item_name,
+                "item_query": item_name,
+                "quantity": 1 if result["intent"] == "add_items" else None,
+                "modifiers": [],
+                "notes": [],
+                "follow_up_ref": None,
+                "use_defaults": False,
+            }]
+            result["follow_up_ref"] = None
+            result["confidence"] = max(result["confidence"], 0.95)
+            result["reason"] = "visible_choice_ordinal_resolved"
+            result["route_to_fallback"] = False
+            result["fallback_needed"] = False
+    elif _is_ordinal_reference(normalized_message) and result.get("follow_up_ref"):
+        result["intent"] = "unknown"
+        result["items"] = []
+        result["follow_up_ref"] = None
+        result["needs_clarification"] = True
+        result["reason"] = "visible_choice_ordinal_unresolvable"
+        result["route_to_fallback"] = True
+        result["fallback_needed"] = True
+
     if result["follow_up_ref"] is not None:
         session_items: list = session.get("last_items") or []
         if isinstance(session_items, list) and session_items:
@@ -569,6 +706,7 @@ async def resolve_intent(
     deterministic = await _layer2_deterministic(
         normalized,
         session_stage=session_stage,
+        session=session,
     )
     if deterministic is not None:
         logger.info({
@@ -611,6 +749,12 @@ async def resolve_intent(
         if isinstance(item, dict)
         and str(item.get("item_name") or item.get("name") or "").strip()
     ][:5]
+    visible_choices = [
+        str(choice.get("label") or choice.get("item_name") or "").strip()
+        for choice in (session.get("last_visible_choices") or [])
+        if isinstance(choice, dict)
+        and str(choice.get("label") or choice.get("item_name") or "").strip()
+    ][:8]
 
     raw = await try_interpret_message(
         normalized,
@@ -623,6 +767,7 @@ async def resolve_intent(
             "last_user_message": last_user_message,
             "last_added_items": last_added_items,
             "cart_item_names": cart_item_names,
+            "visible_choices": visible_choices,
         },
     )
     if raw is None:
