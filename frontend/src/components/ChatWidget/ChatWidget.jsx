@@ -172,38 +172,67 @@ function CartSummaryCard({ cart }) {
   }, 0)
 
   return (
-    <div className="chat-summary-card">
-      <div className="chat-summary-card-head">
-        <div className="chat-summary-card-icon">
+    <div style={{
+      width: '100%',
+      maxWidth: '310px',
+      background: '#fff',
+      border: '0.5px solid #e5e7eb',
+      borderRadius: '12px',
+      overflow: 'hidden',
+      marginTop: '8px',
+    }}>
+      <div style={{
+        padding: '10px 14px 8px',
+        borderBottom: '0.5px solid #e5e7eb',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+      }}>
+        <div style={{
+          width: 28, height: 28,
+          background: '#e1f5ee',
+          borderRadius: '50%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+        }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            stroke="#0f6e56" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="8" cy="21" r="1" />
             <circle cx="19" cy="21" r="1" />
             <path d="M2.05 2.05h2l2.66 12.42a2 2 0 002 1.58h9.78a2 2 0 001.95-1.57l1.65-7.43H5.12" />
           </svg>
         </div>
         <div>
-          <div className="chat-summary-title">Your cart</div>
-          <div className="chat-summary-subtitle">
-            {items.length} {items.length === 1 ? 'line' : 'lines'}
+          <div style={{ fontSize: 13, fontWeight: 500, color: '#111' }}>Your cart</div>
+          <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 1 }}>
+            {items.length} {items.length === 1 ? 'item' : 'items'}
           </div>
         </div>
       </div>
 
-      <div className="chat-summary-items">
+      <div style={{ padding: '10px 14px' }}>
         {items.map((item, i) => {
           const qty = Number(item?.qty ?? item?.quantity ?? 1)
           const name = item?.name || item?.item_name || 'Item'
           const price = Number(item?.price ?? item?.basePrice ?? 0)
           const lineTotal = Number.isFinite(qty) && Number.isFinite(price) ? qty * price : 0
           return (
-            <div className="chat-summary-row" key={`${name}-${i}`}>
-              <span className="chat-summary-item-name">
+            <div key={`${name}-${i}`} style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'baseline',
+              padding: '5px 0',
+              fontSize: 13,
+              borderBottom: i < items.length - 1 ? '0.5px solid #e5e7eb' : 'none',
+            }}>
+              <span style={{ color: '#111' }}>
                 {name}
-                <span className="chat-summary-qty">x{Number.isFinite(qty) ? qty : 1}</span>
+                <span style={{ fontSize: 11.5, color: '#9ca3af', marginLeft: 4 }}>×{Number.isFinite(qty) ? qty : 1}</span>
               </span>
               {lineTotal > 0 && (
-                <span className="chat-summary-price">{formatLL(lineTotal)}</span>
+                <span style={{ color: '#111', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                  {formatLL(lineTotal)}
+                </span>
               )}
             </div>
           )
@@ -211,7 +240,16 @@ function CartSummaryCard({ cart }) {
       </div>
 
       {subtotal > 0 && (
-        <div className="chat-summary-total">
+        <div style={{
+          padding: '8px 14px 12px',
+          borderTop: '0.5px solid #e5e7eb',
+          background: '#f9fafb',
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontSize: 14,
+          fontWeight: 500,
+          color: '#111',
+        }}>
           <span>Subtotal</span>
           <span>{formatLL(subtotal)}</span>
         </div>
@@ -335,15 +373,15 @@ function renderParsedContent(parsed) {
   if (parsed.type === 'category_list') {
     return (
       <>
-        <p style={{ margin: '0 0 8px', fontSize: 13, color: '#374151', lineHeight: 1.5 }}>{parsed.header}</p>
-        <div style={{ borderRadius: 10, border: '0.5px solid #e5e7eb', overflow: 'hidden' }}>
+        <p style={{ margin: '0 0 6px', fontSize: 12, color: '#374151', lineHeight: 1.5 }}>{parsed.header}</p>
+        <div style={{ borderRadius: 8, border: '0.5px solid #e5e7eb', overflow: 'hidden' }}>
           {parsed.items.map((item, i) => (
             <div key={i} style={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '8px 12px', background: i % 2 === 0 ? '#f9fafb' : '#fff', fontSize: 13,
+              padding: '6px 10px', background: i % 2 === 0 ? '#f9fafb' : '#fff', fontSize: 12,
             }}>
               <span style={{ color: '#111' }}>{item.name}</span>
-              <span style={{ color: '#6b7280', whiteSpace: 'nowrap', marginLeft: 12 }}>L.L {item.price}</span>
+              <span style={{ color: '#6b7280', whiteSpace: 'nowrap', marginLeft: 10 }}>L.L {item.price}</span>
             </div>
           ))}
         </div>
@@ -869,7 +907,12 @@ export default function ChatWidget({
   }
 
   useEffect(() => {
-    if (msgsRef.current) msgsRef.current.scrollTop = msgsRef.current.scrollHeight
+    if (!msgsRef.current) return
+    // Defer until after paint so the new message has been laid out.
+    const id = requestAnimationFrame(() => {
+      if (msgsRef.current) msgsRef.current.scrollTop = msgsRef.current.scrollHeight
+    })
+    return () => cancelAnimationFrame(id)
   }, [messages, voice.replyPending])
 
   useEffect(() => () => {

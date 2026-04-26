@@ -125,8 +125,15 @@ def filter_by_category(
     terms = [term for term in (query_terms or []) if term]
     result = []
     for suggestion in suggestions:
-        name = safe_lower(suggestion.get("item_name") or "")
+        name = safe_lower(suggestion.get("item_name") or "").strip()
         menu_item = menu_items_by_name.get(name) if isinstance(menu_items_by_name, dict) else None
+        # Fallback: partial name match when featured/upsell items have slightly
+        # different names than the canonical menu item list.
+        if menu_item is None and isinstance(menu_items_by_name, dict) and name:
+            for key, candidate in menu_items_by_name.items():
+                if name in key or key in name:
+                    menu_item = candidate
+                    break
         cat = safe_lower(menu_item.get("category") or "") if isinstance(menu_item, dict) else ""
         sub = safe_lower(menu_item.get("subcategory") or "") if isinstance(menu_item, dict) else ""
         hay = f"{name} {cat} {sub}"

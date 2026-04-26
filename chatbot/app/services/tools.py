@@ -406,6 +406,17 @@ def _is_safe_fuzzy_candidate(item_query: str, candidate: str) -> bool:
     return False
 
 
+def _query_mentions_sparkling(item_query: str) -> bool:
+    """Return True if item_query contains 'sparkling' or a close typo of it."""
+    if "sparkling" in item_query:
+        return True
+    return any(
+        SequenceMatcher(None, token, "sparkling").ratio() >= 0.75
+        for token in item_query.split()
+        if len(token) >= 5
+    )
+
+
 async def find_menu_item_by_name(menu_items, item_query, *, include_unavailable: bool = False):
     if not item_query:
         return None
@@ -420,8 +431,9 @@ async def find_menu_item_by_name(menu_items, item_query, *, include_unavailable:
         ]
 
     # Special case: "water" or "cold water" etc should map to "Rim 330ML" not
-    # "Rim Sparkling Water" unless the user explicitly says "sparkling".
-    if "water" in item_query and "sparkling" not in item_query:
+    # "Rim Sparkling Water" unless the user explicitly says "sparkling" (or a
+    # close typo like "dparkling").
+    if "water" in item_query and not _query_mentions_sparkling(item_query):
         for item in candidates:
             if item.get("name", "").strip().lower() == "rim 330ml":
                 return item

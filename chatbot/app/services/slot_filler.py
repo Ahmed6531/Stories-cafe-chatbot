@@ -413,6 +413,13 @@ def _find_best_option(option_text: str, groups_meta: list[dict]) -> tuple[dict, 
     if not normalized_text:
         return None
 
+    # If the input matches a group's label exactly, the user named the group itself
+    # (e.g. "milk" when the group is named "Milk") — not a specific option.
+    # Return None so guided ordering asks which option they want.
+    for group in _active_groups(groups_meta):
+        if normalize_modifier_text(_clean_group_label(group)) == normalized_text:
+            return None
+
     best_match = None
     best_score = (0, 0)
     for group in _active_groups(groups_meta):

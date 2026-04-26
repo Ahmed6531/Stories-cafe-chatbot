@@ -1418,8 +1418,16 @@ async def _handle_guided_order_response(
                 set_guided_order_active_group_id(session_id, None)
 
         if guided_state == "required" and active_group is not None:
+            _fill_text = normalized_message
+            if normalized_phrase in GUIDED_DEFAULT_ALL_WORDS:
+                from app.services.menu_utils import active_variant_options as _avos
+                _default_opts = list(_avos(active_group))
+                if _default_opts:
+                    _default_name = str(_default_opts[0].get("name") or "").strip()
+                    if _default_name:
+                        _fill_text = _default_name.lower()
             slot_state, applied, unmatched = fill_slots_from_text(
-                normalized_message, groups_meta, slot_state
+                _fill_text, groups_meta, slot_state
             )
             # Second pass: unmatched items might be intensity-word fallbacks
             # (e.g. "medium" from "medium oat milk") that are valid options in
@@ -1806,7 +1814,6 @@ ACTIVE_INTENTS: frozenset[str] = frozenset({
     "repeat_order",
     "checkout",
     "confirm_checkout",
-    "describe_item",
 })
 
 # Intents that render data inline without mutating cart state or
@@ -1816,6 +1823,7 @@ PASSIVE_INTENTS: frozenset[str] = frozenset({
     "list_category_items",
     "list_categories",
     "recommendation_query",
+    "describe_item",
 })
 
 
@@ -1910,7 +1918,7 @@ async def _render_passive_op(
         rec_category = extract_recommendation_category(normalized_message)
         rec_query_terms = extract_recommendation_query_terms(normalized_message)
         menu_items_by_name = {
-            (item.get("name") or "").lower(): item
+            (item.get("name") or "").strip().lower(): item
             for item in menu_items
             if isinstance(item, dict) and item.get("name")
         }
@@ -1971,6 +1979,17 @@ async def _render_passive_op(
                 f"- {s['item_name']}" for s in filtered
             )
         return "I can help with suggestions once you add an item to your cart."
+
+    if op_intent == "describe_item":
+        item_query = str(items[0].get("item_query") or items[0].get("item_name") or "").strip() if items else ""
+        from app.services.menu_details import process_describe_item
+        resp = await process_describe_item(
+            session_id=session_id,
+            normalized_message=item_query or normalized_message,
+            intent="describe_item",
+            cart_id=cart_id,
+        )
+        return resp.reply
 
     return ""
 
@@ -2821,10 +2840,21 @@ async def process_chat_message(
     if (
         not _skip_resolve
         and current_stage == "guided_ordering"
-        and get_session(session_id).get("guided_order_state") in {"open", "instructions"}
         and normalized_phrase in GUIDED_DEFAULT_ALL_WORDS
+        and get_session(session_id).get("guided_order_state") in {"open", "instructions", "required"}
     ):
-        if get_session(session_id).get("guided_order_state") == "open":
+        _g_state_val = get_session(session_id).get("guided_order_state")
+        if _g_state_val == "required":
+            return await _handle_guided_order_response(
+                session_id=session_id,
+                cart_id=cart_id,
+                normalized_message=normalized_message,
+                normalized_phrase=normalized_phrase,
+                intent="guided_order_response",
+                add_item_to_cart=add_item_to_cart,
+                parsed_modifiers=None,
+            )
+        if _g_state_val == "open":
             from app.services.session_store import set_guided_order_state
             set_guided_order_state(session_id, "instructions")
             return ChatMessageResponse(
@@ -3530,21 +3560,36 @@ async def process_chat_message(
                 parsed_modifiers=_guided_response_modifiers_from_resolved(resolved),
             )
         # ── Multi-op passive+active gate ─────────────────────────────────────
-        # When the LLM returns multiple ops and at least one is active, route
-        # through _run_typed_compiler_executor_intent so active ops execute
-        # together instead of letting a top-level intent branch handle one slice.
+        # When the LLM returns multiple ops and at least one is active, pre-render
+        # passive ops inline then route active ops through the compiler/executor.
         _all_ops = resolved.get("operations") or []
         _has_active = any(op.get("intent") in ACTIVE_INTENTS for op in _all_ops)
 
         if len(_all_ops) > 1 and _has_active:
+            _passive_multi_ops = [op for op in _all_ops if op.get("intent") in PASSIVE_INTENTS]
+            _active_multi_ops = [op for op in _all_ops if op.get("intent") in ACTIVE_INTENTS]
             _active_intent = next(
                 op.get("intent") for op in _all_ops
                 if op.get("intent") in ACTIVE_INTENTS
             )
-            return await _run_typed_compiler_executor_intent(
+
+            _pre_passive_parts: list[str] = []
+            for _pop in _passive_multi_ops:
+                _pre = await _render_passive_op(
+                    _pop,
+                    session_id=session_id,
+                    cart_id=cart_id,
+                    session=session,
+                    normalized_message=normalized_message,
+                )
+                if _pre:
+                    _pre_passive_parts.append(_pre)
+
+            _active_resolved = {**resolved, "operations": _active_multi_ops}
+            _active_resp = await _run_typed_compiler_executor_intent(
                 session_id=session_id,
                 normalized_message=normalized_message,
-                resolved=resolved,
+                resolved=_active_resolved,
                 intent=_active_intent,
                 session=session,
                 cart_id=cart_id,
@@ -3552,6 +3597,20 @@ async def process_chat_message(
                 missing_reply="I'm not sure what you'd like to do.",
                 missing_stage="multi_op_missing",
             )
+            if _pre_passive_parts:
+                _combined = "\n\n".join(_pre_passive_parts) + "\n\n" + _active_resp.reply
+                return ChatMessageResponse(
+                    session_id=_active_resp.session_id,
+                    status=_active_resp.status,
+                    reply=_combined,
+                    intent=_active_resp.intent,
+                    cart_updated=_active_resp.cart_updated,
+                    cart_id=_active_resp.cart_id,
+                    defaults_used=_active_resp.defaults_used,
+                    suggestions=_active_resp.suggestions,
+                    metadata=_active_resp.metadata,
+                )
+            return _active_resp
 
         if intent == "clear_cart":
             existing_cart = await get_cart(cart_id=cart_id)
@@ -3692,7 +3751,7 @@ async def process_chat_message(
                 if _looks_like_ice_cream_query(rec_category):
                     rec_category = "yogurt"
             menu_items_by_name = {
-                (item.get("name") or "").lower(): item
+                (item.get("name") or "").strip().lower(): item
                 for item in menu_items
                 if isinstance(item, dict) and item.get("name")
             }

@@ -1,4 +1,9 @@
 {
+  "scripts": {
+    "chatbot:unit-fast": "pytest chatbot/tests/test_slot_filler.py chatbot/tests/test_normalize.py chatbot/tests/test_executor.py -q",
+    "chatbot:critical": "pytest chatbot/tests/test_slot_filler.py chatbot/tests/test_normalize.py chatbot/tests/test_executor.py chatbot/tests/testchatbotflows/test_intent_pipeline_routing.py chatbot/tests/testchatbotflows/test_clarification_flows.py -q",
+    "chatbot:integration-slow": "pytest chatbot/test_customization.py chatbot/tests/testchatbotflows/test_intent_flows.py chatbot/tests/testchatbotflows/test_http_endpoint.py -q"
+  },
   "devDependencies": {
     "vitest": "^4.0.18"
   },

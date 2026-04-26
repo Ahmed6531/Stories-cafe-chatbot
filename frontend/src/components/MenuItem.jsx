@@ -111,7 +111,8 @@ const ItemContent = styled(Box)(({ theme }) => ({
   flexDirection: 'column',
   padding: `${menuCardLayout.contentPadding.desktop}px`,
   flex: 1,
-
+  minHeight: 0,
+  overflow: 'hidden',
   gap: '4px',
   background: theme.brand.bgLight,
   [theme.breakpoints.down('md')]: { padding: `${menuCardLayout.contentPadding.mobile}px` },
@@ -130,11 +131,9 @@ const ItemName = styled(Typography)(({ theme }) => ({
 }))
 
 const ItemDescription = styled(Typography)(({ theme }) => ({
-
   fontFamily: theme.brand.fontBase,
   fontSize: '12px',
   color: theme.brand.textSecondary,
-
   lineHeight: 1.4,
   display: '-webkit-box',
   WebkitLineClamp: 2,
@@ -142,9 +141,12 @@ const ItemDescription = styled(Typography)(({ theme }) => ({
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   minHeight: '2.8em',
+  flexShrink: 1,
   [theme.breakpoints.down('md')]: {
-    WebkitLineClamp: 1,
-    minHeight: '1.4em',
+    // Allow up to 2 lines when space permits; title takes priority so this
+    // naturally collapses when the name wraps to multiple lines.
+    WebkitLineClamp: 2,
+    minHeight: 0,
   },
 }))
 
@@ -154,6 +156,7 @@ const ItemBottom = styled(Box)(() => ({
   alignItems: 'center',
   justifyContent: 'space-between',
   gap: '8px',
+  flexShrink: 0,
 }));
 
 const StatusPill = styled(Box, {

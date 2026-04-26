@@ -754,7 +754,7 @@ async def _execute_recommendation_query(op: CompiledOperation, ctx: ExecutionCon
     rec_category = extract_recommendation_category(normalized_message)
     rec_query_terms = extract_recommendation_query_terms(normalized_message)
     menu_items_by_name = {
-        (item.get("name") or "").lower(): item
+        (item.get("name") or "").strip().lower(): item
         for item in menu_items
         if isinstance(item, dict) and item.get("name")
     }

@@ -333,6 +333,7 @@ def test_build_open_customization_prompt():
         for ack in OPEN_ACK_VARIANTS
     }
     assert lines[1:] == [
+        "",
         "Would you like to add anything else?",
         "",
         "Toppings (currently: Extra Mayo):",
@@ -369,3 +370,89 @@ def test_build_suboption_prompt():
     assert build_suboption_prompt("Labneh", "Mayo", suboptions) == (
         "How would you like your Mayo? Options: Less, Regular, Extra."
     )
+
+
+# ── Milk clarification regression ──────────────────────────────────────────────
+
+def latte_milk_groups_meta():
+    """Minimal variant groups for a latte with a milk group."""
+    return [
+        {
+            "groupId": "latte-size",
+            "name": "Choose Size",
+            "customerLabel": "Size",
+            "isRequired": True,
+            "maxSelections": 1,
+            "isActive": True,
+            "options": [
+                {"name": "Small", "isActive": True, "suboptions": []},
+                {"name": "Medium", "isActive": True, "suboptions": []},
+                {"name": "Large", "isActive": True, "suboptions": []},
+            ],
+        },
+        {
+            "groupId": "latte-milk",
+            "name": "Milk",
+            "customerLabel": "Milk",
+            "isRequired": True,
+            "maxSelections": 1,
+            "isActive": True,
+            "options": [
+                {"name": "Whole Milk", "isActive": True, "suboptions": []},
+                {"name": "Oat Milk", "isActive": True, "suboptions": []},
+                {"name": "Coconut Milk", "isActive": True, "suboptions": []},
+                {"name": "Almond Milk", "isActive": True, "suboptions": []},
+            ],
+        },
+        {
+            "groupId": "latte-extras",
+            "name": "Extras",
+            "customerLabel": "Extras",
+            "isRequired": False,
+            "maxSelections": 3,
+            "isActive": True,
+            "options": [
+                {"name": "Chocolate Drizzle", "isActive": True, "suboptions": []},
+                {"name": "Caramel Drizzle", "isActive": True, "suboptions": []},
+                {"name": "Extra Shot", "isActive": True, "suboptions": []},
+            ],
+        },
+    ]
+
+
+def test_generic_milk_word_does_not_auto_select_coconut_milk():
+    """Bug 6: when the LLM extracts 'milk' as a modifier segment, it must be
+    left unmatched so guided ordering asks which milk type the user wants."""
+    groups = latte_milk_groups_meta()
+    state = init_slot_state(groups)
+    # The LLM would extract "milk" as a standalone modifier segment.
+    state, applied, unmatched = fill_slots_from_text("milk", groups, state)
+
+    assert state["latte-milk"] == [], "generic 'milk' must not auto-select Coconut Milk"
+    assert "milk" in unmatched, "generic 'milk' must be unmatched so guided ordering asks"
+
+
+def test_specific_milk_still_matches():
+    """Specific milk types must still resolve correctly after the group-label guard."""
+    groups = latte_milk_groups_meta()
+    for milk_name, expected in [
+        ("oat milk", "Oat Milk"),
+        ("whole milk", "Whole Milk"),
+        ("almond milk", "Almond Milk"),
+        ("coconut milk", "Coconut Milk"),
+    ]:
+        state = init_slot_state(groups)
+        state, applied, unmatched = fill_slots_from_text(milk_name, groups, state)
+        assert state["latte-milk"][0]["optionName"] == expected, f"{milk_name!r} should match {expected!r}"
+        assert unmatched == [], f"{milk_name!r} should not be unmatched"
+
+
+def test_chocolate_drizzle_still_matches_after_milk_guard():
+    """Extras like 'chocolate drizzle' must not be blocked by the group-label guard."""
+    groups = latte_milk_groups_meta()
+    state = init_slot_state(groups)
+    state, applied, unmatched = fill_slots_from_text("small and chocolate drizzle", groups, state)
+
+    assert state["latte-size"][0]["optionName"] == "Small"
+    assert state["latte-extras"][0]["optionName"] == "Chocolate Drizzle"
+    assert unmatched == []

@@ -26,6 +26,35 @@ from app.services.executor import _failure_to_reply
 from app.services.session_store import get_session
 
 
+@pytest.fixture(autouse=True)
+def isolate_executor_add_side_effects(monkeypatch):
+    """Keep executor unit tests away from recommendation/upsell/network side effects."""
+    import app.services.executor as executor_mod
+    import app.services.suggestions as suggestions_mod
+    import app.services.tools as tools_mod
+    import app.services.upsell as upsell_mod
+
+    async def fake_get_cart(cart_id=None):
+        return {"cart_id": cart_id, "cart": []}
+
+    async def fake_fetch_menu_items():
+        return []
+
+    async def fake_fetch_menu_item_detail(menu_item_id):
+        return None
+
+    async def fake_get_upsell_suggestions(**kwargs):
+        return []
+
+    monkeypatch.setattr(tools_mod, "get_cart", fake_get_cart)
+    monkeypatch.setattr(tools_mod, "fetch_menu_items", fake_fetch_menu_items)
+    monkeypatch.setattr(tools_mod, "fetch_menu_item_detail", fake_fetch_menu_item_detail)
+    monkeypatch.setattr(upsell_mod, "get_size_upgrade_suggestion", lambda *args, **kwargs: None)
+    monkeypatch.setattr(upsell_mod, "get_upsell_suggestions", fake_get_upsell_suggestions)
+    monkeypatch.setattr(suggestions_mod, "suggest_complementary_items", lambda *args, **kwargs: [])
+    monkeypatch.setattr(executor_mod, "_schedule_combo_observation", lambda **kwargs: None)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures / helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -554,3 +583,54 @@ async def test_update_item_preserves_live_quantity_after_quantity_update(monkeyp
 
     assert result.cart_updated is True
     assert updated_payloads[0]["qty"] == 2
+
+
+# ─────────────────────────��──────────────────────────────��────────────────────
+# Bug #3 — session / queue flush on checkout
+# ──────────────────────────────────────────���────────────────────────────────���─
+
+
+def test_reset_conversation_session_flushes_all_state():
+    """Bug #3: reset_conversation_session must clear pending ops, guided order
+    state, cart_id, and all transient fields so a post-checkout session is clean."""
+    from app.services.session_store import (
+        get_session,
+        reset_conversation_session,
+        set_guided_order_item_id,
+        set_guided_order_item_name,
+        set_guided_order_phase,
+        set_guided_order_state,
+        set_pending_operations,
+        set_pending_operations_context,
+        set_session_cart_id,
+        set_session_stage,
+    )
+
+    sid = "test-flush-on-checkout"
+    session = get_session(sid)
+
+    # Populate state that must be cleared.
+    set_session_cart_id(sid, "cart-abc")
+    set_session_stage(sid, "guided_ordering")
+    set_guided_order_item_id(sid, 8)
+    set_guided_order_item_name(sid, "Latte")
+    set_guided_order_phase(sid, 2)
+    set_guided_order_state(sid, "required")
+    set_pending_operations(sid, [{"intent": "add_items", "items": []}])
+    set_pending_operations_context(sid, {"foo": "bar"})
+    session["last_items"] = [{"item_name": "Latte"}]
+    session["checkout_initiated"] = True
+
+    reset_conversation_session(sid)
+
+    fresh = get_session(sid)
+    assert fresh["cart_id"] is None, "cart_id must be cleared"
+    assert fresh["stage"] is None, "stage must be cleared"
+    assert fresh["guided_order_item_id"] is None
+    assert fresh["guided_order_item_name"] is None
+    assert fresh["guided_order_phase"] == 1
+    assert fresh["guided_order_state"] is None
+    assert fresh["pending_operations"] == []
+    assert fresh["pending_operations_context"] == {}
+    assert fresh["last_items"] == []
+    assert fresh["checkout_initiated"] is False
