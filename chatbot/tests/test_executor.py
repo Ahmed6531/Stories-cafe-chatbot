@@ -21,7 +21,7 @@ from app.schemas.actions import (
     ParsedOperation,
 )
 from app.services.compiler import CompileFailure, CompileNeedsClarification, CompileSuccess
-from app.services.executor import ExecutionResult, execute_compiled_operations
+from app.services.executor import ExecutionResult, OpExecutionOutcome, execute_compiled_operations
 from app.services.executor import _failure_to_reply
 from app.services.session_store import get_session
 
@@ -74,9 +74,155 @@ def _compiled_remove_all(item_name: str) -> CompiledOperation:
     return CompiledOperation(intent="remove_item", lines=[], source_parsed=parsed)
 
 
+def _compiled_info(intent: str, item_query: str = "") -> CompiledOperation:
+    parsed = _parsed_op(intent, [ParsedItemRequest(item_query=item_query)] if item_query else [])
+    return CompiledOperation(intent=intent, lines=[], source_parsed=parsed)
+
+
+def _missing_required_latte() -> CompileNeedsClarification:
+    return CompileNeedsClarification(
+        reason="missing_required_group",
+        missing_groups=[{"name": "Size"}],
+        source_item=ParsedItemRequest(item_query="Latte", quantity=1),
+        matched_menu_item={"id": 8, "name": "Latte"},
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("info_intent", "info_reply"),
+    [
+        ("describe_item", "Chocolate Croissant — flaky and buttery."),
+        ("list_category_items", "Here's what we have in Pastries:\n- Chocolate Croissant"),
+        ("list_categories", "Here's what we serve:\n- Pastries\n- Coffee"),
+        ("view_cart", "Here's your cart:\n- 1x Mocha"),
+        ("recommendation_query", "Here are some picks you might like:\n- Latte"),
+    ],
+)
+async def test_info_ops_after_missing_required_render_before_guided_prompt(
+    monkeypatch,
+    info_intent,
+    info_reply,
+):
+    import app.services.executor as executor_mod
+
+    captured_remaining: list[list[str]] = []
+
+    async def fake_setup_guided_ordering(clarification, ctx, remaining_ops):
+        captured_remaining.append([op.intent for op in remaining_ops])
+        return "What size would you like for your Latte?"
+
+    async def fake_info_handler(op, ctx):
+        return OpExecutionOutcome(reply_fragment=info_reply)
+
+    monkeypatch.setattr(executor_mod, "_setup_guided_ordering", fake_setup_guided_ordering)
+    monkeypatch.setitem(executor_mod._HANDLERS, info_intent, fake_info_handler)
+
+    session_id = f"test-info-before-guided-{info_intent}"
+    session = get_session(session_id)
+    result = await execute_compiled_operations(
+        compile_results=[
+            _missing_required_latte(),
+            CompileSuccess(operation=_compiled_info(info_intent, "pastries")),
+        ],
+        session_id=session_id,
+        cart_id="cart-start",
+        session=session,
+        auth_cookie=None,
+    )
+
+    assert result.metadata["pipeline_stage"] == "guided_ordering_start"
+    assert info_reply in result.reply
+    assert "What size would you like for your Latte?" in result.reply
+    assert result.reply.index(info_reply) < result.reply.index("What size")
+    assert captured_remaining == [[]]
+
+
+@pytest.mark.asyncio
+async def test_active_ops_after_missing_required_are_still_queued(monkeypatch):
+    import app.services.executor as executor_mod
+
+    captured_remaining: list[list[str]] = []
+
+    async def fake_setup_guided_ordering(clarification, ctx, remaining_ops):
+        captured_remaining.append([op.intent for op in remaining_ops])
+        return "What size would you like for your Latte?"
+
+    monkeypatch.setattr(executor_mod, "_setup_guided_ordering", fake_setup_guided_ordering)
+
+    session_id = "test-active-queued-after-guided"
+    session = get_session(session_id)
+    result = await execute_compiled_operations(
+        compile_results=[
+            _missing_required_latte(),
+            CompileSuccess(operation=_compiled_add(12, 1, "Mocha")),
+        ],
+        session_id=session_id,
+        cart_id="cart-start",
+        session=session,
+        auth_cookie=None,
+    )
+
+    assert result.metadata["pipeline_stage"] == "guided_ordering_start"
+    assert captured_remaining == [["add_items"]]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Bug #1 — clear_cart must actually clear the cart in a multi-op sequence
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_active_ops_after_ambiguous_item_still_execute(monkeypatch):
+    import app.services.tools as tools_mod
+
+    added_ids: list[int] = []
+
+    async def fake_add_item_to_cart(menu_item_id, qty, selected_options, instructions, cart_id):
+        added_ids.append(int(menu_item_id))
+        return {
+            "cart_id": f"cart-{menu_item_id}",
+            "cart": [{"name": "Cinnamon Rolls", "qty": qty, "menuItemId": menu_item_id}],
+        }
+
+    async def fake_get_cart(cart_id=None):
+        return {"cart_id": cart_id, "cart": []}
+
+    async def fake_fetch_menu_items():
+        return []
+
+    monkeypatch.setattr(tools_mod, "add_item_to_cart", fake_add_item_to_cart)
+    monkeypatch.setattr(tools_mod, "get_cart", fake_get_cart)
+    monkeypatch.setattr(tools_mod, "fetch_menu_items", fake_fetch_menu_items)
+
+    session_id = "test-active-after-ambiguous"
+    session = get_session(session_id)
+    ambiguous_croissant = CompileNeedsClarification(
+        reason="ambiguous_item",
+        candidates=[
+            {"item_name": "Cheese Croissant", "menu_item_id": 27},
+            {"item_name": "Chocolate Croissant", "menu_item_id": 26},
+        ],
+        source_item=ParsedItemRequest(item_query="croissant", quantity=None),
+    )
+
+    result = await execute_compiled_operations(
+        compile_results=[
+            ambiguous_croissant,
+            CompileSuccess(operation=_compiled_add(28, 1, "Cinnamon Rolls")),
+        ],
+        session_id=session_id,
+        cart_id="cart-start",
+        session=session,
+        auth_cookie=None,
+    )
+
+    assert added_ids == [28]
+    assert "Added Cinnamon Rolls to your cart." in result.reply
+    assert "Which croissant would you like: Cheese Croissant or Chocolate Croissant?" in result.reply
+    assert result.cart_updated is True
+    assert result.needs_followup is True
+    assert result.metadata["pipeline_stage"] == "add_item_needs_menu_choice"
 
 
 @pytest.mark.asyncio

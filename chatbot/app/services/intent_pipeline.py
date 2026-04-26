@@ -60,6 +60,9 @@ _RECOMMENDATION_PHRASES: frozenset[str] = frozenset({
 _REPEAT_ORDER_PHRASES: frozenset[str] = frozenset({
     "repeat my last order",
     "repeat my order",
+    "reorder my last order",
+    "reorder my order",
+    "order again",
 })
 
 _BARE_AFFIRMATIONS: frozenset[str] = frozenset({
@@ -273,8 +276,8 @@ _RE_LIST_CATEGORY = re.compile(
 )
 
 _MULTI_INTENT_SIGNALS = re.compile(
-    r"\b(?:add|remove|delete|update|change|checkout|describe|"
-    r"tell me about|what(?:'s| is) in)\b",
+    r"\b(?:add|remove|delete|update|change|checkout|describe|also|then|"
+    r"can\s+i|i\s+wanna|i\s+want|i\s+would\s+like|tell me about|what(?:'s| is) in)\b",
     re.IGNORECASE,
 )
 
@@ -375,6 +378,124 @@ def _build_category_match_map(category_names: list[str]) -> dict[str, str]:
     return mapping
 
 
+async def _repair_llm_operation_intents(raw: dict, session: dict, normalized_message: str) -> dict:
+    """Fix common LLM category/item confusions before Layer 4 freezes ops."""
+    operations = raw.get("operations")
+    single_operation_shape = False
+    if not isinstance(operations, list) or not operations:
+        single_operation_shape = True
+        operations = [{
+            "intent": raw.get("intent"),
+            "items": raw.get("items") or [],
+            "needs_clarification": raw.get("needs_clarification", False),
+            "reason": raw.get("reason") or "",
+        }]
+
+    try:
+        from app.services.menu_signal import get_menu_signal
+
+        signal = await get_menu_signal()
+        category_names = sorted(getattr(signal, "category_names", frozenset()), key=len, reverse=True)
+        category_match_map = _build_category_match_map(category_names)
+        item_names = set(getattr(signal, "item_names", frozenset()))
+        option_names = set(getattr(signal, "option_names", frozenset()))
+    except Exception:
+        category_match_map = {}
+        item_names = set()
+        option_names = set()
+
+    if not item_names and not category_match_map and not option_names:
+        return raw
+
+    session_id = session.get("session_id") or ""
+    session_stage = get_session_stage(session_id) if session_id else session.get("stage")
+    is_availability_query = bool(_RE_AVAILABILITY.match(normalized_message))
+
+    repaired_ops = []
+    changed = False
+    for op in operations:
+        if not isinstance(op, dict):
+            repaired_ops.append(op)
+            continue
+
+        repaired = dict(op)
+        items = repaired.get("items") or []
+        first_item = items[0] if items and isinstance(items[0], dict) else {}
+        query = str(
+            first_item.get("item_query")
+            or first_item.get("item_name")
+            or first_item.get("category")
+            or ""
+        ).strip().lower()
+
+        if (
+            repaired.get("intent") == "list_category_items"
+            and query
+            and query not in category_match_map
+            and (
+                query in item_names
+                or (is_availability_query and bool(category_match_map))
+            )
+        ):
+            repaired["intent"] = "describe_item"
+            repaired["reason"] = (
+                f"{repaired.get('reason') or ''} "
+                "Corrected from list_category_items because the query is a specific menu item."
+            ).strip()
+            changed = True
+
+        if (
+            repaired.get("intent") == "describe_item"
+            and query
+            and query in category_match_map
+            and query not in item_names
+        ):
+            repaired["intent"] = "list_category_items"
+            repaired["reason"] = (
+                f"{repaired.get('reason') or ''} "
+                "Corrected from describe_item because the query is a menu category."
+            ).strip()
+            changed = True
+
+        if repaired.get("intent") == "add_items" and session_stage == "guided_ordering":
+            normalized_items = [
+                str(
+                    item.get("item_query")
+                    or item.get("item_name")
+                    or ""
+                ).strip().lower()
+                for item in items
+                if isinstance(item, dict)
+            ]
+            has_specific_item = any(item in item_names for item in normalized_items if item)
+            modifier_only = bool(normalized_items) and all(
+                not item or item in option_names or item in {"small", "medium", "large", "warm", "warmed", "not warmed"}
+                for item in normalized_items
+            )
+            if modifier_only and not has_specific_item:
+                repaired["intent"] = "guided_order_response"
+                repaired["reason"] = (
+                    f"{repaired.get('reason') or ''} "
+                    "Corrected from add_items because guided ordering is waiting for option values."
+                ).strip()
+                changed = True
+
+        repaired_ops.append(repaired)
+
+    if not changed:
+        return raw
+
+    repaired_raw = dict(raw)
+    if single_operation_shape:
+        first = repaired_ops[0] if repaired_ops and isinstance(repaired_ops[0], dict) else {}
+        repaired_raw["intent"] = first.get("intent") or repaired_raw.get("intent")
+        repaired_raw["items"] = first.get("items") or repaired_raw.get("items") or []
+        repaired_raw["reason"] = first.get("reason") or repaired_raw.get("reason") or ""
+    else:
+        repaired_raw["operations"] = repaired_ops
+    return repaired_raw
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Layer 2 — Deterministic Router
 # ─────────────────────────────────────────────────────────────────────────────
@@ -473,28 +594,12 @@ async def _layer2_deterministic(
             )
 
     # "do you have X" / "is X in stock" — route to describe_item (handles availability)
-    m = _RE_AVAILABILITY.match(normalized)
-    if m:
-        item_name = (m.group(1) or m.group(2) or "").strip()
-        if item_name and len(item_name) > 1:
-            return _make_resolved(
-                intent="describe_item",
-                source="deterministic",
-                reason="deterministic_match:availability",
-                items=[{"item_name": item_name}],
-            )
+    if _RE_AVAILABILITY.match(normalized):
+        return None
 
     # "how much is X" / "price of X" — route to describe_item
-    m = _RE_PRICE.match(normalized)
-    if m:
-        item_name = (m.group(1) or "").strip()
-        if item_name and len(item_name) > 1:
-            return _make_resolved(
-                intent="describe_item",
-                source="deterministic",
-                reason="deterministic_match:price_query",
-                items=[{"item_name": item_name}],
-            )
+    if _RE_PRICE.match(normalized):
+        return None
 
     update_match = _RE_UPDATE_ITEM_TO_OPTION.match(normalized) or _RE_MAKE_ITEM_OPTION.match(normalized)
     if update_match:
@@ -964,6 +1069,7 @@ async def resolve_intent(
     })
 
     # ── Layer 4: Resolver / Validator ─────────────────────────────────────────
+    raw = await _repair_llm_operation_intents(raw, session, normalized)
     resolved = _layer4_resolve(raw, normalized, session, menu)
 
     logger.info({

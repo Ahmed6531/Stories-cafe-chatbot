@@ -326,10 +326,18 @@ def test_build_open_customization_prompt():
     prompt = build_open_customization_prompt("Labneh", state, groups)
     assert prompt.splitlines() == [
         "Got it! Here's what I have for your Labneh: White Bread, Extra Mayo.",
+        "",
         "Would you like to add anything else?",
-        "- Toppings (currently: Extra Mayo): Mayo (Less/Regular/Extra), BBQ (Less/Regular/Extra), Honey Mustard (Less/Regular/Extra), Mustard (Less/Regular/Extra), Salt (Less/Regular/Extra), Pepper (Less/Regular/Extra)",
-        "- Ingredients: Mint, Rocca, Olives, Cherry Tomatoes, Onion, Jalapeno, Pickles",
-        "- Extras: Cheddar Cheese (+L.L 100,000), Chicken Teriyaki (+L.L 150,000), Tuna (+L.L 200,000), Roast Beef (+L.L 150,000), Beef Ham (+L.L 150,000)",
+        "",
+        "Toppings (currently: Extra Mayo):",
+        "Mayo (Less/Regular/Extra), BBQ (Less/Regular/Extra), Honey Mustard (Less/Regular/Extra), Mustard (Less/Regular/Extra), Salt (Less/Regular/Extra), Pepper (Less/Regular/Extra)",
+        "",
+        "Ingredients:",
+        "Mint, Rocca, Olives, Cherry Tomatoes, Onion, Jalapeno, Pickles",
+        "",
+        "Extras:",
+        "Cheddar Cheese (+L.L 100,000), Chicken Teriyaki (+L.L 150,000), Tuna (+L.L 200,000), Roast Beef (+L.L 150,000), Beef Ham (+L.L 150,000)",
+        "",
         "Say 'done' to add to cart.",
     ]
 

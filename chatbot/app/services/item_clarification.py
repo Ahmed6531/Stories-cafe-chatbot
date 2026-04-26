@@ -376,7 +376,11 @@ def build_menu_choice_prompt(item_query: str, candidates: list[dict[str, Any]]) 
 
         return raw
 
-    names = [str(candidate.get("name") or "").strip() for candidate in candidates if candidate.get("name")]
+    names = [
+        str(candidate.get("name") or candidate.get("item_name") or candidate.get("label") or "").strip()
+        for candidate in candidates
+        if candidate.get("name") or candidate.get("item_name") or candidate.get("label")
+    ]
     if not names:
         return "Happy to help. Which item would you like?"
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import axios from 'axios'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
@@ -163,9 +163,277 @@ function BillSummaryCard({ bill, stale = false, onConfirm }) {
   )
 }
 
+function CartSummaryCard({ cart }) {
+  const items = Array.isArray(cart) ? cart : []
+  const subtotal = items.reduce((sum, item) => {
+    const qty = Number(item?.qty ?? item?.quantity ?? 1)
+    const price = Number(item?.price ?? item?.basePrice ?? 0)
+    return sum + (Number.isFinite(qty) && Number.isFinite(price) ? qty * price : 0)
+  }, 0)
+
+  return (
+    <div className="chat-summary-card">
+      <div className="chat-summary-card-head">
+        <div className="chat-summary-card-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="8" cy="21" r="1" />
+            <circle cx="19" cy="21" r="1" />
+            <path d="M2.05 2.05h2l2.66 12.42a2 2 0 002 1.58h9.78a2 2 0 001.95-1.57l1.65-7.43H5.12" />
+          </svg>
+        </div>
+        <div>
+          <div className="chat-summary-title">Your cart</div>
+          <div className="chat-summary-subtitle">
+            {items.length} {items.length === 1 ? 'line' : 'lines'}
+          </div>
+        </div>
+      </div>
+
+      <div className="chat-summary-items">
+        {items.map((item, i) => {
+          const qty = Number(item?.qty ?? item?.quantity ?? 1)
+          const name = item?.name || item?.item_name || 'Item'
+          const price = Number(item?.price ?? item?.basePrice ?? 0)
+          const lineTotal = Number.isFinite(qty) && Number.isFinite(price) ? qty * price : 0
+          return (
+            <div className="chat-summary-row" key={`${name}-${i}`}>
+              <span className="chat-summary-item-name">
+                {name}
+                <span className="chat-summary-qty">x{Number.isFinite(qty) ? qty : 1}</span>
+              </span>
+              {lineTotal > 0 && (
+                <span className="chat-summary-price">{formatLL(lineTotal)}</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {subtotal > 0 && (
+        <div className="chat-summary-total">
+          <span>Subtotal</span>
+          <span>{formatLL(subtotal)}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Bot message parser / renderer ───────────────────────────────────────────
+
+const _listLineRx = /^-\s+(.+?)\s{1,2}\(L\.L\s+([\d,]+)\)\s*$/
+const _legacyGroupLineRx = /^-\s+(.+?)(?:\s+\(currently:\s*(.+?)\))?:\s+(.+)$/
+const _groupHeaderRx = /^(.+?)(?:\s+\(currently:\s*(.+?)\)):\s*$/
+const CHAT_BUBBLE_FONT_SIZE = 13
+const CHAT_OPTION_FONT_SIZE = 12
+
+function _shortenPrice(llStr) {
+  const num = parseInt((llStr || '').replace(/,/g, ''), 10)
+  return Number.isFinite(num) ? `+${Math.round(num / 1000)}k` : ''
+}
+
+function _parseOptions(raw) {
+  return raw.split(/,\s+/).map(opt => {
+    const m = opt.trim().match(/^(.+?)\s*(?:\(\+L\.L\s*([\d,]+)\))?$/)
+    return m ? { label: m[1].trim(), price: m[2] || null } : { label: opt.trim(), price: null }
+  }).filter(o => o.label)
+}
+
+function _isCustomizationControlLine(line) {
+  return /^Got it!/i.test(line)
+    || /Would you like to add anything else/i.test(line)
+    || /Say ['']done['']/.test(line)
+}
+
+function _parseCustomizationGroups(lines) {
+  const groups = []
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i].trim()
+    if (!line) continue
+
+    const legacy = line.match(_legacyGroupLineRx)
+    if (legacy) {
+      groups.push({ name: legacy[1], current: legacy[2] || null, options: _parseOptions(legacy[3]) })
+      continue
+    }
+
+    const header = line.match(_groupHeaderRx)
+    if (!header || _isCustomizationControlLine(line)) continue
+
+    const optionLineIndex = lines.findIndex((candidate, index) => index > i && candidate.trim())
+    if (optionLineIndex === -1) continue
+
+    const optionLine = lines[optionLineIndex].trim()
+    if (_isCustomizationControlLine(optionLine) || _groupHeaderRx.test(optionLine) || _legacyGroupLineRx.test(optionLine)) continue
+
+    groups.push({ name: header[1], current: header[2] || null, options: _parseOptions(optionLine) })
+    i = optionLineIndex
+  }
+  return groups
+}
+
+function parseBotMessage(text) {
+  if (!text || typeof text !== 'string') return { type: 'plain', text: text || '' }
+
+  const lines3 = text.split('\n')
+  const groups = _parseCustomizationGroups(lines3)
+  if (groups.length > 0 && (/^Got it!/i.test(text) || groups.length >= 2)) {
+    const nonGroup = []
+    for (let i = 0; i < lines3.length; i += 1) {
+      const line = lines3[i].trim()
+      if (!line) continue
+      if (_legacyGroupLineRx.test(line)) continue
+      const header = line.match(_groupHeaderRx)
+      if (header && !_isCustomizationControlLine(line)) {
+        const optionLineIndex = lines3.findIndex((candidate, index) => index > i && candidate.trim())
+        if (optionLineIndex !== -1) i = optionLineIndex
+        continue
+      }
+      nonGroup.push(line)
+    }
+    const summaryLine = nonGroup[0] || ''
+    const subtext = nonGroup.find(l => /Would you like to add anything else/i.test(l)) || ''
+    const hint = nonGroup.find(l => /Say ['']done['']/.test(l)) || ''
+    return { type: 'customization_review', summaryLine, subtext, groups, hint }
+  }
+
+  // Pattern 4: split — \n\n between at least one structured block and anything else
+  const paragraphs = text.split(/\n\n+/)
+  if (paragraphs.length >= 2) {
+    const sub = paragraphs.map(p => parseBotMessage(p.trim()))
+    if (sub.some(p => ['category_list', 'options_prompt', 'customization_review'].includes(p.type))) {
+      return { type: 'split', parts: sub }
+    }
+  }
+
+  // Pattern 1: category list
+  if (/Here's what we have in .+:/.test(text)) {
+    const lines = text.split('\n')
+    const hIdx = lines.findIndex(l => /Here's what we have in .+:/.test(l))
+    const items = lines.slice(hIdx + 1).reduce((acc, l) => {
+      const m = l.match(_listLineRx)
+      if (m) acc.push({ name: m[1], price: m[2] })
+      return acc
+    }, [])
+    if (items.length > 0) return { type: 'category_list', header: lines[hIdx], items }
+  }
+
+  // Pattern 2: options prompt "What X? Options: A, B (+L.L X)."
+  if (text.includes('Options:') && text.split('Options:').length === 2) {
+    const idx = text.indexOf('Options:')
+    const question = text.slice(0, idx).trim()
+    const optRaw = text.slice(idx + 8).replace(/\.\s*$/, '').trim()
+    const options = _parseOptions(optRaw)
+    if (question && options.length > 0) return { type: 'options_prompt', question, options }
+  }
+
+  return { type: 'plain', text }
+}
+
+function renderParsedContent(parsed) {
+  if (parsed.type === 'category_list') {
+    return (
+      <>
+        <p style={{ margin: '0 0 8px', fontSize: 13, color: '#374151', lineHeight: 1.5 }}>{parsed.header}</p>
+        <div style={{ borderRadius: 10, border: '0.5px solid #e5e7eb', overflow: 'hidden' }}>
+          {parsed.items.map((item, i) => (
+            <div key={i} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '8px 12px', background: i % 2 === 0 ? '#f9fafb' : '#fff', fontSize: 13,
+            }}>
+              <span style={{ color: '#111' }}>{item.name}</span>
+              <span style={{ color: '#6b7280', whiteSpace: 'nowrap', marginLeft: 12 }}>L.L {item.price}</span>
+            </div>
+          ))}
+        </div>
+      </>
+    )
+  }
+
+  if (parsed.type === 'options_prompt') {
+    return (
+      <>
+        <p style={{ margin: '0 0 10px', fontSize: CHAT_BUBBLE_FONT_SIZE, color: '#111', lineHeight: 1.45 }}>{parsed.question}</p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, rowGap: 8 }}>
+          {parsed.options.map((opt, i) => (
+            <span key={i} style={{
+              background: '#f3f4f6', border: 'none', borderRadius: 6,
+              padding: '5px 9px', fontSize: CHAT_OPTION_FONT_SIZE, color: '#374151',
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              lineHeight: 1.35,
+            }}>
+              {opt.label}
+              {opt.price && <span style={{ fontSize: 11, color: '#9ca3af' }}>{_shortenPrice(opt.price)}</span>}
+            </span>
+          ))}
+        </div>
+      </>
+    )
+  }
+
+  if (parsed.type === 'customization_review') {
+    return (
+      <div className="chat-customization-review" style={{ fontSize: CHAT_BUBBLE_FONT_SIZE, gap: 12 }}>
+        {parsed.summaryLine && (
+          <p className="chat-customization-summary" style={{ fontSize: CHAT_BUBBLE_FONT_SIZE }}>{parsed.summaryLine}</p>
+        )}
+        {parsed.subtext && (
+          <p className="chat-customization-subtext" style={{ fontSize: CHAT_BUBBLE_FONT_SIZE }}>{parsed.subtext}</p>
+        )}
+        <div className="chat-customization-groups" style={{ gap: 14 }}>
+          {parsed.groups.map((group, i) => (
+            <section className="chat-customization-group" key={i}>
+              <div className="chat-customization-group-head" style={{ marginBottom: 7 }}>
+                <span className="chat-customization-group-name" style={{ fontSize: CHAT_OPTION_FONT_SIZE }}>{group.name}</span>
+                {group.current && (
+                  <span className="chat-customization-current" style={{ borderRadius: 6, fontSize: CHAT_OPTION_FONT_SIZE, padding: '2px 6px' }}>
+                    {group.current}
+                  </span>
+                )}
+              </div>
+              <div className="chat-customization-options" style={{ gap: 7, rowGap: 8 }}>
+                {group.options.map((opt, j) => (
+                  <span
+                    className="chat-customization-option"
+                    key={j}
+                    style={{
+                      background: '#f3f4f6',
+                      border: 'none',
+                      borderRadius: 6,
+                      fontSize: CHAT_OPTION_FONT_SIZE,
+                      padding: '5px 9px',
+                    }}
+                  >
+                    {opt.label}
+                    {opt.price && <span className="chat-customization-price" style={{ fontSize: 11 }}>{_shortenPrice(opt.price)}</span>}
+                  </span>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+        {parsed.hint && <p className="chat-customization-footer" style={{ fontSize: CHAT_OPTION_FONT_SIZE, marginTop: 2 }}>{parsed.hint}</p>}
+      </div>
+    )
+  }
+
+  // plain fallback
+  const t = parsed.text || ''
+  return t.split('\n').map((line, i, arr) => (
+    <span key={i}>{line}{i < arr.length - 1 && <br />}</span>
+  ))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
   const isUser = msg.role === 'user'
   const showTime = msg.time !== prevTime
+  const hasAudio = !isUser && typeof msg.audioSrc === 'string' && msg.audioSrc.trim()
+  const cartSummary = !isUser && msg.pipelineStage === 'view_cart_done' && Array.isArray(msg.cart) && msg.cart.length > 0
+    ? msg.cart
+    : null
   const sizeUpgrade = msg.cartUpdated && msg.sizeUpgrade && typeof msg.sizeUpgrade === 'object'
     ? msg.sizeUpgrade
     : null
@@ -310,214 +578,196 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
     onSuggestionClick(selectedChecklistValues.join(' and '))
   }
 
-  return (
-    <div className={`msg-row ${isUser ? 'msg-row-user' : 'msg-row-bot'}`}>
-      <div className={`msg-bubble ${isUser ? 'msg-bubble-user' : 'msg-bubble-bot'}`}>
-        {msg.text.split('\n').map((line, i, arr) => (
-          <span key={i}>
-            {line}
-            {i < arr.length - 1 && <br />}
-          </span>
-        ))}
-        {hasInteractiveSuggestions && isChecklistSuggestions && (
-          <div style={{ marginTop: '10px', padding: '10px', border: '1px solid #e5e7eb', borderRadius: '10px', background: '#f9fafb' }}>
-            <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px', fontWeight: 600 }}>
-              Select options, then apply
-            </div>
-            {groupedChecklistSuggestions.map(([groupName, options]) => (
-              <div key={groupName} style={{ marginBottom: '10px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
-                  {groupName}
-                  {getGroupMaxSelections(groupName) > 1 ? ` (choose up to ${getGroupMaxSelections(groupName)})` : ''}
-                </div>
-                <div style={{ display: 'grid', gap: '6px' }}>
-                  {options.map((s, idx) => {
-                    const key = `${s?.group || groupName}:${s?.input_text || s?.item_name || idx}`
-                    const optionValue = suggestionText(s)
-                    const isMulti = getGroupMaxSelections(groupName) > 1
-                    const checked = isMulti
-                      ? Array.isArray(selectedChecklist[groupName]) && selectedChecklist[groupName].includes(optionValue)
-                      : selectedChecklist[groupName] === optionValue
-                    return (
-                      <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#111827', cursor: 'pointer' }}>
-                        <input
-                          type={isMulti ? 'checkbox' : 'radio'}
-                          name={isMulti ? undefined : `variant-group-${groupName}`}
-                          checked={checked}
-                          onChange={() => selectChecklistOption(groupName, optionValue)}
-                          style={{ accentColor: '#1e5631', cursor: 'pointer' }}
-                        />
-                        <span>{suggestionLabel(s)}</span>
-                      </label>
-                    )
-                  })}
-                </div>
-              </div>
-            ))}
-            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-              <button
-                type="button"
-                onClick={applyChecklistSelections}
-                disabled={!selectedChecklistValues.length}
-                style={{
-                  padding: '7px 12px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  background: selectedChecklistValues.length ? '#1e5631' : '#9ca3af',
-                  color: '#fff',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  cursor: selectedChecklistValues.length ? 'pointer' : 'not-allowed',
-                }}
-              >
-                Apply selected options
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedChecklist({})}
-                style={{
-                  padding: '7px 12px',
-                  borderRadius: '8px',
-                  border: '1px solid #d1d5db',
-                  background: '#fff',
-                  color: '#374151',
-                  fontSize: '12px',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                }}
-              >
-                Clear
-              </button>
-            </div>
+  const playMessageAudio = () => {
+    if (!hasAudio) return
+    try {
+      const audio = new Audio(msg.audioSrc)
+      audio.play().catch(() => {})
+    } catch {
+      // Audio playback should never break the chat UI.
+    }
+  }
+
+  const parsedBot = !isUser && !cartSummary
+    ? (() => { try { return parseBotMessage(msg.text) } catch { return null } })()
+    : null
+  const isSplit = parsedBot?.type === 'split'
+
+  const renderExtras = () => (
+    <>
+      {hasInteractiveSuggestions && isChecklistSuggestions && (
+        <div style={{ marginTop: '10px', padding: '10px', border: '1px solid #e5e7eb', borderRadius: '10px', background: '#f9fafb' }}>
+          <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px', fontWeight: 600 }}>
+            Select options, then apply
           </div>
-        )}
-        {hasInteractiveSuggestions && !isChecklistSuggestions && (
-          <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {interactiveSuggestions.map((s, idx) => {
-              const sStyle = suggestionStyle(s)
-              return (
+          {groupedChecklistSuggestions.map(([groupName, options]) => (
+            <div key={groupName} style={{ marginBottom: '10px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
+                {groupName}
+                {getGroupMaxSelections(groupName) > 1 ? ` (choose up to ${getGroupMaxSelections(groupName)})` : ''}
+              </div>
+              <div style={{ display: 'grid', gap: '6px' }}>
+                {options.map((s, idx) => {
+                  const key = `${s?.group || groupName}:${s?.input_text || s?.item_name || idx}`
+                  const optionValue = suggestionText(s)
+                  const isMulti = getGroupMaxSelections(groupName) > 1
+                  const checked = isMulti
+                    ? Array.isArray(selectedChecklist[groupName]) && selectedChecklist[groupName].includes(optionValue)
+                    : selectedChecklist[groupName] === optionValue
+                  return (
+                    <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#111827', cursor: 'pointer' }}>
+                      <input
+                        type={isMulti ? 'checkbox' : 'radio'}
+                        name={isMulti ? undefined : `variant-group-${groupName}`}
+                        checked={checked}
+                        onChange={() => selectChecklistOption(groupName, optionValue)}
+                        style={{ accentColor: '#1e5631', cursor: 'pointer' }}
+                      />
+                      <span>{suggestionLabel(s)}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+            <button
+              type="button"
+              onClick={applyChecklistSelections}
+              disabled={!selectedChecklistValues.length}
+              style={{
+                padding: '7px 12px', borderRadius: '8px', border: 'none',
+                background: selectedChecklistValues.length ? '#1e5631' : '#9ca3af',
+                color: '#fff', fontSize: '12px', fontWeight: 600,
+                cursor: selectedChecklistValues.length ? 'pointer' : 'not-allowed',
+              }}
+            >
+              Apply selected options
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedChecklist({})}
+              style={{
+                padding: '7px 12px', borderRadius: '8px', border: '1px solid #d1d5db',
+                background: '#fff', color: '#374151', fontSize: '12px', fontWeight: 500, cursor: 'pointer',
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+      {hasInteractiveSuggestions && !isChecklistSuggestions && (
+        <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+          {interactiveSuggestions.map((s, idx) => {
+            const sStyle = suggestionStyle(s)
+            return (
               <button
                 key={idx}
-                onClick={() => {
-                  const text = suggestionText(s)
-                  if (text) onSuggestionClick(text)
-                }}
+                onClick={() => { const text = suggestionText(s); if (text) onSuggestionClick(text) }}
                 style={{
-                  padding: '6px 12px',
-                  borderRadius: '16px',
+                  padding: '6px 12px', borderRadius: '16px',
                   border: `1px solid ${sStyle.base.borderColor}`,
-                  background: sStyle.base.background,
-                  color: sStyle.base.color,
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  fontWeight: 500,
-                  transition: 'all 0.2s',
+                  background: sStyle.base.background, color: sStyle.base.color,
+                  cursor: 'pointer', fontSize: '13px', fontWeight: 500, transition: 'all 0.2s',
                 }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = sStyle.hover.background
-                  e.currentTarget.style.borderColor = sStyle.hover.borderColor
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = sStyle.base.background
-                  e.currentTarget.style.borderColor = sStyle.base.borderColor
-                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = sStyle.hover.background; e.currentTarget.style.borderColor = sStyle.hover.borderColor }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = sStyle.base.background; e.currentTarget.style.borderColor = sStyle.base.borderColor }}
               >
                 {suggestionLabel(s)}
               </button>
-              )
-            })}
-          </div>
-        )}
-        {hasPostAddSuggestions && (
-          <div
+            )
+          })}
+        </div>
+      )}
+      {hasPostAddSuggestions && (
+        <div style={{ marginTop: '12px', display: 'grid', gap: '8px', width: '100%', maxWidth: '320px' }}>
+          {postAddSuggestions.map((suggestion, idx) => {
+            const itemName = suggestionLabel(suggestion)
+            const funFact = typeof suggestion?.fun_fact === 'string' ? suggestion.fun_fact.trim() : ''
+            return (
+              <button
+                key={`${suggestion?.menu_item_id ?? itemName}-${idx}`}
+                type="button"
+                title={funFact || undefined}
+                onClick={() => onSuggestionClick(`add a ${itemName}`)}
+                style={{
+                  display: 'grid', gap: '4px', width: '100%', textAlign: 'left',
+                  padding: '10px 12px', borderRadius: '12px', border: '1px solid #d7e6dc',
+                  background: '#f4fbf6', color: '#163124', cursor: 'pointer',
+                  boxShadow: '0 1px 2px rgba(17, 24, 39, 0.05)',
+                }}
+              >
+                <span style={{ fontSize: '13px', fontWeight: 700, lineHeight: 1.2 }}>{itemName}</span>
+                {funFact && <span style={{ fontSize: '11.5px', lineHeight: 1.4, color: '#4b6355' }}>{funFact}</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      {hasSizeUpgrade && (
+        <div style={{
+          marginTop: '12px', display: 'grid', gap: '8px', width: '100%', maxWidth: '320px',
+          padding: '10px 12px', borderRadius: '12px', border: '1px solid #d7e6dc',
+          background: '#f4fbf6', color: '#163124', boxShadow: '0 1px 2px rgba(17, 24, 39, 0.05)',
+        }}>
+          <span style={{ fontSize: '12.5px', lineHeight: 1.45, color: '#365544' }}>{sizeUpgradeMessage}</span>
+          <button
+            type="button"
+            onClick={() => onSuggestionClick(sizeUpgradeItemName ? `update my ${sizeUpgradeItemName} to ${sizeUpgradeLabel}` : `change that to ${sizeUpgradeLabel}`)}
             style={{
-              marginTop: '12px',
-              display: 'grid',
-              gap: '8px',
-              width: '100%',
-              maxWidth: '320px',
+              justifySelf: 'start', padding: '7px 10px', borderRadius: '8px',
+              border: '1px solid #b8d8c3', background: '#fff', color: '#1e5631',
+              cursor: 'pointer', fontSize: '12.5px', fontWeight: 700,
             }}
           >
-            {postAddSuggestions.map((suggestion, idx) => {
-              const itemName = suggestionLabel(suggestion)
-              const funFact = typeof suggestion?.fun_fact === 'string' ? suggestion.fun_fact.trim() : ''
-              return (
-                <button
-                  key={`${suggestion?.menu_item_id ?? itemName}-${idx}`}
-                  type="button"
-                  title={funFact || undefined}
-                  onClick={() => onSuggestionClick(`add a ${itemName}`)}
-                  style={{
-                    display: 'grid',
-                    gap: '4px',
-                    width: '100%',
-                    textAlign: 'left',
-                    padding: '10px 12px',
-                    borderRadius: '12px',
-                    border: '1px solid #d7e6dc',
-                    background: '#f4fbf6',
-                    color: '#163124',
-                    cursor: 'pointer',
-                    boxShadow: '0 1px 2px rgba(17, 24, 39, 0.05)',
-                  }}
-                >
-                  <span style={{ fontSize: '13px', fontWeight: 700, lineHeight: 1.2 }}>
-                    {itemName}
-                  </span>
-                  {funFact && (
-                    <span style={{ fontSize: '11.5px', lineHeight: 1.4, color: '#4b6355' }}>
-                      {funFact}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        )}
-        {hasSizeUpgrade && (
-          <div
-            style={{
-              marginTop: '12px',
-              display: 'grid',
-              gap: '8px',
-              width: '100%',
-              maxWidth: '320px',
-              padding: '10px 12px',
-              borderRadius: '12px',
-              border: '1px solid #d7e6dc',
-              background: '#f4fbf6',
-              color: '#163124',
-              boxShadow: '0 1px 2px rgba(17, 24, 39, 0.05)',
-            }}
-          >
-            <span style={{ fontSize: '12.5px', lineHeight: 1.45, color: '#365544' }}>
-              {sizeUpgradeMessage}
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                const target = sizeUpgradeItemName
-                  ? `update my ${sizeUpgradeItemName} to ${sizeUpgradeLabel}`
-                  : `change that to ${sizeUpgradeLabel}`
-                onSuggestionClick(target)
-              }}
-              style={{
-                justifySelf: 'start',
-                padding: '7px 10px',
-                borderRadius: '8px',
-                border: '1px solid #b8d8c3',
-                background: '#fff',
-                color: '#1e5631',
-                cursor: 'pointer',
-                fontSize: '12.5px',
-                fontWeight: 700,
-              }}
-            >
-              Upgrade to {sizeUpgradeLabel}
-            </button>
-          </div>
-        )}
+            Upgrade to {sizeUpgradeLabel}
+          </button>
+        </div>
+      )}
+      {hasAudio && (
+        <button className="msg-audio-btn" type="button" aria-label="Play message audio" onClick={playMessageAudio}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            <path d="M15.5 8.5a5 5 0 010 7" />
+            <path d="M18.5 5.5a9 9 0 010 13" />
+          </svg>
+        </button>
+      )}
+    </>
+  )
+
+  if (isSplit) {
+    return (
+      <div className="msg-row msg-row-bot">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {parsedBot.parts.map((part, i) => (
+            <div key={i} className="msg-bubble msg-bubble-bot">
+              {renderParsedContent(part)}
+              {i === parsedBot.parts.length - 1 && renderExtras()}
+            </div>
+          ))}
+        </div>
+        {showTime && <span className="msg-time">{msg.time}</span>}
       </div>
+    )
+  }
+
+  return (
+    <div className={`msg-row ${isUser ? 'msg-row-user' : 'msg-row-bot'}`}>
+      <div className={`msg-bubble ${isUser ? 'msg-bubble-user' : 'msg-bubble-bot'}`}>
+        {cartSummary ? (
+          <span>{msg.text.split('\n')[0]}</span>
+        ) : parsedBot ? (
+          renderParsedContent(parsedBot)
+        ) : (
+          msg.text.split('\n').map((line, i, arr) => (
+            <span key={i}>{line}{i < arr.length - 1 && <br />}</span>
+          ))
+        )}
+        {renderExtras()}
+      </div>
+      {cartSummary && <CartSummaryCard cart={cartSummary} />}
       {msg.bill && <BillSummaryCard bill={msg.bill} stale={msg.billStale ?? false} onConfirm={onConfirm} />}
       {showTime && <span className="msg-time">{msg.time}</span>}
     </div>
@@ -565,7 +815,6 @@ export default function ChatWidget({
 
   const msgsRef = useRef(null)
   const inputRef = useRef(null)
-  const displayRef = useRef(null)
   const pendingReplyTimeoutRef = useRef(null)
   const partialTranscriptTimeoutRef = useRef(null)
   const pendingPartialRef = useRef({ confirmed: '', interim: '' })
@@ -623,10 +872,6 @@ export default function ChatWidget({
     if (msgsRef.current) msgsRef.current.scrollTop = msgsRef.current.scrollHeight
   }, [messages, voice.replyPending])
 
-  useLayoutEffect(() => {
-    if (displayRef.current) displayRef.current.scrollLeft = displayRef.current.scrollWidth
-  }, [voice.confirmedText, voice.interimText])
-
   useEffect(() => () => {
     if (partialTranscriptTimeoutRef.current) {
       window.clearTimeout(partialTranscriptTimeoutRef.current)
@@ -640,7 +885,18 @@ export default function ChatWidget({
       localStorage.removeItem(CHAT_STORAGE_TS_KEY)
       return
     }
-    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages))
+    try {
+      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages))
+    } catch (e) {
+      if (e.name === 'QuotaExceededError') {
+        const trimmed = messages.slice(-50)
+        try {
+          localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(trimmed))
+        } catch {
+          localStorage.removeItem(CHAT_STORAGE_KEY)
+        }
+      }
+    }
     localStorage.setItem(CHAT_STORAGE_TS_KEY, String(Date.now()))
   }, [messages])
 
@@ -787,21 +1043,15 @@ export default function ChatWidget({
         cartUpdated: Boolean(data.cart_updated),
         intent: typeof data.intent === 'string' ? data.intent : '',
         pipelineStage: typeof data.metadata?.pipeline_stage === 'string' ? data.metadata.pipeline_stage : '',
+        cart: Array.isArray(data.metadata?.cart) ? data.metadata.cart : null,
         bill: data.metadata?.bill || null,
         sizeUpgrade: data.metadata?.size_upgrade || null,
+        audioSrc: typeof data.audio_base64 === 'string' ? data.audio_base64 : '',
       })
       if (data.intent === 'confirm_checkout' && data.metadata?.pipeline_stage === 'checkout_redirect') {
         setTimeout(() => onConfirm?.(), 1500)
       }
 
-      if (data.audio_base64) {
-        try {
-          const audio = new Audio(data.audio_base64)
-          audio.play().catch(() => {})
-        } catch {
-          // never break chat on audio failure
-        }
-      }
     } catch (error) {
       if (axios.isCancel(error) || error?.code === 'ERR_CANCELED') {
         return
@@ -850,6 +1100,20 @@ export default function ChatWidget({
     }
     onClose()
   }
+
+  const adjustHeight = () => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    const lineHeight = parseInt(getComputedStyle(el).lineHeight) || 20
+    const maxHeight = lineHeight * 3 + 20
+    el.style.height = Math.min(el.scrollHeight, maxHeight) + 'px'
+    el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden'
+  }
+
+  useEffect(() => {
+    adjustHeight()
+  }, [voice.confirmedText, voice.interimText])
 
   const handleAnimationEnd = (e) => {
     const closingAnimations = ['chatUnitPushOut', 'chatMobileFadeOut']
@@ -1016,32 +1280,26 @@ export default function ChatWidget({
             <div className="chat-input-bar">
               <div className="chat-input-wrap">
                 <div className="chat-input-composite" onClick={() => inputRef.current?.focus()}>
-                  <input
+                  <textarea
                     ref={inputRef}
-                    className="chat-input-hidden"
-                    type="text"
-                    value={voice.confirmedText}
-                    onChange={(e) => { voice.setConfirmedText(e.target.value) }}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                    className="chat-input-native"
+                    rows={1}
+                    value={voice.interimText ? joinTranscript(voice.confirmedText, voice.interimText) : voice.confirmedText}
+                    placeholder="Type your order..."
+                    onChange={(e) => {
+                      if (!voice.interimText) {
+                        voice.setConfirmedText(e.target.value)
+                        adjustHeight()
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        handleSend()
+                      }
+                    }}
                     aria-label="Type your order"
                   />
-                  <div className="chat-input-display" ref={displayRef} aria-hidden="true">
-                    {!voice.confirmedText && !voice.interimText && (
-                      <span className="chat-input-placeholder">Type your order...</span>
-                    )}
-                    {(voice.confirmedText || voice.interimText) && (
-                      <span className="chat-input-text-row">
-                        {voice.confirmedText && (
-                          <span className="chat-input-confirmed">{voice.confirmedText}</span>
-                        )}
-                        {voice.interimText && (
-                          <span className="chat-input-interim">
-                            {voice.confirmedText && !/^[.,!?:;]/.test(voice.interimText) ? ' ' : ''}{voice.interimText}
-                          </span>
-                        )}
-                      </span>
-                    )}
-                  </div>
                 </div>
                 {(voice.confirmedText || voice.interimText) && (
                   <button className="chat-input-send" type="button" aria-label="Send" onClick={handleSend}>

@@ -52,6 +52,10 @@ _PASSIVE_EXECUTOR_INTENTS = frozenset({
     "recommendation_query",
 })
 
+_INFO_BEFORE_GUIDED_INTENTS = _PASSIVE_EXECUTOR_INTENTS | frozenset({
+    "describe_item",
+})
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Data structures
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1098,13 +1102,29 @@ async def execute_compiled_operations(
                 remaining_ops: list[CompiledOperation] = []
                 for pending in compile_results[index + 1 :]:
                     if isinstance(pending, CompileSuccess):
-                        remaining_ops.append(pending.operation)
+                        pending_op = pending.operation
+                        if pending_op.intent in _INFO_BEFORE_GUIDED_INTENTS:
+                            handler = _HANDLERS.get(pending_op.intent)
+                            if handler is None:
+                                logger.warning({"stage": "executor_unknown_intent", "intent": pending_op.intent})
+                                continue
+                            outcome = await handler(pending_op, ctx)
+                            if outcome.reply_fragment:
+                                reply_parts.append(outcome.reply_fragment)
+                            if outcome.cart_updated:
+                                ctx.cart_updated = True
+                            all_suggestions.extend(outcome.suggestions)
+                            all_defaults.extend(outcome.defaults_used)
+                            if first_size_upgrade is None and outcome.size_upgrade is not None:
+                                first_size_upgrade = outcome.size_upgrade
+                            continue
+                        remaining_ops.append(pending_op)
                     elif isinstance(pending, CompileNeedsClarification):
                         requeued_op = _requeue_guided_clarification(pending)
                         if requeued_op is not None:
                             remaining_ops.append(requeued_op)
                 prompt = await _setup_guided_ordering(result, ctx, remaining_ops)
-                full_reply = (" ".join(reply_parts) + " " + prompt).strip() if reply_parts else prompt
+                full_reply = ("\n\n".join(reply_parts) + "\n\n" + prompt).strip() if reply_parts else prompt
                 return ExecutionResult(
                     reply=full_reply,
                     cart_updated=ctx.cart_updated,
@@ -1121,10 +1141,30 @@ async def execute_compiled_operations(
                 from app.services.item_clarification import build_menu_choice_prompt
                 from app.services.session_store import set_last_visible_choices
 
+                for pending in compile_results[index + 1 :]:
+                    if not isinstance(pending, CompileSuccess):
+                        continue
+
+                    pending_op = pending.operation
+                    handler = _HANDLERS.get(pending_op.intent)
+                    if handler is None:
+                        logger.warning({"stage": "executor_unknown_intent", "intent": pending_op.intent})
+                        continue
+
+                    outcome = await handler(pending_op, ctx)
+                    if outcome.reply_fragment:
+                        reply_parts.append(outcome.reply_fragment)
+                    if outcome.cart_updated:
+                        ctx.cart_updated = True
+                    all_suggestions.extend(outcome.suggestions)
+                    all_defaults.extend(outcome.defaults_used)
+                    if first_size_upgrade is None and outcome.size_upgrade is not None:
+                        first_size_upgrade = outcome.size_upgrade
+
                 candidates = result.candidates or []
                 item_name = (result.source_item.item_query if result.source_item else None) or "item"
                 prompt = build_menu_choice_prompt(item_name, candidates)
-                full_reply = (" ".join(reply_parts) + " " + prompt).strip() if reply_parts else prompt
+                full_reply = ("\n\n".join(reply_parts) + "\n\n" + prompt).strip() if reply_parts else prompt
                 set_last_visible_choices(ctx.session_id, candidates, source="menu_choice")
                 return ExecutionResult(
                     reply=full_reply,
@@ -1171,7 +1211,7 @@ async def execute_compiled_operations(
         if op.intent == "clear_cart" and outcome.failed:
             break
 
-    final_reply = " ".join(p for p in reply_parts if p)
+    final_reply = "\n\n".join(p for p in reply_parts if p)
     if not final_reply:
         final_reply = "Done."
 

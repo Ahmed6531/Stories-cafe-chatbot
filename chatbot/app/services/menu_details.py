@@ -89,7 +89,7 @@ _STRIP_WORDS = {
     "o",
     "describe", "please", "pls", "u", "in", "on", "this", "options",
     "sizes", "size", "flavors", "flavour", "flavours", "flavor",
-    "toppings", "topping", "milk", "add-ons", "addons", "add-on",
+    "toppings", "topping", "add-ons", "addons", "add-on",
     "addon", "variants", "variant", "comes", "with", "whats", "s",
     "it",
 }
@@ -486,6 +486,38 @@ async def process_describe_item(
                 "item_query": item_name,
                 "dietary_preferences": dietary_preferences,
                 "pipeline_stage": "describe_item_dietary_no_match",
+            },
+        )
+
+    _q = item_name.lower().strip()
+    _available_items = [i for i in menu_items if isinstance(i, dict) and i.get("isAvailable", True) is not False]
+    _contains_matches = [
+        i for i in _available_items
+        if _q and _q in (i.get("name") or "").lower()
+    ]
+    _exact_match = next(
+        (i for i in _contains_matches if (i.get("name") or "").lower().strip() == _q),
+        None,
+    )
+    if len(_contains_matches) > 1 and not _exact_match:
+        names = ", ".join(i["name"] for i in _contains_matches[:6] if i.get("name"))
+        reply = (
+            f"We have a few options matching \"{item_name.title()}\": {names}. "
+            f"Which one {'did you mean' if not is_availability_query else 'are you asking about'}?"
+        )
+        return ChatMessageResponse(
+            session_id=session_id,
+            status="ok",
+            reply=reply,
+            intent=intent,
+            cart_updated=False,
+            cart_id=cart_id,
+            defaults_used=[],
+            suggestions=[],
+            metadata={
+                "normalized_message": normalized_message,
+                "item_query": item_name,
+                "pipeline_stage": "describe_item_ambiguous",
             },
         )
 

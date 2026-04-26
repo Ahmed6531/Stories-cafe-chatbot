@@ -292,9 +292,14 @@ def build_open_customization_prompt(
 
     lines = [f"Got it! Here's what I have for your {item_name}: {summary}."]
     if optional_groups:
+        lines.append("")
         lines.append("Would you like to add anything else?")
+        lines.append("")
         for group in selected_groups + unselected_groups:
-            lines.append(_format_optional_group_line(group, slot_state))
+            header, options = _format_optional_group_lines(group, slot_state)
+            lines.append(header)
+            lines.append(options)
+            lines.append("")
         lines.append("Say 'done' to add to cart.")
     else:
         lines.append(f"Any special instructions for your {item_name}? Say 'none' to skip.")
@@ -631,7 +636,7 @@ def _format_option_for_prompt(option: dict) -> str:
     return name
 
 
-def _format_optional_group_line(group: dict, slot_state: SlotState) -> str:
+def _format_optional_group_lines(group: dict, slot_state: SlotState) -> tuple[str, str]:
     label = _display_group_label(group)
     group_id = str(group.get("groupId") or "")
     entries = slot_state.get(group_id) or []
@@ -640,7 +645,7 @@ def _format_optional_group_line(group: dict, slot_state: SlotState) -> str:
         current = f" (currently: {', '.join(_summary_label(entry.get('optionName') or '', entry.get('suboptionName')) for entry in entries)})"
 
     options = ", ".join(_format_open_option(option) for option in active_variant_options(group))
-    return f"- {label}{current}: {options}"
+    return f"{label}{current}:", options
 
 
 def _display_group_label(group: dict) -> str:
