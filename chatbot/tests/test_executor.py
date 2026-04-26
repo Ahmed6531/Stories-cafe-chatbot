@@ -210,6 +210,34 @@ def test_failure_to_reply_prefers_custom_message():
     assert _failure_to_reply(failure, "flat white") == "I couldn't find 'flat white' in your cart."
 
 
+def test_remove_all_survives_llm_typo_correction():
+    from app.services.orchestrator import _resolved_to_parsed_request
+
+    parsed = _resolved_to_parsed_request(
+        {
+            "intent": "remove_item",
+            "operations": [
+                {
+                    "intent": "remove_item",
+                    "items": [
+                        {
+                            "item_query": "cappuccino",
+                            "quantity": None,
+                            "modifiers": [],
+                            "notes": [],
+                        }
+                    ],
+                }
+            ],
+        },
+        "remove_item",
+        {},
+        "remove all cappucino in my cart and add 2 greek salads with cutlery",
+    )
+
+    assert parsed.operations[0].items[0].item_query == "all cappuccino"
+
+
 @pytest.mark.asyncio
 async def test_remove_all_removes_every_matching_cart_line(monkeypatch):
     import app.services.tools as tools_mod

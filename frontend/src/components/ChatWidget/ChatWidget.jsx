@@ -166,6 +166,17 @@ function BillSummaryCard({ bill, stale = false, onConfirm }) {
 function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
   const isUser = msg.role === 'user'
   const showTime = msg.time !== prevTime
+  const sizeUpgrade = msg.cartUpdated && msg.sizeUpgrade && typeof msg.sizeUpgrade === 'object'
+    ? msg.sizeUpgrade
+    : null
+  const sizeUpgradeMessage = typeof sizeUpgrade?.message === 'string' ? sizeUpgrade.message.trim() : ''
+  const sizeUpgradeLabel = typeof sizeUpgrade?.upgrade_size === 'string' && sizeUpgrade.upgrade_size.trim()
+    ? sizeUpgrade.upgrade_size.trim()
+    : ''
+  const sizeUpgradeItemName = typeof sizeUpgrade?.item_name === 'string' && sizeUpgrade.item_name.trim()
+    ? sizeUpgrade.item_name.trim()
+    : ''
+  const hasSizeUpgrade = Boolean(sizeUpgradeMessage && sizeUpgradeLabel)
   const suppressSuggestions = msg.intent === 'list_category_items'
     || msg.pipelineStage === 'list_category_items_done'
   const rawSuggestions = !suppressSuggestions && Array.isArray(msg.suggestions) ? msg.suggestions : []
@@ -463,6 +474,49 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
             })}
           </div>
         )}
+        {hasSizeUpgrade && (
+          <div
+            style={{
+              marginTop: '12px',
+              display: 'grid',
+              gap: '8px',
+              width: '100%',
+              maxWidth: '320px',
+              padding: '10px 12px',
+              borderRadius: '12px',
+              border: '1px solid #d7e6dc',
+              background: '#f4fbf6',
+              color: '#163124',
+              boxShadow: '0 1px 2px rgba(17, 24, 39, 0.05)',
+            }}
+          >
+            <span style={{ fontSize: '12.5px', lineHeight: 1.45, color: '#365544' }}>
+              {sizeUpgradeMessage}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                const target = sizeUpgradeItemName
+                  ? `update my ${sizeUpgradeItemName} to ${sizeUpgradeLabel}`
+                  : `change that to ${sizeUpgradeLabel}`
+                onSuggestionClick(target)
+              }}
+              style={{
+                justifySelf: 'start',
+                padding: '7px 10px',
+                borderRadius: '8px',
+                border: '1px solid #b8d8c3',
+                background: '#fff',
+                color: '#1e5631',
+                cursor: 'pointer',
+                fontSize: '12.5px',
+                fontWeight: 700,
+              }}
+            >
+              Upgrade to {sizeUpgradeLabel}
+            </button>
+          </div>
+        )}
       </div>
       {msg.bill && <BillSummaryCard bill={msg.bill} stale={msg.billStale ?? false} onConfirm={onConfirm} />}
       {showTime && <span className="msg-time">{msg.time}</span>}
@@ -734,6 +788,7 @@ export default function ChatWidget({
         intent: typeof data.intent === 'string' ? data.intent : '',
         pipelineStage: typeof data.metadata?.pipeline_stage === 'string' ? data.metadata.pipeline_stage : '',
         bill: data.metadata?.bill || null,
+        sizeUpgrade: data.metadata?.size_upgrade || null,
       })
       if (data.intent === 'confirm_checkout' && data.metadata?.pipeline_stage === 'checkout_redirect') {
         setTimeout(() => onConfirm?.(), 1500)

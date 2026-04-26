@@ -39,6 +39,10 @@ class Session(TypedDict):
     guided_order_optional_groups: list[dict[str, Any]]
     guided_order_selections: dict[str, Any]
     guided_order_defaulted_groups: list[str]
+    guided_order_slot_state: dict
+    guided_order_groups_meta: list
+    guided_order_state: str | None
+    guided_order_active_group_id: str | None
     guided_order_quantity: int | None
     last_user_message: str | None
     last_bot_response: str | None
@@ -79,6 +83,10 @@ def _default_session(session_id: str) -> dict[str, Any]:
         "guided_order_optional_groups": [],
         "guided_order_selections": {},
         "guided_order_defaulted_groups": [],
+        "guided_order_slot_state": {},
+        "guided_order_groups_meta": [],
+        "guided_order_state": None,
+        "guided_order_active_group_id": None,
         "guided_order_quantity": None,
         "last_user_message": None,
         "last_bot_response": None,
@@ -156,6 +164,10 @@ def _ensure_session_shape(session: dict[str, Any]) -> dict[str, Any]:
         session.setdefault("guided_order_required_groups", [])
         session.setdefault("guided_order_optional_groups", [])
         session.setdefault("guided_order_selections", {})
+        session.setdefault("guided_order_slot_state", {})
+        session.setdefault("guided_order_groups_meta", [])
+        session.setdefault("guided_order_state", None)
+        session.setdefault("guided_order_active_group_id", None)
         session.setdefault("last_user_message", None)
         session.setdefault("last_bot_response", None)
         session.setdefault("last_matched_items", None)
@@ -169,6 +181,10 @@ def _ensure_session_shape(session: dict[str, Any]) -> dict[str, Any]:
     session.setdefault("last_visible_choices", [])
     session.setdefault("last_recommendation_items", [])
     session.setdefault("guided_order_defaulted_groups", [])
+    session.setdefault("guided_order_slot_state", {})
+    session.setdefault("guided_order_groups_meta", [])
+    session.setdefault("guided_order_state", None)
+    session.setdefault("guided_order_active_group_id", None)
     session.setdefault("guided_order_quantity", None)
     return session
 
@@ -572,6 +588,46 @@ def set_guided_order_defaulted_groups(session_id: str, groups: list[str]) -> Non
     ]
 
 
+def get_guided_order_slot_state(session_id: str) -> dict:
+    session = get_session(session_id)
+    return dict(session.get("guided_order_slot_state") or {})
+
+
+def set_guided_order_slot_state(session_id: str, slot_state: dict) -> None:
+    session = get_session(session_id)
+    session["guided_order_slot_state"] = dict(slot_state or {})
+
+
+def get_guided_order_groups_meta(session_id: str) -> list:
+    session = get_session(session_id)
+    return list(session.get("guided_order_groups_meta") or [])
+
+
+def set_guided_order_groups_meta(session_id: str, groups_meta: list) -> None:
+    session = get_session(session_id)
+    session["guided_order_groups_meta"] = list(groups_meta or [])
+
+
+def get_guided_order_state(session_id: str) -> str | None:
+    session = get_session(session_id)
+    return session.get("guided_order_state")
+
+
+def set_guided_order_state(session_id: str, state: str | None) -> None:
+    session = get_session(session_id)
+    session["guided_order_state"] = state
+
+
+def get_guided_order_active_group_id(session_id: str) -> str | None:
+    session = get_session(session_id)
+    return session.get("guided_order_active_group_id")
+
+
+def set_guided_order_active_group_id(session_id: str, group_id: str | None) -> None:
+    session = get_session(session_id)
+    session["guided_order_active_group_id"] = group_id
+
+
 def get_guided_order_quantity(session_id: str) -> int | None:
     session = get_session(session_id)
     quantity = session.get("guided_order_quantity")
@@ -594,6 +650,10 @@ def clear_guided_order_session(session_id: str) -> None:
     session["guided_order_optional_groups"] = []
     session["guided_order_selections"] = {}
     session["guided_order_defaulted_groups"] = []
+    session["guided_order_slot_state"] = {}
+    session["guided_order_groups_meta"] = []
+    session["guided_order_state"] = None
+    session["guided_order_active_group_id"] = None
     session["guided_order_quantity"] = None
 
 

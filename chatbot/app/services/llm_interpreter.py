@@ -873,6 +873,10 @@ Rules:
      The category in item_query should be the normalized singular form:
      "salads" → "salad", "coffees" → "coffee", "teas" → "tea",
      "pastries" → "pastry" or "pastries" (keep as-is if unsure).
+     Note: "ingredients", "toppings", "extras", "add-ons" are NOT
+     menu categories — they are variant group names within items.
+     Do NOT classify "what toppings does the labneh have" as
+     list_category_items. Classify it as "describe_item" instead.
    - quantity changes like "make it 3", "change that to 2", "set the latte to 2" -> "update_quantity" (first such pattern note; do not treat as add_items)
    - removals like "take out X", "remove X", "cancel X", "delete X", "i don't want X anymore" -> "remove_item"
    - "remove all X", "delete all X", "take out all X",
@@ -883,6 +887,31 @@ Rules:
 4. Confidence: use >=0.8 when clear, 0.6-0.79 when plausible but uncertain, <0.6 for ambiguity, mixed operations, or unclear references; never force high confidence when unsure.
 5. Quantity defaults: "a couple" -> 2, "a few" -> 3, "some" -> 2; if add_items has no quantity, use 1; put prep or serving requests in "instructions".
 6. Multi-item rules: "A and B" or "A, B" means separate item entries; each item gets its own item_query, quantity, modifiers (flat list of user-language modifiers like 'medium', 'oat milk', 'extra shot'), and notes (free-text instructions like 'less ice', 'no whip').
+6a. Size adjectives before the item name MUST be extracted into modifiers.
+    When the user says "a small latte" or "two large fraps", the size word
+    is a variant option, not part of the item name. Always move it to
+    modifiers and keep item_query as the bare item name:
+      "a small latte"                      → item_query: "latte",          modifiers: ["small"]
+      "two large fraps"                    → item_query: "frap",           modifiers: ["large"]
+      "a small chocolate cream frap"       → item_query: "chocolate cream frap", modifiers: ["small"]
+      "medium iced latte with oat milk"    → item_query: "iced latte",     modifiers: ["medium", "oat milk"]
+    NEVER include the size word in item_query. NEVER leave it out of modifiers.
+    This applies even when a size word is the only adjective before the name.
+6c. Suboptions (intensity/quantity qualifiers on options):
+    Some options have intensity variants like Less, Regular, Extra.
+    When the user specifies both an option and its intensity, include
+    both as a single modifier string:
+      "extra mayo"      → modifiers: ["extra mayo"]
+      "regular bbq"     → modifiers: ["bbq regular"]
+      "less mustard"    → modifiers: ["mustard less"]
+      "mayo extra"      → modifiers: ["mayo extra"]
+    The slot filler will split these into option + suboption pairs.
+    Do NOT create separate item entries for the option and its intensity.
+    Do NOT put the intensity in notes — keep it with the option name
+    in modifiers as a single combined string.
+    If no intensity is specified, just use the option name:
+      "add mayo"        → modifiers: ["mayo"]
+      "with pickles"    → modifiers: ["pickles"]
 6b. Modifying variant options on an item already in the cart
     ("change the milk on my latte to oat", "swap the syrup to caramel",
     "remove the skim milk from my espresso keep full fat",

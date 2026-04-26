@@ -337,15 +337,17 @@ def get_size_upgrade_suggestion(
     Shares the same cooldown as the complementary upsell system so
     both never fire in the same turn.
     """
-    turn = _session_turn_counter.get(session_id, 0)
-    last_shown = _upsell_last_shown.get(session_id, -999)
-    if turn - last_shown < UPSELL_COOLDOWN_TURNS:
-        return None
-
     if not isinstance(menu_detail, dict):
         return None
+    groups = (
+        menu_detail.get("variantGroupDetails")
+        if isinstance(menu_detail.get("variantGroupDetails"), list)
+        else menu_detail.get("variants")
+        if isinstance(menu_detail.get("variants"), list)
+        else []
+    )
     size_group = None
-    for group in (menu_detail.get("variantGroupDetails") or []):
+    for group in groups:
         if isinstance(group, dict) and get_variant_group_key(group) == "size":
             size_group = group
             break
@@ -383,12 +385,19 @@ def get_size_upgrade_suggestion(
     max_delta = float(options[-1]["additionalPrice"]) - float(options[0]["additionalPrice"])
     delta_ratio = price_delta / max_delta if max_delta > 0 else 0.5
 
+    turn = _session_turn_counter.get(session_id, 0)
     base_rate = (
         settings.size_upgrade_repeat_probability
         if is_repeat_customer
         else settings.size_upgrade_base_probability
     )
-    probability = base_rate * (1 - delta_ratio * 0.4)
+    force_upgrade = base_rate >= 1.0
+    if not force_upgrade:
+        last_shown = _upsell_last_shown.get(session_id, -999)
+        if turn - last_shown < UPSELL_COOLDOWN_TURNS:
+            return None
+
+    probability = 1.0 if force_upgrade else base_rate * (1 - delta_ratio * 0.4)
 
     if random.random() >= probability:
         return None
@@ -418,6 +427,7 @@ def get_size_upgrade_suggestion(
 
     return {
         "type": "size_upgrade",
+        "item_name": menu_detail.get("name") or menu_detail.get("item_name"),
         "current_size": options[current_idx]["name"],
         "upgrade_size": upgrade_opt["name"],
         "price_delta": int(price_delta),

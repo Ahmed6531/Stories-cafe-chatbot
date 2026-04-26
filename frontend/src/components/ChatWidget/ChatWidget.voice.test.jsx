@@ -242,6 +242,70 @@ describe('ChatWidget voice routing', () => {
     expect(screen.queryByText(/should stay hidden/i)).not.toBeInTheDocument()
   })
 
+  it('renders size upgrade prompt from metadata and sends update command', async () => {
+    axios.post
+      .mockResolvedValueOnce({
+        data: {
+          session_id: 'session-voice-test',
+          status: 'ok',
+          reply: 'Added 1x Latte (Small) to your cart.',
+          intent: 'add_items',
+          cart_updated: true,
+          cart_id: 'cart-with-latte',
+          suggestions: [],
+          metadata: {
+            size_upgrade: {
+              type: 'size_upgrade',
+              item_name: 'Latte',
+              current_size: 'Small',
+              upgrade_size: 'Medium',
+              price_delta: 50000,
+              message: 'Medium is only L.L 50,000 more. Most people go for it.',
+              menu_item_id: 101,
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          session_id: 'session-voice-test',
+          status: 'ok',
+          reply: 'Updated Latte (Medium).',
+          intent: 'update_item',
+          cart_updated: true,
+          cart_id: 'cart-with-medium-latte',
+          suggestions: [],
+          metadata: {},
+        },
+      })
+
+    renderChatWidget()
+
+    await act(async () => {
+      voiceInputMock.onEvent({ type: 'final', text: 'add one small latte' })
+      vi.advanceTimersByTime(151)
+      await flushPromises()
+    })
+
+    expect(screen.getByText(/Medium is only L\.L 50,000 more/i)).toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Upgrade to Medium/i }))
+      await flushPromises()
+    })
+
+    expect(axios.post).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8000/chat/message',
+      {
+        session_id: 'session-voice-test',
+        message: 'update my Latte to Medium',
+        cart_id: 'cart-with-latte',
+      },
+      { withCredentials: true },
+    )
+  })
+
   it('does not render suggestion chips for category listing replies', async () => {
     axios.post.mockResolvedValueOnce({
       data: {

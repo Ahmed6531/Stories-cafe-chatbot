@@ -260,6 +260,47 @@ async def update_cart_item_quantity(line_id, qty, cart_id):
         return {"cart_id": cart_id, "cart": []}
 
 
+async def update_cart_item(
+    *,
+    line_id: str,
+    qty: int,
+    selected_options: list[dict],
+    instructions: str,
+    cart_id: str | None,
+) -> dict:
+    """
+    PATCH /cart/items/:lineId -- in-place update of a cart line.
+    Replaces qty, selectedOptions, and instructions on the line.
+    Returns the updated cart dict with cart_id and cart keys.
+    """
+    try:
+        client = ExpressHttpClient()
+        headers = {"x-cart-id": cart_id} if cart_id else {}
+        payload = {
+            "qty": qty,
+            "selectedOptions": selected_options or [],
+            "instructions": instructions or "",
+        }
+
+        logger.info({
+            "service": "express",
+            "method": "PATCH",
+            "path": f"/cart/items/{line_id}",
+            "cart_id": cart_id,
+        })
+
+        data, resp_headers = await client.patch(
+            f"/cart/items/{line_id}",
+            json=payload,
+            headers=headers,
+        )
+        resolved_cart_id = resp_headers.get("x-cart-id") or cart_id or (data.get("cartId") if isinstance(data, dict) else None)
+        cart_items = data.get("items", []) if isinstance(data, dict) else []
+        return {"cart_id": resolved_cart_id, "cart": [item for item in cart_items if isinstance(item, dict)]}
+    except ExpressAPIError:
+        return {"cart_id": cart_id, "cart": []}
+
+
 async def remove_item_from_cart(line_id, cart_id):
     try:
         client = ExpressHttpClient()

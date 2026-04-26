@@ -518,36 +518,44 @@ async def _execute_update_quantity(op: CompiledOperation, ctx: ExecutionContext)
 async def _execute_update_item(op: CompiledOperation, ctx: ExecutionContext) -> OpExecutionOutcome:
     # Phase 5: move tool imports to a shared module.
     from app.services.http_client import ExpressAPIError
-    from app.services.tools import add_item_to_cart, remove_item_from_cart
+    from app.services.tools import update_cart_item
 
     cart_line_id = op.cart_line_id
     if not op.lines or cart_line_id is None:
-        if cart_line_id is None:
-            from app.services.tools import get_cart
-            cart_result = await get_cart(cart_id=ctx.cart_id)
-            cart_items = cart_result.get("cart") or []
-            if not cart_items:
-                return OpExecutionOutcome(
-                    reply_fragment="Your cart is empty — nothing to update.",
-                    failed=True,
-                )
-        return OpExecutionOutcome(reply_fragment="Couldn't update that item right now.", failed=True)
-
+        return OpExecutionOutcome(
+            reply_fragment="Couldn't update that item right now.",
+            failed=True,
+        )
     line = op.lines[0]
     item_name = (op.source_parsed.items[0].item_query if op.source_parsed and op.source_parsed.items else "item")
     try:
-        removed = await remove_item_from_cart(line_id=cart_line_id, cart_id=ctx.cart_id)
         wire = line.to_wire_payload()
-        result = await add_item_to_cart(
-            menu_item_id=wire["menuItemId"],
+        result = await update_cart_item(
+            line_id=cart_line_id,
             qty=wire["qty"],
             selected_options=wire["selectedOptions"],
             instructions=wire["instructions"],
-            cart_id=removed["cart_id"],
+            cart_id=ctx.cart_id,
         )
         ctx.cart_id = result["cart_id"]
         ctx.cart_updated = True
-        return OpExecutionOutcome(reply_fragment=f"Updated {item_name}.", cart_updated=True)
+
+        opts = wire.get("selectedOptions") or []
+        full_labels = []
+        for option in opts:
+            if not isinstance(option, dict) or not option.get("optionName"):
+                continue
+            label = str(option["optionName"]).strip()
+            suboption = str(option.get("suboptionName") or "").strip()
+            if suboption:
+                label = f"{suboption} {label}"
+            full_labels.append(label)
+
+        suffix = f" ({', '.join(full_labels)})" if full_labels else ""
+        return OpExecutionOutcome(
+            reply_fragment=f"Updated {item_name}{suffix}.",
+            cart_updated=True,
+        )
     except ExpressAPIError as err:
         from app.services.orchestrator import is_out_of_stock_error
         if is_out_of_stock_error(err):
@@ -583,7 +591,7 @@ def _fmt_price(price) -> str:
 
 async def _execute_checkout(op: CompiledOperation, ctx: ExecutionContext) -> OpExecutionOutcome:
     # Phase 5: move orchestrator helpers to a shared module.
-    from app.services.orchestrator import build_cart_summary, _build_bill
+    from app.services.orchestrator import _build_bill
     from app.services.tools import get_cart
     from app.services.session_store import set_checkout_initiated
 
@@ -594,9 +602,8 @@ async def _execute_checkout(op: CompiledOperation, ctx: ExecutionContext) -> OpE
     _build_bill(result["cart"])
     set_session_stage(ctx.session_id, "checkout_summary")
     set_checkout_initiated(ctx.session_id, True)
-    summary = build_cart_summary(result["cart"])
     return OpExecutionOutcome(
-        reply_fragment=f"Ready to checkout? Here's your order summary.\n\n{summary}" if summary else "Ready to checkout?",
+        reply_fragment="Ready to checkout? Here's your order summary.",
     )
 
 
@@ -657,6 +664,7 @@ async def _execute_list_category_items(op: CompiledOperation, ctx: ExecutionCont
     # Phase 5: move fetch_menu_items to a shared module.
     from app.services.tools import fetch_menu_items
     from app.services.session_store import set_last_visible_choices
+    from app.services.menu_utils import category_name_from_item, filter_menu_items_by_category_query
 
     category_query = ""
     if op.source_parsed and op.source_parsed.items:
@@ -671,24 +679,9 @@ async def _execute_list_category_items(op: CompiledOperation, ctx: ExecutionCont
     except Exception:
         return OpExecutionOutcome(reply_fragment="I couldn't load the menu right now.")
 
-    matched = []
-    for item in all_items:
-        if not isinstance(item, dict) or not item.get("isAvailable", True):
-            continue
-        category = item.get("category")
-        category_name = (
-            category.get("name")
-            if isinstance(category, dict)
-            else str(category or "")
-        )
-        if category_query in str(category_name).lower():
-            matched.append(item)
+    matched = filter_menu_items_by_category_query(all_items, category_query)
     if matched:
-        cat_label = (
-            matched[0].get("category", {}).get("name", category_query.title())
-            if isinstance(matched[0].get("category"), dict)
-            else category_query.title()
-        )
+        cat_label = category_name_from_item(matched[0]) or category_query.title()
         lines = [
             f"- {item['name']}  ({_fmt_price(item.get('basePrice'))})"
             for item in matched[:12]
@@ -841,61 +834,95 @@ async def _setup_guided_ordering(
     Set up the guided-ordering session from a CompileNeedsClarification.
     Returns the guided-ordering prompt text.
     """
-    # Phase 5: move orchestrator helpers to a shared module.
-    from app.services.orchestrator import build_guided_order_groups, build_guided_order_prompt, build_optional_review_prompt
+    from app.services.slot_filler import (
+        build_group_prompt,
+        build_open_customization_prompt,
+        fill_slots_from_text,
+        get_empty_required_groups,
+        init_slot_state,
+    )
+    from app.services.session_store import (
+        set_guided_order_active_group_id,
+        set_guided_order_groups_meta,
+        set_guided_order_slot_state,
+        set_guided_order_state,
+    )
     from app.services.tools import fetch_menu_item_detail
 
     matched_item = clarification.matched_menu_item or {}
     source_item = clarification.source_item
-
     menu_item_id = matched_item.get("id") or matched_item.get("_id")
-    item_name = matched_item.get("name") or (source_item.item_query if source_item else "your item")
+    item_name = (
+        matched_item.get("name")
+        or (source_item.item_query if source_item else "your item")
+    )
     quantity = int(source_item.quantity or 1) if source_item else 1
 
-    # Fetch full menu detail to get both required and optional groups.
-    menu_detail = None
-    if menu_item_id is not None:
-        if (
-            isinstance(matched_item.get("variantGroupDetails"), list)
-            or isinstance(matched_item.get("variants"), list)
-        ):
-            menu_detail = matched_item
-        else:
-            menu_detail = await fetch_menu_item_detail(menu_item_id)
+    # Fetch full menu detail for groups_meta.
+    if (
+        isinstance(matched_item.get("variantGroupDetails"), list)
+        or isinstance(matched_item.get("variants"), list)
+    ):
+        menu_detail = matched_item
+    else:
+        menu_detail = await fetch_menu_item_detail(menu_item_id)
 
-    required_groups, optional_groups = build_guided_order_groups(menu_detail)
+    groups_meta = []
+    if isinstance(menu_detail, dict):
+        groups_meta = (
+            menu_detail.get("variantGroupDetails")
+            or menu_detail.get("variants")
+            or []
+        )
+    groups_meta = [
+        {**group, "isActive": group.get("isActive", True)}
+        if isinstance(group, dict)
+        else group
+        for group in groups_meta
+    ]
 
-    from app.services.orchestrator import guided_group_name
-    from app.services.menu_utils import get_variant_group_id
+    # Initialize slot state.
+    slot_state = init_slot_state(groups_meta)
 
-    # Pre-populate selections from already-specified modifiers so guided ordering
-    # only asks for groups that are actually missing.
-    pre_selections: dict = {}
-    pre_satisfied_group_names: set[str] = set()
+    # Pre-fill from source_item modifiers — process each separately so that
+    # ["Small", "Caramel Drizzle"] doesn't collapse into "Small Caramel Drizzle",
+    # which would cause _find_best_option to match only the highest-specificity
+    # token and drop the rest (including same-group multi-selects like ["Mint", "Rocca"]).
+    if source_item and source_item.modifiers:
+        applied: list[str] = []
+        unmatched: list[str] = []
+        for _modifier in source_item.modifiers:
+            _cleaned = str(_modifier or "").strip()
+            if not _cleaned:
+                continue
+            slot_state, _mod_applied, _mod_unmatched = fill_slots_from_text(
+                _cleaned, groups_meta, slot_state
+            )
+            applied.extend(_mod_applied)
+            unmatched.extend(_mod_unmatched)
+        if applied:
+            logger.info({
+                "stage": "guided_ordering_prefill",
+                "session_id": ctx.session_id,
+                "item_name": item_name,
+                "applied": applied,
+                "unmatched": unmatched,
+            })
 
-    if source_item and source_item.modifiers and menu_detail:
-        from app.services.compiler import _resolve_modifiers_against_menu
+    # Store in session.
+    set_guided_order_slot_state(ctx.session_id, slot_state)
+    set_guided_order_groups_meta(ctx.session_id, groups_meta)
+    set_guided_order_item_id(ctx.session_id, menu_item_id)
+    set_guided_order_item_name(ctx.session_id, item_name)
+    set_guided_order_quantity(ctx.session_id, quantity)
+    set_session_stage(ctx.session_id, "guided_ordering")
 
-        pre_resolved_options, _, _ = _resolve_modifiers_against_menu(source_item, menu_detail)
-        satisfied_group_ids: set[str] = {
-            str(opt.group_id or "")
-            for opt in pre_resolved_options
-            if opt.group_id
-        }
-        for group in required_groups:
-            group_id = get_variant_group_id(group) or ""
-            if group_id and group_id in satisfied_group_ids:
-                for opt in pre_resolved_options:
-                    if str(opt.group_id or "") == group_id:
-                        group_name = guided_group_name(group)
-                        if group_name:
-                            pre_selections[group_name] = opt.option_name
-                            pre_satisfied_group_names.add(group_name)
-                        break
-
-    # Persist remaining compiled ops so the guided-ordering completion can drain them.
+    # Persist remaining ops for drain after guided ordering completes.
     if remaining_ops:
-        set_pending_operations(ctx.session_id, [op.model_dump() for op in remaining_ops])
+        set_pending_operations(
+            ctx.session_id,
+            [op.model_dump() for op in remaining_ops],
+        )
         logger.info({
             "stage": "guided_ordering_pending_ops_queued",
             "session_id": ctx.session_id,
@@ -914,40 +941,18 @@ async def _setup_guided_ordering(
             ],
         })
 
-    set_guided_order_item_id(ctx.session_id, menu_item_id)
-    set_guided_order_item_name(ctx.session_id, item_name)
-    set_guided_order_quantity(ctx.session_id, quantity)
-    set_guided_order_required_groups(ctx.session_id, required_groups)
-    set_guided_order_optional_groups(ctx.session_id, optional_groups)
-    set_guided_order_selections(ctx.session_id, pre_selections)
-    set_guided_order_step(ctx.session_id, 0)
-    set_session_stage(ctx.session_id, "guided_ordering")
-
-    unsatisfied_required = [
-        g for g in required_groups
-        if guided_group_name(g) not in pre_satisfied_group_names
-    ]
-
-    if unsatisfied_required:
-        set_guided_order_phase(ctx.session_id, 1)
-        set_guided_order_groups(ctx.session_id, required_groups)
-        first_unsatisfied_step = next(
-            (i for i, g in enumerate(required_groups)
-             if guided_group_name(g) not in pre_satisfied_group_names),
-            0,
+    # Determine first prompt.
+    empty_required = get_empty_required_groups(slot_state, groups_meta)
+    if empty_required:
+        set_guided_order_state(ctx.session_id, "required")
+        set_guided_order_active_group_id(
+            ctx.session_id, empty_required[0].get("groupId")
         )
-        set_guided_order_step(ctx.session_id, first_unsatisfied_step)
-        first_group = required_groups[first_unsatisfied_step]
-        return build_guided_order_prompt(item_name, first_group, include_item_name=True, allow_skip=False)
-    elif len(optional_groups) == 1:
-        set_guided_order_phase(ctx.session_id, 3)
-        set_guided_order_groups(ctx.session_id, optional_groups)
-        first_group = optional_groups[0]
-        return build_guided_order_prompt(item_name, first_group, include_item_name=True, allow_skip=True)
+        return build_group_prompt(item_name, empty_required[0], is_first=True)
     else:
-        set_guided_order_phase(ctx.session_id, 2)
-        set_guided_order_groups(ctx.session_id, optional_groups)
-        return build_optional_review_prompt(item_name, pre_selections, optional_groups)
+        set_guided_order_state(ctx.session_id, "open")
+        set_guided_order_active_group_id(ctx.session_id, None)
+        return build_open_customization_prompt(item_name, slot_state, groups_meta)
 
 
 def _requeue_guided_clarification(

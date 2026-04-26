@@ -39,7 +39,7 @@ ADDON_CANDIDATES = {
     "extra bag": ["extra bag"],
 }
 
-GUIDED_SKIP_WORDS = frozenset({"none", "skip", "nothing", "no"})
+GUIDED_SKIP_WORDS = frozenset({"none", "noen", "skip", "nothing", "no"})
 TOKEN_EQUIVALENTS = {
     "not": "no",
     "without": "no",
@@ -68,6 +68,61 @@ def normalize_modifier_text(value: str | None) -> str:
 
     normalized = re.sub(r"[^a-z0-9\s]+", " ", str(value).lower())
     return " ".join(normalized.split())
+
+
+def category_name_from_item(item: dict | None) -> str:
+    if not isinstance(item, dict):
+        return ""
+    category = item.get("category")
+    if isinstance(category, dict):
+        return str(category.get("name") or "").strip()
+    return str(category or "").strip()
+
+
+def _category_variants(value: str | None) -> set[str]:
+    normalized = normalize_modifier_text(value)
+    if not normalized:
+        return set()
+
+    variants = {normalized}
+    words = normalized.split()
+    if len(words) > 1:
+        variants.update(words)
+
+    for term in list(variants):
+        if term.endswith("ies") and len(term) > 3:
+            variants.add(f"{term[:-3]}y")
+        elif term.endswith("y") and len(term) > 1:
+            variants.add(f"{term[:-1]}ies")
+
+        if term.endswith("s") and len(term) > 1:
+            variants.add(term[:-1])
+        else:
+            variants.add(f"{term}s")
+
+    return {variant for variant in variants if variant}
+
+
+def category_matches_query(category_query: str | None, category_name: str | None) -> bool:
+    query_norm = normalize_modifier_text(category_query)
+    category_norm = normalize_modifier_text(category_name)
+    if not query_norm or not category_norm:
+        return False
+
+    if query_norm in category_norm or category_norm in query_norm:
+        return True
+
+    return bool(_category_variants(query_norm) & _category_variants(category_norm))
+
+
+def filter_menu_items_by_category_query(menu_items: list[dict], category_query: str | None) -> list[dict]:
+    return [
+        item
+        for item in menu_items or []
+        if isinstance(item, dict)
+        and item.get("isAvailable", True)
+        and category_matches_query(category_query, category_name_from_item(item))
+    ]
 
 
 def is_guided_skip_response(value: str | None) -> bool:

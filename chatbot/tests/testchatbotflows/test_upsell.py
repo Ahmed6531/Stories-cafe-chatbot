@@ -27,6 +27,7 @@ from app.services.upsell import (
     record_turn,
     suggest_upsell_items,
     get_upsell_suggestions,
+    get_size_upgrade_suggestion,
     _upsell_last_shown,
     _session_turn_counter,
     UPSELL_COOLDOWN_TURNS,
@@ -285,6 +286,41 @@ class TestGetUpsellSuggestions(unittest.IsolatedAsyncioTestCase):
                 "s-g3", "add_items", cart, fake_menu_items()
             )
         self.assertEqual(results, [])
+
+
+class TestSizeUpgradeSuggestion(unittest.TestCase):
+    def setUp(self):
+        _flush_upsell_state()
+
+    def test_uses_variants_fallback_from_menu_detail(self):
+        menu_detail = {
+            "id": "latte-1",
+            "name": "Latte",
+            "variants": [
+                {
+                    "name": "Choose Size",
+                    "isActive": True,
+                    "options": [
+                        {"name": "Small", "additionalPrice": 0, "isActive": True},
+                        {"name": "Medium", "additionalPrice": 50000, "isActive": True},
+                    ],
+                }
+            ],
+        }
+
+        with patch.object(upsell_module.settings, "size_upgrade_base_probability", 1.0):
+            suggestion = get_size_upgrade_suggestion(
+                "size-session",
+                menu_detail,
+                ["Small", "Skim Milk"],
+                is_repeat_customer=False,
+            )
+
+        self.assertIsNotNone(suggestion)
+        self.assertEqual(suggestion["item_name"], "Latte")
+        self.assertEqual(suggestion["current_size"], "Small")
+        self.assertEqual(suggestion["upgrade_size"], "Medium")
+        self.assertEqual(suggestion["price_delta"], 50000)
 
 
 if __name__ == "__main__":
