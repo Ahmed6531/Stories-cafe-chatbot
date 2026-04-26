@@ -925,15 +925,22 @@ Rules:
 
     For update_item, populate the items array with:
     - item_query: the cart item being modified
-    - quantity: null (do not set quantity for update_item)
-    - modifiers: new option values to apply
-    - notes: free-text changes like "remove the skim milk", "no sugar",
-      "no whip", "without vanilla"
+    - quantity: set only when changing quantity simultaneously (e.g. "make
+      my latte 2 and change the milk to oat"); null otherwise
+    - modifiers: the NEW option values to apply — use the bare value only,
+      NOT the full phrase. Examples:
+        "change milk to oat milk"      → modifiers: ["oat milk"]
+        "make it medium"               → modifiers: ["medium"]
+        "swap syrup to caramel drizzle and add a shot" → modifiers: ["caramel drizzle", "shot"]
+      Never put positive changes like "change X to Y" or "make it X" in modifiers;
+      extract only the target value.
+    - notes: ONLY removal/negation instructions, e.g. "no sugar", "no whip",
+      "without vanilla", "remove skim milk". Do NOT put positive option
+      changes in notes.
 
-    The execution layer will merge these changes with the item's
-    current cart options. Null fields mean "keep existing value".
-    Non-null fields mean "replace with this value".
-    Notes are used to strip specific options by name.
+    The execution layer merges modifiers with the item's existing cart
+    options (replacing the same variant group) and appends negation notes
+    as barista instructions.
 7. Use "unknown" for purely conversational, off-topic, or genuinely unclear messages. Do not guess.
 8. If the user says "default", "whatever", "surprise me", "your choice",
    "just the default", "no preference", or similar for a specific item -

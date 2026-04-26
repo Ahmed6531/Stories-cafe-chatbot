@@ -593,7 +593,22 @@ class TestRepeatLastOrderFlow(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         _flush_sessions()
 
-    async def test_repeat_last_order_fetches_orders(self):
+    async def test_repeat_last_order_requires_login(self):
+        session = fake_session("s-rep-login")
+        session_store.sessions["s-rep-login"] = session
+
+        with patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response("repeat_order"))):
+            response = await process_chat_message(
+                session_id="s-rep-login",
+                message="repeat my last order",
+                cart_id=None,
+                session=session,
+            )
+
+        self.assertEqual(response.intent, "repeat_order")
+        self.assertEqual(response.metadata["pipeline_stage"], "repeat_order_requires_login")
+
+    async def test_repeat_last_order_lists_history_and_waits_for_confirmation(self):
         session = fake_session("s-rep")
         session_store.sessions["s-rep"] = session
 
@@ -604,7 +619,7 @@ class TestRepeatLastOrderFlow(unittest.IsolatedAsyncioTestCase):
                     "menuItemId": "item-latte",
                     "name": "Latte",
                     "qty": 1,
-                    "selectedOptions": [{"name": "Medium"}],
+                    "selectedOptions": [{"optionName": "Medium"}],
                 }
             ],
         }
@@ -612,20 +627,109 @@ class TestRepeatLastOrderFlow(unittest.IsolatedAsyncioTestCase):
         with (
             patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response("repeat_order"))),
             patch(ORDERS_TARGET, new=AsyncMock(return_value=[past_order])),
-            patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
-            patch(MENU_DETAIL_TARGET, new=AsyncMock(return_value=fake_menu_item_detail_no_variants("Latte"))),
-            patch(ADD_CART_TARGET, new=AsyncMock(return_value=fake_cart_with_latte())),
-            patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
+            patch(ADD_CART_TARGET, new=AsyncMock(return_value=fake_cart_with_latte())) as add_cart,
         ):
             response = await process_chat_message(
                 session_id="s-rep",
                 message="repeat my last order",
                 cart_id=None,
                 session=session,
+                auth_cookie="token=abc",
             )
 
-        self.assertIn(response.intent, {"repeat_order", "repeat_last_order", "add_items", "unknown"})
-        self.assertIsInstance(response.reply, str)
+        self.assertEqual(response.intent, "repeat_order")
+        self.assertEqual(response.metadata["pipeline_stage"], "repeat_order_confirmation")
+        self.assertIn("1x Latte (Medium)", response.reply)
+        self.assertEqual(session_store.get_session_stage("s-rep"), "repeat_order_confirmation")
+        add_cart.assert_not_called()
+
+    async def test_repeat_last_order_confirm_yes_direct_adds_stored_lines(self):
+        session = fake_session("s-rep-yes")
+        session_store.sessions["s-rep-yes"] = session
+        session_store.set_session_stage("s-rep-yes", "repeat_order_confirmation")
+        session_store.set_pending_operations_context(
+            "s-rep-yes",
+            {
+                "repeat_order_lines": [
+                    {
+                        "menuItemId": "item-latte",
+                        "name": "Latte",
+                        "qty": 2,
+                        "selectedOptions": [{"optionName": "Medium"}],
+                        "instructions": "less ice",
+                    }
+                ],
+                "repeat_order_summary": "- 2x Latte (Medium; less ice)",
+            },
+        )
+
+        add_cart_mock = AsyncMock(return_value={"cart_id": "cart-new", "cart": []})
+        with patch(ADD_CART_TARGET, new=add_cart_mock):
+            response = await process_chat_message(
+                session_id="s-rep-yes",
+                message="yes",
+                cart_id="cart-old",
+                session=session,
+            )
+
+        self.assertEqual(response.metadata["pipeline_stage"], "repeat_order_done")
+        self.assertTrue(response.cart_updated)
+        self.assertEqual(response.cart_id, "cart-new")
+        add_cart_mock.assert_awaited_once_with(
+            menu_item_id="item-latte",
+            qty=2,
+            selected_options=[{"optionName": "Medium"}],
+            instructions="less ice",
+            cart_id="cart-old",
+        )
+
+    async def test_repeat_last_order_unclear_reasks(self):
+        session = fake_session("s-rep-unclear")
+        session_store.sessions["s-rep-unclear"] = session
+        session_store.set_session_stage("s-rep-unclear", "repeat_order_confirmation")
+        session_store.set_pending_operations_context(
+            "s-rep-unclear",
+            {
+                "repeat_order_lines": [
+                    {"menuItemId": "item-latte", "name": "Latte", "qty": 1, "selectedOptions": [], "instructions": ""}
+                ],
+                "repeat_order_summary": "- 1x Latte",
+            },
+        )
+
+        response = await process_chat_message(
+            session_id="s-rep-unclear",
+            message="maybe later",
+            cart_id=None,
+            session=session,
+        )
+
+        self.assertEqual(response.metadata["pipeline_stage"], "repeat_order_confirmation_unclear")
+        self.assertEqual(session_store.get_session_stage("s-rep-unclear"), "repeat_order_confirmation")
+
+    async def test_repeat_last_order_no_cancels(self):
+        session = fake_session("s-rep-no")
+        session_store.sessions["s-rep-no"] = session
+        session_store.set_session_stage("s-rep-no", "repeat_order_confirmation")
+        session_store.set_pending_operations_context(
+            "s-rep-no",
+            {
+                "repeat_order_lines": [
+                    {"menuItemId": "item-latte", "name": "Latte", "qty": 1, "selectedOptions": [], "instructions": ""}
+                ],
+                "repeat_order_summary": "- 1x Latte",
+            },
+        )
+
+        response = await process_chat_message(
+            session_id="s-rep-no",
+            message="nevermind",
+            cart_id=None,
+            session=session,
+        )
+
+        self.assertEqual(response.metadata["pipeline_stage"], "repeat_order_confirmation_cancelled")
+        self.assertIsNone(session_store.get_session_stage("s-rep-no"))
 
 
 if __name__ == "__main__":

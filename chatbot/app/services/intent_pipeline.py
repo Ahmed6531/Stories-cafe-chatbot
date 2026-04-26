@@ -191,6 +191,59 @@ def _visible_choice_for_ordinal(normalized_message: str, session: dict) -> dict 
     return choice if isinstance(choice, dict) else None
 
 
+def _ordinal_add_modifiers_from_message(normalized_message: str) -> list[str]:
+    text = re.sub(
+        r"^(add|get|give me|i want|i would like|can i have)\s+",
+        "",
+        normalized_message,
+    ).strip()
+    text = re.sub(
+        r"\b(the\s+)?(first|second|third|fourth|last)\s+one\b|\bnumber\s+(one|two|three|four)\b|\b[1-4](st|nd|rd|th)?\b",
+        " ",
+        text,
+    )
+    text = re.sub(r"^(with|and|plus)\s+", "", " ".join(text.split())).strip()
+    if not text:
+        return []
+
+    fragments: list[str] = []
+    remaining = text
+
+    for intensity in ("extra", "regular", "less", "light", "normal"):
+        pattern = re.compile(rf"\b{intensity}\s+[a-z0-9]+\b")
+        for match in pattern.finditer(text):
+            fragment = match.group(0).strip()
+            if fragment and fragment not in fragments:
+                fragments.append(fragment)
+                remaining = remaining.replace(fragment, " ")
+
+    phrase_candidates = (
+        "white bread", "brown bread", "cherry tomatoes", "tomatoes", "tomato",
+        "cheddar cheese", "beef ham", "roast beef", "chicken teriyaki",
+        "honey mustard", "bbq", "mayo", "mustard", "pepper", "salt",
+        "rocca", "mint", "onion", "jalapeno", "lettuce", "olives",
+        "pickles", "tuna",
+    )
+    for candidate in phrase_candidates:
+        if re.search(rf"(?<!\w){re.escape(candidate)}(?!\w)", remaining):
+            fragments.append(candidate)
+            remaining = re.sub(rf"(?<!\w){re.escape(candidate)}(?!\w)", " ", remaining)
+
+    for fragment in re.split(r"\s+and\s+|,", remaining):
+        cleaned = fragment.strip()
+        if cleaned and cleaned not in {"with", "and", "plus"}:
+            fragments.append(cleaned)
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for fragment in fragments:
+        normalized = " ".join(fragment.split())
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            unique.append(normalized)
+    return unique
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Layer 2 — Regex patterns for menu-data queries
 # These are deterministic but require extraction, so separate from the frozen sets.
@@ -236,6 +289,18 @@ _RE_PRICE = re.compile(
     r"^(?:how\s+much\s+(?:is|does|for)\s+(?:the\s+|a\s+|an\s+)?|"
     r"(?:what(?:'s|\s+is)\s+the\s+)?price\s+(?:of|for)\s+(?:the\s+|a\s+)?|"
     r"cost\s+of\s+(?:the\s+|a\s+)?)(.+?)(?:\s*\?)?$"
+)
+
+_RE_UPDATE_ITEM_TO_OPTION = re.compile(
+    r"^(?:update|change|modify|edit|set|switch|swap)\s+"
+    r"(?:the\s+|my\s+)?(.+?)\s+"
+    r"(?:to|with|have|having)\s+(.+?)(?:\s+instead)?$"
+)
+
+_RE_MAKE_ITEM_OPTION = re.compile(
+    r"^make\s+(?:the\s+|my\s+)?(.+?)\s+"
+    r"((?:small|medium|large|warmed|not warmed|extra\s+\w+|regular\s+\w+|less\s+\w+).+?|\w+)"
+    r"(?:\s+instead)?$"
 )
 
 _RE_CORRECTION = re.compile(
@@ -354,6 +419,11 @@ async def _layer2_deterministic(
             item_name = str(visible_choice.get("item_name") or visible_choice.get("label") or "").strip()
             if item_name:
                 ordinal_intent = "describe_item" if re.search(r"\b(what|tell|describe|details?|about)\b", normalized) else "add_items"
+                ordinal_modifiers = (
+                    _ordinal_add_modifiers_from_message(normalized)
+                    if ordinal_intent == "add_items"
+                    else []
+                )
                 return _make_resolved(
                     intent=ordinal_intent,
                     confidence=1.0,
@@ -361,7 +431,7 @@ async def _layer2_deterministic(
                         "item_name": item_name,
                         "item_query": item_name,
                         "quantity": 1 if ordinal_intent == "add_items" else None,
-                        "modifiers": [],
+                        "modifiers": ordinal_modifiers,
                         "notes": [],
                         "follow_up_ref": None,
                         "use_defaults": False,
@@ -424,6 +494,34 @@ async def _layer2_deterministic(
                 source="deterministic",
                 reason="deterministic_match:price_query",
                 items=[{"item_name": item_name}],
+            )
+
+    update_match = _RE_UPDATE_ITEM_TO_OPTION.match(normalized) or _RE_MAKE_ITEM_OPTION.match(normalized)
+    if update_match:
+        item_name = (update_match.group(1) or "").strip()
+        modifier = (update_match.group(2) or "").strip()
+        if (
+            item_name
+            and modifier
+            and _extract_explicit_quantity(modifier) is None
+            and item_name not in {"it", "that", "that one", "this"}
+        ):
+            return _make_resolved(
+                intent="update_item",
+                confidence=1.0,
+                items=[{
+                    "item_name": item_name,
+                    "item_query": item_name,
+                    "quantity": None,
+                    "modifiers": [modifier],
+                    "notes": [],
+                    "follow_up_ref": None,
+                    "use_defaults": False,
+                }],
+                needs_clarification=False,
+                reason="deterministic_match:update_item_option",
+                source="deterministic",
+                route_to_fallback=False,
             )
 
     correction_normalized = re.sub(r"[^a-z0-9\s]+", " ", normalized.lower())
@@ -635,11 +733,22 @@ def _layer4_resolve(
     if visible_choice and result["intent"] in {"add_items", "describe_item"}:
         item_name = str(visible_choice.get("item_name") or visible_choice.get("label") or "").strip()
         if item_name:
+            existing_item = result["items"][0] if result["items"] and isinstance(result["items"][0], dict) else {}
+            existing_modifiers = [
+                str(modifier).strip()
+                for modifier in (existing_item.get("modifiers") or [])
+                if str(modifier).strip()
+            ]
+            ordinal_modifiers = existing_modifiers or (
+                _ordinal_add_modifiers_from_message(normalized_message)
+                if result["intent"] == "add_items"
+                else []
+            )
             result["items"] = [{
                 "item_name": item_name,
                 "item_query": item_name,
                 "quantity": 1 if result["intent"] == "add_items" else None,
-                "modifiers": [],
+                "modifiers": ordinal_modifiers,
                 "notes": [],
                 "follow_up_ref": None,
                 "use_defaults": False,

@@ -699,6 +699,5 @@ def reset_conversation_session(session_id: str) -> None:
     session["last_action_data"] = None
     session["last_visible_choices"] = []
     session["last_recommendation_items"] = []
-    session.pop("last_checked_out_items", None)
     clear_guided_order_session(session_id)
     clear_pending_operations(session_id)

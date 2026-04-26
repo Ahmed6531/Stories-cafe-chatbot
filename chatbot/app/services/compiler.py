@@ -685,7 +685,19 @@ async def _compile_update_item_operation(
     if menu_item_id is None:
         return CompileFailure(reason="menu_item_id_missing", source_item=resolved_item)
 
-    menu_detail = await _get_menu_detail(matched_cart_item, menu_item_id, menu_items)
+    # Cart items have no variantGroupDetails — never use matched_cart_item as the
+    # menu detail source. Prefer a pre-loaded item from menu_items that already
+    # carries full details; fall back to a live fetch otherwise.
+    menu_detail: dict | None = None
+    for _mi in menu_items or []:
+        if not isinstance(_mi, dict):
+            continue
+        if _coerce_menu_item_id(_mi.get("id") or _mi.get("_id")) == menu_item_id:
+            if isinstance(_mi.get("variantGroupDetails"), list) or isinstance(_mi.get("variants"), list):
+                menu_detail = _mi
+            break
+    if menu_detail is None:
+        menu_detail = await tools_service.fetch_menu_item_detail(menu_item_id)
 
     from app.services.slot_filler import reconstruct_slot_state_from_cart
 
@@ -711,12 +723,17 @@ async def _compile_update_item_operation(
     existing_instructions = str(
         matched_cart_item.get("instructions") or ""
     ).strip()
+    _negation_prefixes = ("remove ", "no ", "without ", "take out ", "skip ")
+    _unmatched_normalized = {normalize_modifier_text(u) for u in unmatched}
     new_instructions = "; ".join(
-        str(note) for note in resolved_item.notes
+        str(note).strip()
+        for note in resolved_item.notes
         if str(note).strip()
-        and not any(
-            str(note).strip().lower().startswith(prefix)
-            for prefix in ("remove ", "no ", "without ", "take out ")
+        and (
+            # Always keep negation/removal notes — barista needs to see them
+            any(normalize_modifier_text(str(note).strip()).startswith(p) for p in _negation_prefixes)
+            # Keep positive notes only if they weren't matched by the slot filler
+            or normalize_modifier_text(str(note).strip()) in _unmatched_normalized
         )
     )
     if new_instructions and existing_instructions:
@@ -732,7 +749,7 @@ async def _compile_update_item_operation(
             lines=[
                 CompiledCartLine(
                     menuItemId=menu_item_id,
-                    qty=int(matched_cart_item.get("qty") or 1),
+                    qty=int(resolved_item.quantity or matched_cart_item.get("qty") or 1),
                     selectedOptions=selected_options,
                     instructions=instructions,
                     unmatched_modifiers=unmatched,

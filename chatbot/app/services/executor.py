@@ -137,7 +137,15 @@ async def _execute_add_line(
         ctx.cart_id = result["cart_id"]
         ctx.cart_updated = True
         opts = wire.get("selectedOptions") or []
-        opt_labels = [str(o.get("optionName") or "").strip() for o in opts if isinstance(o, dict) and o.get("optionName")]
+        opt_labels = []
+        for option in opts:
+            if not isinstance(option, dict) or not option.get("optionName"):
+                continue
+            label = str(option.get("optionName") or "").strip()
+            suboption = str(option.get("suboptionName") or "").strip()
+            if suboption:
+                label = f"{suboption} {label}"
+            opt_labels.append(label)
         suffix = f" ({', '.join(opt_labels)})" if opt_labels else ""
         qty = wire["qty"]
         qty_prefix = f"{qty}x " if qty > 1 else ""
@@ -155,10 +163,7 @@ async def _execute_add_line(
                     if isinstance(o, dict)
                 ]
                 _sess = get_session(ctx.session_id) or {}
-                _is_repeat = bool(
-                    _sess.get("last_checked_out_items")
-                    or _sess.get("checkout_initiated")
-                )
+                _is_repeat = bool(_sess.get("checkout_initiated"))
                 size_upgrade = get_size_upgrade_suggestion(
                     ctx.session_id,
                     _detail,
@@ -518,7 +523,7 @@ async def _execute_update_quantity(op: CompiledOperation, ctx: ExecutionContext)
 async def _execute_update_item(op: CompiledOperation, ctx: ExecutionContext) -> OpExecutionOutcome:
     # Phase 5: move tool imports to a shared module.
     from app.services.http_client import ExpressAPIError
-    from app.services.tools import update_cart_item
+    from app.services.tools import get_cart, update_cart_item
 
     cart_line_id = op.cart_line_id
     if not op.lines or cart_line_id is None:
@@ -530,9 +535,20 @@ async def _execute_update_item(op: CompiledOperation, ctx: ExecutionContext) -> 
     item_name = (op.source_parsed.items[0].item_query if op.source_parsed and op.source_parsed.items else "item")
     try:
         wire = line.to_wire_payload()
+        current_qty = wire["qty"]
+        try:
+            cart_result = await get_cart(cart_id=ctx.cart_id)
+            for cart_item in cart_result.get("cart") or []:
+                if not isinstance(cart_item, dict):
+                    continue
+                if str(cart_item.get("lineId") or cart_item.get("_id") or "") == str(cart_line_id):
+                    current_qty = int(cart_item.get("qty") or current_qty)
+                    break
+        except Exception:
+            current_qty = wire["qty"]
         result = await update_cart_item(
             line_id=cart_line_id,
-            qty=wire["qty"],
+            qty=current_qty,
             selected_options=wire["selectedOptions"],
             instructions=wire["instructions"],
             cart_id=ctx.cart_id,
@@ -835,9 +851,11 @@ async def _setup_guided_ordering(
     Returns the guided-ordering prompt text.
     """
     from app.services.slot_filler import (
+        auto_fill_single_option_groups,
         build_group_prompt,
         build_open_customization_prompt,
         fill_slots_from_text,
+        find_hidden_option_name,
         get_empty_required_groups,
         init_slot_state,
     )
@@ -888,9 +906,9 @@ async def _setup_guided_ordering(
     # ["Small", "Caramel Drizzle"] doesn't collapse into "Small Caramel Drizzle",
     # which would cause _find_best_option to match only the highest-specificity
     # token and drop the rest (including same-group multi-selects like ["Mint", "Rocca"]).
+    applied: list[str] = []
+    unmatched: list[str] = []
     if source_item and source_item.modifiers:
-        applied: list[str] = []
-        unmatched: list[str] = []
         for _modifier in source_item.modifiers:
             _cleaned = str(_modifier or "").strip()
             if not _cleaned:
@@ -908,6 +926,11 @@ async def _setup_guided_ordering(
                 "applied": applied,
                 "unmatched": unmatched,
             })
+
+    # Auto-select required groups that have exactly one active option.
+    slot_state, _auto_applied = auto_fill_single_option_groups(slot_state, groups_meta)
+    if _auto_applied:
+        applied.extend(_auto_applied)
 
     # Store in session.
     set_guided_order_slot_state(ctx.session_id, slot_state)
@@ -941,6 +964,14 @@ async def _setup_guided_ordering(
             ],
         })
 
+    # Build unavailability note from any pre-fill unmatched modifiers.
+    _unavail_notes: list[str] = []
+    for _u in unmatched:
+        _hidden = find_hidden_option_name(_u, groups_meta)
+        if _hidden:
+            _unavail_notes.append(f"{_hidden} is not currently available")
+    _unavail_prefix = (". ".join(_unavail_notes) + ".\n\n") if _unavail_notes else ""
+
     # Determine first prompt.
     empty_required = get_empty_required_groups(slot_state, groups_meta)
     if empty_required:
@@ -948,11 +979,26 @@ async def _setup_guided_ordering(
         set_guided_order_active_group_id(
             ctx.session_id, empty_required[0].get("groupId")
         )
-        return build_group_prompt(item_name, empty_required[0], is_first=True)
+        return _unavail_prefix + build_group_prompt(item_name, empty_required[0], is_first=True)
     else:
-        set_guided_order_state(ctx.session_id, "open")
         set_guided_order_active_group_id(ctx.session_id, None)
-        return build_open_customization_prompt(item_name, slot_state, groups_meta)
+        _has_optional = any(
+            isinstance(g, dict)
+            and g.get("isActive") is True
+            and g.get("isRequired") is not True
+            and any(
+                isinstance(o, dict)
+                and bool(o.get("name"))
+                and o.get("isActive") is not False
+                for o in (g.get("options") or [])
+            )
+            for g in groups_meta
+        )
+        if _has_optional:
+            set_guided_order_state(ctx.session_id, "open")
+        else:
+            set_guided_order_state(ctx.session_id, "instructions")
+        return _unavail_prefix + build_open_customization_prompt(item_name, slot_state, groups_meta)
 
 
 def _requeue_guided_clarification(

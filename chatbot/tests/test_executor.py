@@ -44,6 +44,26 @@ def _compiled_add(menu_item_id: int, qty: int, item_name: str) -> CompiledOperat
     )
 
 
+def _compiled_add_with_options(
+    menu_item_id: int,
+    qty: int,
+    item_name: str,
+    options: list[CompiledOption],
+) -> CompiledOperation:
+    parsed = _parsed_op("add_items", [ParsedItemRequest(item_query=item_name, quantity=qty)])
+    return CompiledOperation(
+        intent="add_items",
+        lines=[
+            CompiledCartLine(
+                menuItemId=menu_item_id,
+                qty=qty,
+                selectedOptions=options,
+            )
+        ],
+        source_parsed=parsed,
+    )
+
+
 def _compiled_clear() -> CompiledOperation:
     parsed = _parsed_op("clear_cart")
     return CompiledOperation(intent="clear_cart", lines=[], source_parsed=parsed)
@@ -107,8 +127,51 @@ async def test_clear_cart_in_multi_op_actually_clears(monkeypatch):
     # The latte must have been added after the clear.
     assert added, "add_item_to_cart was never called after clear"
     assert result.cart_updated is True
-    # Cart id reflects the latte add (the last write).
-    assert "latte" in result.cart_id or result.cart_updated
+
+
+@pytest.mark.asyncio
+async def test_add_reply_includes_suboption_labels(monkeypatch):
+    import app.services.tools as tools_mod
+
+    async def fake_add_item_to_cart(menu_item_id, qty, selected_options, instructions, cart_id):
+        return {
+            "cart_id": "cart-labneh",
+            "cart": [{"name": "Labneh", "qty": qty, "menuItemId": menu_item_id}],
+        }
+
+    async def fake_get_cart(cart_id=None):
+        return {"cart_id": cart_id, "cart": []}
+
+    async def fake_fetch_menu_items():
+        return []
+
+    monkeypatch.setattr(tools_mod, "add_item_to_cart", fake_add_item_to_cart)
+    monkeypatch.setattr(tools_mod, "get_cart", fake_get_cart)
+    monkeypatch.setattr(tools_mod, "fetch_menu_items", fake_fetch_menu_items)
+
+    session_id = "test-add-suboption-label"
+    session = get_session(session_id)
+    op = _compiled_add_with_options(
+        14,
+        1,
+        "Labneh",
+        [
+            CompiledOption(optionName="Brown Bread", groupId="sandwich-bread-options"),
+            CompiledOption(optionName="Pepper", suboptionName="Extra", groupId="sandwich-toppings"),
+        ],
+    )
+
+    result = await execute_compiled_operations(
+        operations=[op],
+        clarifications=[],
+        failures=[],
+        session_id=session_id,
+        cart_id="cart-start",
+        session=session,
+        auth_cookie=None,
+    )
+
+    assert result.reply == "Added Labneh (Brown Bread, Extra Pepper) to your cart."
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -277,3 +340,71 @@ async def test_remove_all_removes_every_matching_cart_line(monkeypatch):
     assert result.reply == "Removed all 2 Cookie from your cart."
     assert result.cart_updated is True
     assert removed_lines == ["cookie-warmed", "cookie-plain"]
+
+
+@pytest.mark.asyncio
+async def test_update_item_preserves_live_quantity_after_quantity_update(monkeypatch):
+    import app.services.tools as tools_mod
+
+    updated_payloads: list[dict] = []
+
+    async def fake_get_cart(cart_id=None):
+        return {
+            "cart_id": cart_id,
+            "cart": [
+                {
+                    "lineId": "labneh-line",
+                    "name": "Labneh",
+                    "qty": 2,
+                    "menuItemId": 14,
+                }
+            ],
+        }
+
+    async def fake_update_cart_item(line_id, qty, selected_options, instructions, cart_id):
+        updated_payloads.append(
+            {
+                "line_id": line_id,
+                "qty": qty,
+                "selected_options": selected_options,
+                "instructions": instructions,
+                "cart_id": cart_id,
+            }
+        )
+        return {"cart_id": cart_id, "cart": []}
+
+    monkeypatch.setattr(tools_mod, "get_cart", fake_get_cart)
+    monkeypatch.setattr(tools_mod, "update_cart_item", fake_update_cart_item)
+
+    op = CompiledOperation(
+        intent="update_item",
+        cart_line_id="labneh-line",
+        source_parsed=_parsed_op(
+            "update_item",
+            [ParsedItemRequest(item_query="Labneh", modifiers=["pepper regular"])],
+        ),
+        lines=[
+            CompiledCartLine(
+                menuItemId=14,
+                qty=1,
+                selectedOptions=[
+                    CompiledOption(optionName="Pepper", suboptionName="Regular", groupId="sandwich-toppings")
+                ],
+            )
+        ],
+    )
+
+    session_id = "test-update-preserve-quantity"
+    session = get_session(session_id)
+    result = await execute_compiled_operations(
+        operations=[op],
+        clarifications=[],
+        failures=[],
+        session_id=session_id,
+        cart_id="cart-labneh",
+        session=session,
+        auth_cookie=None,
+    )
+
+    assert result.cart_updated is True
+    assert updated_payloads[0]["qty"] == 2

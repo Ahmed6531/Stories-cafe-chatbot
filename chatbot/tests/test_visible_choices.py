@@ -1,4 +1,8 @@
 import pytest
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.services.intent_pipeline import resolve_intent
 from app.services.session_store import (
@@ -27,6 +31,54 @@ async def test_ordinal_add_resolves_from_visible_choices_not_menu_vocab():
     assert resolved["source"] == "deterministic"
     assert resolved["reason"] == "deterministic_visible_choice_ordinal"
     assert resolved["items"][0]["item_name"] == "Rocca Salad"
+
+
+@pytest.mark.asyncio
+async def test_ordinal_add_preserves_inline_modifiers():
+    sessions.clear()
+    session = get_session("visible-choice-modifiers")
+    set_last_visible_choices(
+        "visible-choice-modifiers",
+        [
+            {"item_name": "Chicken Teriyaki"},
+            {"item_name": "Turkey & Cheese"},
+        ],
+        source="list_category_items",
+    )
+
+    resolved = await resolve_intent(
+        "add the last one with extra pepper white bread and tomatoes",
+        session,
+        cart={},
+        menu=[],
+    )
+
+    assert resolved["intent"] == "add_items"
+    assert resolved["items"][0]["item_name"] == "Turkey & Cheese"
+    assert resolved["items"][0]["modifiers"] == [
+        "extra pepper",
+        "white bread",
+        "tomatoes",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_update_item_option_routes_without_llm():
+    sessions.clear()
+    session = get_session("deterministic-update-item")
+
+    resolved = await resolve_intent(
+        "update the chocolate croissant to warmed",
+        session,
+        cart={},
+        menu=[],
+    )
+
+    assert resolved["intent"] == "update_item"
+    assert resolved["source"] == "deterministic"
+    assert resolved["reason"] == "deterministic_match:update_item_option"
+    assert resolved["items"][0]["item_query"] == "chocolate croissant"
+    assert resolved["items"][0]["modifiers"] == ["warmed"]
 
 
 @pytest.mark.asyncio

@@ -264,6 +264,43 @@ def build_out_of_stock_message(item_name: str | None) -> str:
     return f"{clean_name} is out of stock right now."
 
 
+def _guided_response_modifiers_from_resolved(resolved: dict | None) -> list[str]:
+    if not isinstance(resolved, dict):
+        return []
+
+    modifiers: list[str] = []
+    operations = resolved.get("operations") or []
+    if not isinstance(operations, list):
+        operations = []
+
+    for operation in operations:
+        if not isinstance(operation, dict):
+            continue
+        if operation.get("intent") != "guided_order_response":
+            continue
+        for item in operation.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            for modifier in item.get("modifiers") or []:
+                cleaned = str(modifier or "").strip()
+                if cleaned:
+                    modifiers.append(cleaned)
+
+    if modifiers:
+        return modifiers
+
+    if resolved.get("intent") == "guided_order_response":
+        for item in resolved.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            for modifier in item.get("modifiers") or []:
+                cleaned = str(modifier or "").strip()
+                if cleaned:
+                    modifiers.append(cleaned)
+
+    return modifiers
+
+
 
 
 def _extract_option_name(option: dict | None) -> str:
@@ -991,10 +1028,7 @@ async def _finalize_guided_order(
                     if isinstance(option, dict) and option.get("optionName")
                 ]
                 _guided_sess = get_session(session_id) or {}
-                _is_repeat = bool(
-                    _guided_sess.get("last_checked_out_items")
-                    or _guided_sess.get("checkout_initiated")
-                )
+                _is_repeat = bool(_guided_sess.get("checkout_initiated"))
                 guided_size_upgrade = get_size_upgrade_suggestion(
                     session_id,
                     _guided_detail,
@@ -1172,11 +1206,14 @@ async def _handle_guided_order_response(
     normalized_phrase: str,
     intent: str,
     add_item_to_cart,
+    parsed_modifiers: list[str] | None = None,
 ) -> ChatMessageResponse:
     from app.services.slot_filler import (
+        auto_fill_single_option_groups,
         build_group_prompt,
         build_open_customization_prompt,
         build_suboption_prompt,
+        fill_slots_from_fragments,
         fill_slots_from_text,
         find_hidden_option_name,
         get_empty_required_groups,
@@ -1275,6 +1312,8 @@ async def _handle_guided_order_response(
                             break
                     set_guided_order_slot_state(session_id, slot_state)
                     set_guided_order_active_group_id(session_id, parent_group_id)
+                    slot_state, _ = auto_fill_single_option_groups(slot_state, groups_meta)
+                    set_guided_order_slot_state(session_id, slot_state)
                     empty_required = get_empty_required_groups(slot_state, groups_meta)
                     if empty_required:
                         next_group = empty_required[0]
@@ -1298,9 +1337,15 @@ async def _handle_guided_order_response(
                             },
                         )
                     has_optional_groups = any(
-                        group.get("isActive") is True
+                        isinstance(group, dict)
+                        and group.get("isActive") is True
                         and group.get("isRequired") is not True
-                        and group.get("options")
+                        and any(
+                            isinstance(o, dict)
+                            and bool(o.get("name"))
+                            and o.get("isActive") is not False
+                            for o in (group.get("options") or [])
+                        )
                         for group in groups_meta
                     )
                     set_guided_order_active_group_id(session_id, None)
@@ -1376,6 +1421,19 @@ async def _handle_guided_order_response(
             slot_state, applied, unmatched = fill_slots_from_text(
                 normalized_message, groups_meta, slot_state
             )
+            # Second pass: unmatched items might be intensity-word fallbacks
+            # (e.g. "medium" from "medium oat milk") that are valid options in
+            # other groups. Re-run each individually so nothing is silently lost.
+            if unmatched:
+                _remaining: list[str] = []
+                for _u in unmatched:
+                    _ss2, _a2, _un2 = fill_slots_from_text(_u, groups_meta, slot_state)
+                    if _a2:
+                        slot_state = _ss2
+                        applied.extend(_a2)
+                    else:
+                        _remaining.append(_u)
+                unmatched = _remaining
             set_guided_order_slot_state(session_id, slot_state)
 
             if not applied:
@@ -1438,6 +1496,8 @@ async def _handle_guided_order_response(
                         },
                     )
 
+            slot_state, _ = auto_fill_single_option_groups(slot_state, groups_meta)
+            set_guided_order_slot_state(session_id, slot_state)
             empty_required = get_empty_required_groups(slot_state, groups_meta)
             if empty_required:
                 next_group = empty_required[0]
@@ -1460,9 +1520,15 @@ async def _handle_guided_order_response(
                 )
 
             has_optional_groups = any(
-                group.get("isActive") is True
+                isinstance(group, dict)
+                and group.get("isActive") is True
                 and group.get("isRequired") is not True
-                and group.get("options")
+                and any(
+                    isinstance(o, dict)
+                    and bool(o.get("name"))
+                    and o.get("isActive") is not False
+                    for o in (group.get("options") or [])
+                )
                 for group in groups_meta
             )
             set_guided_order_active_group_id(session_id, None)
@@ -1525,9 +1591,26 @@ async def _handle_guided_order_response(
                 },
             )
 
-        slot_state, applied, unmatched = fill_slots_from_text(
-            normalized_message, groups_meta, slot_state
-        )
+        if parsed_modifiers:
+            slot_state, applied, unmatched = fill_slots_from_fragments(
+                parsed_modifiers, groups_meta, slot_state
+            )
+        else:
+            slot_state, applied, unmatched = fill_slots_from_text(
+                normalized_message, groups_meta, slot_state
+            )
+        # Second pass: re-run unmatched items individually (catches intensity-word
+        # fallbacks like "medium" from "medium oat milk").
+        if unmatched:
+            _remaining_open: list[str] = []
+            for _u in unmatched:
+                _ss2, _a2, _un2 = fill_slots_from_text(_u, groups_meta, slot_state)
+                if _a2:
+                    slot_state = _ss2
+                    applied.extend(_a2)
+                else:
+                    _remaining_open.append(_u)
+            unmatched = _remaining_open
         set_guided_order_slot_state(session_id, slot_state)
 
         if applied:
@@ -1671,9 +1754,10 @@ def _sort_operations_by_priority(operations: list[dict]) -> list[dict]:
         1  remove_item
         2  update_quantity
         3  update_item
-        4  add_items / add_item / repeat_order
-        5  checkout / confirm_checkout
-        6  describe_item          ← info needed before guided ordering
+        4  describe_item   ← runs before add so its reply is in reply_parts
+                              when guided ordering fires; never deferred to drain
+        5  add_items / add_item / repeat_order
+        6  checkout / confirm_checkout
       Passive ops (render inline after all active ops complete):
         7  view_cart
         8  list_category_items
@@ -1687,12 +1771,12 @@ def _sort_operations_by_priority(operations: list[dict]) -> list[dict]:
         "remove_item":          1,
         "update_quantity":      2,
         "update_item":          3,
-        "add_items":            4,
-        "add_item":             4,
-        "repeat_order":         4,
-        "checkout":             5,
-        "confirm_checkout":     5,
-        "describe_item":        6,
+        "describe_item":        4,
+        "add_items":            5,
+        "add_item":             5,
+        "repeat_order":         5,
+        "checkout":             6,
+        "confirm_checkout":     6,
         "view_cart":            7,
         "list_category_items":  8,
         "list_categories":      9,
@@ -2292,6 +2376,216 @@ async def _handle_pending_ops_confirmation(
     )
 
 
+def _normalize_repeat_order_lines(recent_orders: list[dict] | None) -> list[dict]:
+    for order in (recent_orders or []):
+        if not isinstance(order, dict):
+            continue
+        if str(order.get("status") or "").strip().lower() == "cancelled":
+            continue
+        order_items = order.get("items")
+        if not isinstance(order_items, list) or not order_items:
+            continue
+
+        normalized_lines: list[dict] = []
+        for line in order_items:
+            if not isinstance(line, dict):
+                continue
+            menu_item_id = line.get("menuItemId")
+            name = str(line.get("name") or "").strip()
+            try:
+                qty = int(line.get("qty") or 1)
+            except (TypeError, ValueError):
+                qty = 1
+            if menu_item_id is None or qty < 1 or not name:
+                continue
+            selected_options = (
+                line.get("selectedOptions")
+                if isinstance(line.get("selectedOptions"), list)
+                else []
+            )
+            normalized_lines.append(
+                {
+                    "menuItemId": menu_item_id,
+                    "name": name,
+                    "qty": qty,
+                    "selectedOptions": selected_options,
+                    "instructions": str(line.get("instructions") or ""),
+                }
+            )
+        if normalized_lines:
+            return normalized_lines
+    return []
+
+
+def _repeat_order_option_labels(selected_options: list[dict] | None) -> list[str]:
+    labels: list[str] = []
+    for option in selected_options or []:
+        if not isinstance(option, dict):
+            continue
+        option_name = str(
+            option.get("optionName")
+            or option.get("name")
+            or option.get("label")
+            or ""
+        ).strip()
+        suboption_name = str(
+            option.get("suboptionName")
+            or option.get("suboption")
+            or ""
+        ).strip()
+        if not option_name:
+            continue
+        labels.append(f"{suboption_name} {option_name}".strip())
+    return labels
+
+
+def _format_repeat_order_summary(lines: list[dict]) -> str:
+    summary: list[str] = []
+    for line in lines:
+        labels = _repeat_order_option_labels(line.get("selectedOptions"))
+        instructions = str(line.get("instructions") or "").strip()
+        details = []
+        if labels:
+            details.append(", ".join(labels))
+        if instructions:
+            details.append(instructions)
+        suffix = f" ({'; '.join(details)})" if details else ""
+        summary.append(f"- {line['qty']}x {line['name']}{suffix}")
+    return "\n".join(summary)
+
+
+async def _handle_repeat_order_confirmation(
+    *,
+    session_id: str,
+    normalized_message: str,
+    normalized_phrase: str,
+    cart_id: str | None,
+    session: Session | None,
+) -> ChatMessageResponse:
+    context = get_pending_operations_context(session_id)
+    lines = [
+        line for line in (context.get("repeat_order_lines") or [])
+        if isinstance(line, dict)
+    ]
+    summary = str(context.get("repeat_order_summary") or "").strip()
+    if not lines:
+        clear_pending_operations(session_id)
+        set_session_stage(session_id, None)
+        return ChatMessageResponse(
+            session_id=session_id,
+            status="ok",
+            reply="I lost track of that previous order. Please try again.",
+            intent="repeat_order",
+            cart_updated=False,
+            cart_id=cart_id,
+            defaults_used=[],
+            suggestions=[],
+            metadata={
+                "normalized_message": normalized_message,
+                "pipeline_stage": "repeat_order_confirmation_missing",
+            },
+        )
+
+    if normalized_phrase in PENDING_OPS_CONFIRM_NO_WORDS:
+        clear_pending_operations(session_id)
+        set_session_stage(session_id, None)
+        reply = "No problem. I won't reorder it."
+        update_last_action(session_id, normalized_message, reply, "repeat_order")
+        return ChatMessageResponse(
+            session_id=session_id,
+            status="ok",
+            reply=reply,
+            intent="repeat_order",
+            cart_updated=False,
+            cart_id=cart_id,
+            defaults_used=[],
+            suggestions=[],
+            metadata={
+                "normalized_message": normalized_message,
+                "pipeline_stage": "repeat_order_confirmation_cancelled",
+            },
+        )
+
+    if normalized_phrase not in PENDING_OPS_CONFIRM_YES_WORDS:
+        reply = f"Your last order was:\n{summary}\n\nDo you want to reorder that? Say yes or no."
+        return ChatMessageResponse(
+            session_id=session_id,
+            status="ok",
+            reply=reply,
+            intent="repeat_order",
+            cart_updated=False,
+            cart_id=cart_id,
+            defaults_used=[],
+            suggestions=[],
+            metadata={
+                "normalized_message": normalized_message,
+                "pipeline_stage": "repeat_order_confirmation_unclear",
+            },
+        )
+
+    from app.services.tools import add_item_to_cart
+
+    added_lines: list[dict] = []
+    failed_lines: list[str] = []
+    for line in lines:
+        try:
+            cart_result = await add_item_to_cart(
+                menu_item_id=line["menuItemId"],
+                qty=int(line.get("qty") or 1),
+                selected_options=line.get("selectedOptions") or [],
+                instructions=line.get("instructions") or "",
+                cart_id=cart_id,
+            )
+            cart_id = cart_result.get("cart_id") or cart_id
+            added_lines.append(line)
+        except Exception:
+            failed_lines.append(str(line.get("name") or "that item"))
+
+    clear_pending_operations(session_id)
+    set_session_stage(session_id, None)
+    if session is not None:
+        session["cart_id"] = cart_id
+        session["last_items"] = [
+            {
+                "item_name": line["name"],
+                "quantity": int(line.get("qty") or 1),
+                "menu_item_id": line.get("menuItemId"),
+                "selected_options": line.get("selectedOptions") or [],
+                "instructions": line.get("instructions") or "",
+            }
+            for line in added_lines
+        ]
+        session["last_intent"] = "repeat_order"
+
+    if added_lines:
+        reply_summary = _format_repeat_order_summary(added_lines)
+        reply = f"Re-added your last order:\n{reply_summary}"
+        cart_updated = True
+        pipeline_stage = "repeat_order_done"
+    else:
+        reply = "I couldn't re-add that order right now."
+        cart_updated = False
+        pipeline_stage = "repeat_order_failed"
+    if failed_lines:
+        reply += f"\n\nI couldn't re-add: {', '.join(failed_lines)}."
+
+    update_last_action(session_id, normalized_message, reply, "repeat_order")
+    return ChatMessageResponse(
+        session_id=session_id,
+        status="ok",
+        reply=reply,
+        intent="repeat_order",
+        cart_updated=cart_updated,
+        cart_id=cart_id,
+        defaults_used=[],
+        suggestions=[],
+        metadata={
+            "normalized_message": normalized_message,
+            "pipeline_stage": pipeline_stage,
+        },
+    )
+
+
 async def process_chat_message(
     session_id: str,
     message: str,
@@ -2311,7 +2605,6 @@ async def process_chat_message(
         fetch_featured_items,
         fetch_menu_item_detail,
         fetch_menu_items,
-        fetch_my_orders,
         find_menu_item_by_name,
         get_cart,
     )
@@ -2357,6 +2650,15 @@ async def process_chat_message(
             cart_id=cart_id,
             session=session,
             auth_cookie=auth_cookie,
+        )
+
+    if current_stage == "repeat_order_confirmation":
+        return await _handle_repeat_order_confirmation(
+            session_id=session_id,
+            normalized_message=normalized_message,
+            normalized_phrase=normalized_phrase,
+            cart_id=cart_id,
+            session=session,
         )
 
     if current_stage not in {"guided_ordering", "checkout_summary"}:
@@ -2702,6 +3004,7 @@ async def process_chat_message(
                             normalized_phrase=normalized_phrase,
                             intent="guided_order_response",
                             add_item_to_cart=add_item_to_cart,
+                            parsed_modifiers=_guided_response_modifiers_from_resolved(resolved),
                         )
 
                     if _g_state == "required":
@@ -3224,17 +3527,16 @@ async def process_chat_message(
                 normalized_phrase=normalized_phrase,
                 intent=intent,
                 add_item_to_cart=add_item_to_cart,
+                parsed_modifiers=_guided_response_modifiers_from_resolved(resolved),
             )
         # ── Multi-op passive+active gate ─────────────────────────────────────
-        # When the LLM returns multiple ops and at least one is active and one
-        # is passive, route through _run_typed_compiler_executor_intent so
-        # active ops execute first. Without this, the top-level passive intent
-        # handlers return early and silently drop the active ops.
+        # When the LLM returns multiple ops and at least one is active, route
+        # through _run_typed_compiler_executor_intent so active ops execute
+        # together instead of letting a top-level intent branch handle one slice.
         _all_ops = resolved.get("operations") or []
         _has_active = any(op.get("intent") in ACTIVE_INTENTS for op in _all_ops)
-        _has_passive = any(op.get("intent") in PASSIVE_INTENTS for op in _all_ops)
 
-        if len(_all_ops) > 1 and _has_active and _has_passive:
+        if len(_all_ops) > 1 and _has_active:
             _active_intent = next(
                 op.get("intent") for op in _all_ops
                 if op.get("intent") in ACTIVE_INTENTS
@@ -3795,18 +4097,6 @@ async def process_chat_message(
 
             set_session_stage(session_id, "checkout_redirect")
             set_checkout_initiated(session_id, True)
-            if session is not None:
-                session["last_checked_out_items"] = [
-                    {
-                        "menuItemId": item.get("menuItemId"),
-                        "qty": int(item.get("qty") or 1),
-                        "selectedOptions": item.get("selectedOptions") if isinstance(item.get("selectedOptions"), list) else [],
-                        "instructions": str(item.get("instructions") or ""),
-                        "name": str(item.get("name") or "").strip(),
-                    }
-                    for item in cart_result.get("cart", [])
-                    if isinstance(item, dict)
-                ]
 
             reply_text = "Great! Taking you to checkout now."
             update_last_action(session_id, normalized_message, reply_text, intent, action_data={"checkout": True})
@@ -3870,91 +4160,71 @@ async def process_chat_message(
             from app.services.compiler import compile_operation
 
             if intent == "repeat_order":
-                from app.schemas.actions import ParsedItemRequest, ParsedOperation, ParsedRequest
-
-                order_fetch_failed = False
-                order_fetch_auth_error = False
-                try:
-                    recent_orders = await fetch_my_orders(auth_cookie=auth_cookie, limit=20)
-                except ExpressAPIError as e:
-                    recent_orders = []
-                    order_fetch_failed = True
-                    if "401" in str(e) or "403" in str(e) or "unauthorized" in str(e).lower():
-                        order_fetch_auth_error = True
-                except Exception:
-                    recent_orders = []
-                    order_fetch_failed = True
-                order_history_items: list[dict] = []
-                for order in (recent_orders or []):
-                    if not isinstance(order, dict):
-                        continue
-                    if str(order.get("status") or "").strip().lower() == "cancelled":
-                        continue
-                    order_items = order.get("items")
-                    if not isinstance(order_items, list) or not order_items:
-                        continue
-                    normalized_lines = []
-                    for line in order_items:
-                        if not isinstance(line, dict):
-                            continue
-                        mid = line.get("menuItemId")
-                        qty = int(line.get("qty") or 1)
-                        name = str(line.get("name") or "").strip()
-                        if mid is None or qty < 1 or not name:
-                            continue
-                        normalized_lines.append(
-                            {
-                                "name": name,
-                                "qty": qty,
-                                "selectedOptions": line.get("selectedOptions")
-                                if isinstance(line.get("selectedOptions"), list) else [],
-                                "instructions": str(line.get("instructions") or ""),
-                            }
-                        )
-                    if normalized_lines:
-                        order_history_items = normalized_lines
-                        break
-
-                session_items: list[dict] = []
-                if not order_history_items:
-                    raw_last = (session or {}).get("last_items") or []
-                    for item in raw_last:
-                        if not isinstance(item, dict):
-                            continue
-                        name = str(item.get("item_name") or item.get("name") or "").strip()
-                        qty = int(item.get("quantity") or item.get("qty") or 1)
-                        if name and qty >= 1:
-                            session_items.append(
-                                {
-                                    "name": name,
-                                    "qty": qty,
-                                    "selectedOptions": [],
-                                    "instructions": "",
-                                }
-                            )
-
-                items_to_repeat = order_history_items or session_items
-                if not items_to_repeat:
-                    if order_fetch_auth_error:
-                        _no_history_reply = (
-                            "I couldn't access your order history — "
-                            "please sign in to use this feature."
-                        )
-                    elif order_fetch_failed:
-                        _no_history_reply = (
-                            "I couldn't reach your order history right now. "
-                            "Please try again in a moment."
-                        )
-                    else:
-                        _no_history_reply = (
-                            "I don't have a record of a previous order. "
-                            "Sign in to access your order history, or tell me what you'd like."
-                        )
+                if not auth_cookie:
+                    reply = "Please sign in to reorder from your order history."
                     return ChatMessageResponse(
                         session_id=session_id,
                         status="ok",
-                        reply=_no_history_reply,
-                        intent=intent,
+                        reply=reply,
+                        intent="repeat_order",
+                        cart_updated=False,
+                        cart_id=cart_id,
+                        defaults_used=[],
+                        suggestions=[],
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "pipeline_stage": "repeat_order_requires_login",
+                        },
+                    )
+
+                try:
+                    recent_orders = await fetch_my_orders(auth_cookie=auth_cookie, limit=20)
+                except ExpressAPIError as e:
+                    if "401" in str(e) or "403" in str(e) or "unauthorized" in str(e).lower():
+                        reply = "Please sign in to reorder from your order history."
+                        pipeline_stage = "repeat_order_requires_login"
+                    else:
+                        reply = "I couldn't reach your order history right now. Please try again in a moment."
+                        pipeline_stage = "repeat_order_history_failed"
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="ok",
+                        reply=reply,
+                        intent="repeat_order",
+                        cart_updated=False,
+                        cart_id=cart_id,
+                        defaults_used=[],
+                        suggestions=[],
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "pipeline_stage": pipeline_stage,
+                        },
+                    )
+                except Exception:
+                    reply = "I couldn't reach your order history right now. Please try again in a moment."
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="ok",
+                        reply=reply,
+                        intent="repeat_order",
+                        cart_updated=False,
+                        cart_id=cart_id,
+                        defaults_used=[],
+                        suggestions=[],
+                        metadata={
+                            "normalized_message": normalized_message,
+                            "pipeline_stage": "repeat_order_history_failed",
+                        },
+                    )
+
+                items_to_repeat = _normalize_repeat_order_lines(recent_orders)
+                if not items_to_repeat:
+                    reply = "I don't see a previous order in your account history."
+                    return ChatMessageResponse(
+                        session_id=session_id,
+                        status="ok",
+                        reply=reply,
+                        intent="repeat_order",
                         cart_updated=False,
                         cart_id=cart_id,
                         defaults_used=[],
@@ -3965,140 +4235,30 @@ async def process_chat_message(
                         },
                     )
 
-                # Items with stored options → add directly (preserve customizations)
-                # Items without stored options → go through normal compile path
-                direct_add_items = [
-                    item for item in items_to_repeat
-                    if item.get("selectedOptions")
-                ]
-                compile_add_items = [
-                    item for item in items_to_repeat
-                    if not item.get("selectedOptions")
-                ]
-
-                # Direct-add path: bypass compiler to preserve stored customizations
-                direct_reply_parts: list[str] = []
-                for item in direct_add_items:
-                    try:
-                        from app.services.tools import find_menu_item_by_name, add_item_to_cart as _add_item
-                        _menu_for_direct = await fetch_menu_items()
-                        matched = await find_menu_item_by_name(_menu_for_direct, item["name"])
-                        if not matched:
-                            direct_reply_parts.append(
-                                f"I couldn't find {item['name']} on the menu anymore."
-                            )
-                            continue
-                        _direct_menu_item_id = matched.get("id") or matched.get("_id")
-                        if _direct_menu_item_id is None:
-                            continue
-                        _cart_result_repeat = await _add_item(
-                            menu_item_id=_direct_menu_item_id,
-                            qty=item["qty"],
-                            selected_options=item["selectedOptions"],
-                            instructions=item.get("instructions") or "",
-                            cart_id=cart_id,
-                        )
-                        cart_id = _cart_result_repeat["cart_id"]
-                        _opts = item.get("selectedOptions") or []
-                        _opt_labels = [
-                            str(o.get("optionName") or "").strip()
-                            for o in _opts
-                            if isinstance(o, dict) and o.get("optionName")
-                        ]
-                        _suffix = f" ({', '.join(_opt_labels)})" if _opt_labels else ""
-                        _qty_prefix = f"{item['qty']}x " if item["qty"] > 1 else ""
-                        direct_reply_parts.append(
-                            f"Added {_qty_prefix}{item['name']}{_suffix} to your cart."
-                        )
-                    except Exception as _repeat_err:
-                        if isinstance(_repeat_err, ExpressAPIError) and is_out_of_stock_error(_repeat_err):
-                            direct_reply_parts.append(
-                                f"{item['name']} is out of stock right now."
-                            )
-                        else:
-                            direct_reply_parts.append(
-                                f"Couldn't re-add {item['name']} right now."
-                            )
-
-                if direct_add_items and not compile_add_items:
-                    _combined_reply = " ".join(direct_reply_parts)
-                    if session is not None:
-                        session["cart_id"] = cart_id
-                        session["last_items"] = [
-                            {
-                                "item_name": item["name"],
-                                "quantity": item["qty"],
-                                "menu_item_id": None,
-                                "selected_options": item.get("selectedOptions") or [],
-                                "instructions": item.get("instructions") or "",
-                            }
-                            for item in direct_add_items
-                        ]
-                    update_last_action(session_id, normalized_message, _combined_reply, intent)
-                    return ChatMessageResponse(
-                        session_id=session_id,
-                        status="ok",
-                        reply=_combined_reply,
-                        intent="repeat_order",
-                        cart_updated=True,
-                        cart_id=cart_id,
-                        defaults_used=[],
-                        suggestions=[],
-                        metadata={
-                            "normalized_message": normalized_message,
-                            "pipeline_stage": "repeat_order_done",
-                        },
-                    )
-
-                # Compile path for items without stored options
-                repeat_items = [
-                    ParsedItemRequest(
-                        item_query=item["name"],
-                        quantity=item["qty"],
-                    )
-                    for item in compile_add_items
-                ]
-                repeat_request = ParsedRequest(
-                    operations=[ParsedOperation(intent="add_items", items=repeat_items)],
-                    confidence=1.0,
+                repeat_summary = _format_repeat_order_summary(items_to_repeat)
+                set_pending_operations_context(
+                    session_id,
+                    {
+                        "repeat_order_lines": items_to_repeat,
+                        "repeat_order_summary": repeat_summary,
+                    },
                 )
-
-                _menu_for_compile = await fetch_menu_items()
-                try:
-                    _cart_raw = await get_cart(cart_id=cart_id)
-                except Exception:
-                    _cart_raw = {"cart_id": cart_id, "cart": []}
-
-                _compile_results = []
-                for _cop in repeat_request.operations:
-                    _compile_results.extend(
-                        await compile_operation(_cop, session, _cart_raw, _menu_for_compile)
-                    )
-
-                exec_result = await execute_compiled_operations(
-                    compile_results=_compile_results,
-                    session_id=session_id,
-                    cart_id=cart_id,
-                    session=session,
-                    auth_cookie=auth_cookie,
-                )
-                if session is not None:
-                    session["cart_id"] = exec_result.cart_id
-                _final_reply = (
-                    " ".join(direct_reply_parts) + " " + exec_result.reply
-                    if direct_reply_parts else exec_result.reply
-                )
-                update_last_action(session_id, normalized_message, _final_reply, intent)
+                set_session_stage(session_id, "repeat_order_confirmation")
+                reply = f"Your last order was:\n{repeat_summary}\n\nDo you want to reorder that?"
+                update_last_action(session_id, normalized_message, reply, intent)
                 return ChatMessageResponse(
                     session_id=session_id,
                     status="ok",
-                    reply=_final_reply,
-                    intent=exec_result.intent_for_response or "repeat_order",
-                    cart_updated=exec_result.cart_updated or bool(direct_reply_parts),
-                    cart_id=exec_result.cart_id,
-                    defaults_used=exec_result.defaults_used,
-                    suggestions=exec_result.suggestions,
-                    metadata={"normalized_message": normalized_message, **exec_result.metadata},
+                    reply=reply,
+                    intent="repeat_order",
+                    cart_updated=False,
+                    cart_id=cart_id,
+                    defaults_used=[],
+                    suggestions=[],
+                    metadata={
+                        "normalized_message": normalized_message,
+                        "pipeline_stage": "repeat_order_confirmation",
+                    },
                 )
 
             # ── Compile + execute path ────────────────────────────────────

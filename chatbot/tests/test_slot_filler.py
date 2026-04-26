@@ -7,6 +7,7 @@ from app.services.slot_filler import (
     build_group_prompt,
     build_open_customization_prompt,
     build_suboption_prompt,
+    fill_slots_from_fragments,
     fill_slots_from_text,
     get_empty_required_groups,
     init_slot_state,
@@ -190,6 +191,52 @@ def test_replace_bread():
         {"optionName": "Brown Bread", "suboptionName": None, "groupId": "sandwich-bread-options"}
     ]
     assert applied == ["Brown Bread"]
+    assert unmatched == []
+
+
+def test_mixed_sentence_applies_additions_and_bread_replacement():
+    groups = labneh_groups_meta()
+    state = init_slot_state(groups)
+    state, _, _ = fill_slots_from_text("white bread", groups, state)
+    state, applied, unmatched = fill_slots_from_text(
+        "beef ham and extra pepper and can we make the bread brown actually",
+        groups,
+        state,
+    )
+
+    assert state["sandwich-bread-options"] == [
+        {"optionName": "Brown Bread", "suboptionName": None, "groupId": "sandwich-bread-options"}
+    ]
+    assert state["sandwich-toppings"] == [
+        {"optionName": "Pepper", "suboptionName": "Extra", "groupId": "sandwich-toppings"}
+    ]
+    assert state["sandwich-extras"] == [
+        {"optionName": "Beef Ham", "suboptionName": None, "groupId": "sandwich-extras"}
+    ]
+    assert applied == ["Beef Ham", "Pepper (Extra)", "Brown Bread"]
+    assert unmatched == []
+
+
+def test_fragment_fill_coalesces_split_option_names():
+    groups = labneh_groups_meta()
+    state = init_slot_state(groups)
+    state, _, _ = fill_slots_from_text("white bread", groups, state)
+    state, applied, unmatched = fill_slots_from_fragments(
+        ["beef", "ham", "extra pepper", "Brown Bread"],
+        groups,
+        state,
+    )
+
+    assert state["sandwich-bread-options"][0]["optionName"] == "Brown Bread"
+    assert state["sandwich-toppings"][0] == {
+        "optionName": "Pepper",
+        "suboptionName": "Extra",
+        "groupId": "sandwich-toppings",
+    }
+    assert state["sandwich-extras"] == [
+        {"optionName": "Beef Ham", "suboptionName": None, "groupId": "sandwich-extras"}
+    ]
+    assert applied == ["Beef Ham", "Pepper (Extra)", "Brown Bread"]
     assert unmatched == []
 
 

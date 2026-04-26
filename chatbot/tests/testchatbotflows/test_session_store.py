@@ -251,7 +251,6 @@ class TestConversationReset(unittest.TestCase):
         session["guided_order_selections"] = {"Milk": "Oat Milk"}
         session["guided_order_defaulted_groups"] = ["Milk"]
         session["guided_order_quantity"] = 1
-        session["last_checked_out_items"] = [{"name": "Latte"}]
         set_pending_operations("s14", [{"intent": "view_cart", "items": []}])
         set_pending_operations_context("s14", {"pending_ops_description": "view your cart"})
 
@@ -280,7 +279,6 @@ class TestConversationReset(unittest.TestCase):
         self.assertIsNone(reset["guided_order_quantity"])
         self.assertEqual(reset["pending_operations"], [])
         self.assertEqual(reset["pending_operations_context"], {})
-        self.assertNotIn("last_checked_out_items", reset)
 
 
 class _FakeRedisClient:

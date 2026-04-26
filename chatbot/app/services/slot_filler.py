@@ -35,10 +35,13 @@ def fill_slots_from_text(
     applied: list[str] = []
     unmatched: list[str] = []
 
-    target_text, force_replace = _extract_replacement_target(user_text)
-    segments = [target_text] if force_replace else _split_segments(user_text)
+    raw_segments = _split_segments(user_text)
+    segments: list[tuple[str, bool]] = []
+    for raw_segment in raw_segments:
+        target_text, force_replace = _extract_replacement_target(raw_segment)
+        segments.append((target_text, force_replace))
 
-    for raw_segment in segments:
+    for raw_segment, force_replace in segments:
         segment = normalize_modifier_text(raw_segment)
         if not segment:
             continue
@@ -46,8 +49,14 @@ def fill_slots_from_text(
         is_negation, segment = _strip_negation_prefix(segment)
         intensity, option_text = _extract_intensity(segment)
         if not option_text:
-            unmatched.append(segment)
-            continue
+            # The whole segment was consumed as an intensity word (e.g. "medium",
+            # "extra"). Try matching it directly as a variant option before giving up.
+            if _find_best_option(segment, groups_meta):
+                intensity = None
+                option_text = segment
+            else:
+                unmatched.append(segment)
+                continue
 
         match = _find_best_option(option_text, groups_meta)
         if not match:
@@ -98,6 +107,48 @@ def fill_slots_from_text(
     return updated_slot_state, applied, unmatched
 
 
+def fill_slots_from_fragments(
+    fragments: list[str],
+    groups_meta: list[dict],
+    current_slot_state: SlotState,
+) -> tuple[SlotState, list[str], list[str]]:
+    normalized_fragments = [
+        str(fragment or "").strip()
+        for fragment in fragments or []
+        if str(fragment or "").strip()
+    ]
+    updated_slot_state = _copy_slot_state_with_groups(current_slot_state, groups_meta)
+    applied: list[str] = []
+    unmatched: list[str] = []
+
+    index = 0
+    while index < len(normalized_fragments):
+        fragment = normalized_fragments[index]
+        if index + 1 < len(normalized_fragments):
+            combined = f"{fragment} {normalized_fragments[index + 1]}".strip()
+            if _has_exact_option_match(combined, groups_meta):
+                updated_slot_state, fragment_applied, fragment_unmatched = fill_slots_from_text(
+                    combined,
+                    groups_meta,
+                    updated_slot_state,
+                )
+                applied.extend(fragment_applied)
+                unmatched.extend(fragment_unmatched)
+                index += 2
+                continue
+
+        updated_slot_state, fragment_applied, fragment_unmatched = fill_slots_from_text(
+            fragment,
+            groups_meta,
+            updated_slot_state,
+        )
+        applied.extend(fragment_applied)
+        unmatched.extend(fragment_unmatched)
+        index += 1
+
+    return updated_slot_state, applied, unmatched
+
+
 def slot_state_to_selected_options(
     slot_state: SlotState,
     groups_meta: list[dict],
@@ -128,6 +179,35 @@ def get_empty_required_groups(
         if group.get("isRequired") is True
         and not slot_state.get(str(group.get("groupId") or ""), [])
     ]
+
+
+def auto_fill_single_option_groups(
+    slot_state: SlotState,
+    groups_meta: list[dict],
+) -> tuple[SlotState, list[str]]:
+    """For required groups with exactly one active option, auto-select it silently."""
+    auto_applied: list[str] = []
+    for group in _active_groups(groups_meta):
+        if group.get("isRequired") is not True:
+            continue
+        group_id = str(group.get("groupId") or "")
+        if slot_state.get(group_id):
+            continue
+        active_opts = list(active_variant_options(group))
+        if len(active_opts) != 1:
+            continue
+        option = active_opts[0]
+        option_name = str(option.get("name") or "").strip()
+        if not option_name:
+            continue
+        selected: SelectedOption = {
+            "optionName": option_name,
+            "suboptionName": None,
+            "groupId": group_id,
+        }
+        slot_state.setdefault(group_id, []).append(selected)
+        auto_applied.append(option_name)
+    return slot_state, auto_applied
 
 
 def slot_state_summary(
@@ -350,16 +430,43 @@ def _find_best_option(option_text: str, groups_meta: list[dict]) -> tuple[dict, 
     return best_match
 
 
+def _has_exact_option_match(option_text: str, groups_meta: list[dict]) -> bool:
+    normalized_text = normalize_modifier_text(option_text)
+    if not normalized_text:
+        return False
+    for group in _active_groups(groups_meta):
+        for option in active_variant_options(group):
+            if normalize_modifier_text(option.get("name")) == normalized_text:
+                return True
+    return False
+
+
 def find_hidden_option_name(option_text: str, groups_meta: list[dict]) -> str | None:
-    """
-    If _find_best_option would return None due to a hidden option blocking a
-    partial match, returns that hidden option's display name. Used by the
-    orchestrator to explain to the user why their requested option wasn't applied.
+    """Return the display name of a hidden option that matches option_text, or None.
+
+    Handles intensity-prefixed input (e.g. "extra tea bag" → tries "tea bag") and
+    groups where every option is hidden (group-active but no active options).
     """
     normalized_text = normalize_modifier_text(option_text)
     if not normalized_text:
         return None
 
+    # Try the full text, then the text with its intensity prefix stripped.
+    candidates = [normalized_text]
+    intensity, stripped = _extract_intensity(normalized_text)
+    if intensity and stripped:
+        candidates.append(stripped)
+
+    for candidate in candidates:
+        result = _find_hidden_option_name_for(candidate, groups_meta)
+        if result:
+            return result
+    return None
+
+
+def _find_hidden_option_name_for(normalized_text: str, groups_meta: list[dict]) -> str | None:
+    # Pass 1: find best active match; if non-exact, check same group for a
+    # hidden option that scores at least as high (the normal substitution case).
     best_active_match: tuple[dict, dict] | None = None
     best_score = (0, 0)
     for group in _active_groups(groups_meta):
@@ -374,17 +481,30 @@ def find_hidden_option_name(option_text: str, groups_meta: list[dict]) -> str | 
                 best_score = (score, specificity)
                 best_active_match = (group, option)
 
-    if best_active_match is None or best_score[0] == 100:
-        return None
+    if best_active_match is not None and best_score[0] < 100:
+        best_group, _ = best_active_match
+        for option in best_group.get("options") or []:
+            if not isinstance(option, dict) or option.get("isActive") is not False:
+                continue
+            hidden_name = str(option.get("name") or "").strip()
+            hidden_norm = normalize_modifier_text(hidden_name)
+            if hidden_norm and _match_score(normalized_text, hidden_norm) >= best_score[0]:
+                return hidden_name
 
-    best_group, _ = best_active_match
-    for option in best_group.get("options") or []:
-        if not isinstance(option, dict) or option.get("isActive") is not False:
+    # Pass 2: check groups that are group-level active but have ALL options
+    # hidden (e.g. "Tea Bag" add-on group where the option is out of stock).
+    for group in (groups_meta or []):
+        if not isinstance(group, dict) or group.get("isActive") is not True:
             continue
-        hidden_name = str(option.get("name") or "").strip()
-        hidden_norm = normalize_modifier_text(hidden_name)
-        if hidden_norm and _match_score(normalized_text, hidden_norm) >= best_score[0]:
-            return hidden_name
+        if _has_active_option(group):
+            continue
+        for option in (group.get("options") or []):
+            if not isinstance(option, dict) or option.get("isActive") is not False:
+                continue
+            hidden_name = str(option.get("name") or "").strip()
+            hidden_norm = normalize_modifier_text(hidden_name)
+            if hidden_norm and _match_score(normalized_text, hidden_norm) > 0:
+                return hidden_name
 
     return None
 
