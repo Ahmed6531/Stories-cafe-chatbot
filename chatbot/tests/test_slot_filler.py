@@ -17,6 +17,9 @@ from app.services.slot_filler import (
 )
 
 
+OPEN_ACK_VARIANTS = ("Got it!", "Alright!", "Okay!", "Sounds good!")
+
+
 def labneh_groups_meta():
     suboptions = [
         {"name": "Less", "additionalPrice": 0},
@@ -324,8 +327,12 @@ def test_build_open_customization_prompt():
     state = init_slot_state(groups)
     state, _, _ = fill_slots_from_text("white bread and extra mayo", groups, state)
     prompt = build_open_customization_prompt("Labneh", state, groups)
-    assert prompt.splitlines() == [
-        "Got it! Here's what I have for your Labneh: White Bread, Extra Mayo.",
+    lines = prompt.splitlines()
+    assert lines[0] in {
+        f"{ack} Here's what I have for your Labneh: White Bread, Extra Mayo."
+        for ack in OPEN_ACK_VARIANTS
+    }
+    assert lines[1:] == [
         "Would you like to add anything else?",
         "- Toppings (currently: Extra Mayo): Mayo (Less/Regular/Extra), BBQ (Less/Regular/Extra), Honey Mustard (Less/Regular/Extra), Mustard (Less/Regular/Extra), Salt (Less/Regular/Extra), Pepper (Less/Regular/Extra)",
         "- Ingredients: Mint, Rocca, Olives, Cherry Tomatoes, Onion, Jalapeno, Pickles",
@@ -340,8 +347,12 @@ def test_build_open_customization_prompt_without_optional_groups_asks_instructio
     state, _, _ = fill_slots_from_text("white bread", groups, state)
     prompt = build_open_customization_prompt("Rim 330ML", state, groups)
 
-    assert prompt.splitlines() == [
-        "Got it! Here's what I have for your Rim 330ML: White Bread.",
+    lines = prompt.splitlines()
+    assert lines[0] in {
+        f"{ack} Here's what I have for your Rim 330ML: White Bread."
+        for ack in OPEN_ACK_VARIANTS
+    }
+    assert lines[1:] == [
         "Any special instructions for your Rim 330ML? Say 'none' to skip.",
     ]
 

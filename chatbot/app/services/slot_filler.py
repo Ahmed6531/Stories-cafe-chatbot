@@ -16,6 +16,7 @@ INTENSITY_WORDS = {"less", "light", "regular", "normal", "extra", "more", "doubl
 NEGATION_PREFIXES = ("no ", "without ", "remove ", "take out ", "skip ")
 REPLACEMENT_PREFIXES = ("change to ", "swap to ", "switch to ", "actually ", "make it ")
 REPLACEMENT_WORDS = ("instead", "change to", "swap to", "switch to", "actually", "make it")
+OPEN_PROMPT_ACK_VARIANTS = ("Got it!", "Alright!", "Okay!", "Sounds good!")
 
 
 def init_slot_state(groups_meta: list[dict]) -> SlotState:
@@ -290,7 +291,8 @@ def build_open_customization_prompt(
         if not slot_state.get(str(group.get("groupId") or ""))
     ]
 
-    lines = [f"Got it! Here's what I have for your {item_name}: {summary}."]
+    ack = _select_open_prompt_ack(item_name, summary)
+    lines = [f"{ack} Here's what I have for your {item_name}: {summary}."]
     if optional_groups:
         lines.append("Would you like to add anything else?")
         for group in selected_groups + unselected_groups:
@@ -312,6 +314,13 @@ def build_suboption_prompt(
         if isinstance(suboption, dict) and str(suboption.get("name") or "").strip()
     ]
     return f"How would you like your {option_name}? Options: {', '.join(option_names)}."
+
+
+def _select_open_prompt_ack(item_name: str, summary: str) -> str:
+    # Stable phrase selection keeps tests reliable while avoiding repetitive wording.
+    seed = f"{item_name}|{summary}".lower()
+    checksum = sum(ord(char) for char in seed)
+    return OPEN_PROMPT_ACK_VARIANTS[checksum % len(OPEN_PROMPT_ACK_VARIANTS)]
 
 
 def _is_active_group(group: dict) -> bool:
