@@ -351,13 +351,15 @@ export default function Navbar() {
           {!isSuccessRoute && (
             <Topbar>
               <TopbarLeft>
-                <Box
-                  component="img"
-                  src="stories-logo.png"
-                  alt="Stories"
-                  sx={{ width: '42px', height: '42px', objectFit: 'contain', flexShrink: 0, display: 'block' }}
-                  onError={(e) => { e.currentTarget.style.display = 'none' }}
-                />
+                <Link to="/" style={{ display: 'flex', alignItems: 'center', flexShrink: 0, WebkitTapHighlightColor: 'transparent' }}>
+                  <Box
+                    component="img"
+                    src="/stories-logo.png"
+                    alt="Stories"
+                    sx={{ maxWidth: '112px', maxHeight: '26px', objectFit: 'contain', flexShrink: 0 }}
+                    onError={(e) => { e.currentTarget.style.display = 'none' }}
+                  />
+                </Link>
                 <TopbarNavWrap>
                   <Box sx={{ width: '1px', height: '18px', bgcolor: '#e9e9e9', mx: '6px', flexShrink: 0 }} />
                   <TopNavLink to="/" isActive={location.pathname === '/'}>Home</TopNavLink>
