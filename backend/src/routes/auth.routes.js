@@ -100,10 +100,12 @@ router.post("/login", authLimiter, validate([
 
     const token = signToken({ id: user._id, email: user.email, role: user.role });
 
+    const isProd = process.env.NODE_ENV === "production";
+
     const cookieOpts = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     };
 
@@ -119,10 +121,13 @@ router.post("/login", authLimiter, validate([
 
 // LOGOUT
 router.post("/logout", (_req, res) => {
+  const isProd = process.env.NODE_ENV === "production";
+
   const cookieOpts = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
   };
   res.clearCookie("user_token", cookieOpts);
   res.clearCookie("admin_token", cookieOpts);
