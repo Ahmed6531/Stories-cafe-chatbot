@@ -9,7 +9,8 @@ const SILENCE_DURATION = 2000;
 const MAX_VOICED_FRAME_MS = 80;
 const INITIAL_SPEECH_TIMEOUT_MS = 5000;
 const INACTIVITY_TIMEOUT_MS = 6000;
-const FINALIZATION_TIMEOUT_MS = 15000;
+// Allow slow STT round-trips (deployed latency + FFmpeg + Google).
+const FINALIZATION_TIMEOUT_MS = 38000;
 const TIMESLICE_MS = 60;
 const BITS = 128000;
 const PHASE = {
@@ -21,8 +22,17 @@ const PHASE = {
 };
 
 function pickMime() {
-  if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) return "audio/webm;codecs=opus";
-  if (MediaRecorder.isTypeSupported("audio/mp4;codecs=mp4a.40.2")) return "audio/mp4;codecs=mp4a.40.2";
+  // Safari often supports audio/mp4 without the codecs= suffix; Chrome prefers webm/opus.
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/mp4;codecs=mp4a.40.2",
+    "audio/mp4",
+    "audio/mp4a-latm",
+    "audio/webm",
+  ];
+  for (const mime of candidates) {
+    if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(mime)) return mime;
+  }
   return null;
 }
 

@@ -1,0 +1,4 @@
+# Railway / Nixpacks: Safari voice uses audio/mp4 (AAC). The server transcodes with ffmpeg
+# before Google STT. Without ffmpeg, clients get "Please use Chrome or Firefox."
+[phases.setup]
+aptPkgs = ["ffmpeg"]

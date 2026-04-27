@@ -229,7 +229,9 @@ async def voice_stream(websocket: WebSocket):
                 session_id = str(payload.get("session_id") or "")
                 utterance_id = str(payload.get("utterance_id") or uuid.uuid4())
                 mime_type = str(payload.get("mime_type") or "")
-                is_aac = mime_type.startswith("audio/mp4")
+                ml = mime_type.lower()
+                # Safari MediaRecorder often reports audio/mp4 or audio/mp4a-latm (not always audio/mp4 prefix).
+                is_aac = ml.startswith("audio/mp4") or ml.startswith("audio/aac") or ml.startswith("audio/mp4a")
                 print(f"[VOICE][{conn_id}] start session={session_id} utterance={utterance_id} mime={mime_type} aac={is_aac}")
 
                 if is_aac and not shutil.which("ffmpeg"):
@@ -247,7 +249,8 @@ async def voice_stream(websocket: WebSocket):
             if ev == "stop":
                 await aq.put(None)
                 try:
-                    await asyncio.wait_for(asyncio.gather(st, rt), timeout=12.0)
+                    # Cold Google STT + FFmpeg transcode (Safari AAC) can exceed 12s on slow networks/deploys.
+                    await asyncio.wait_for(asyncio.gather(st, rt), timeout=35.0)
                 except asyncio.TimeoutError:
                     terminal_sent = True
                     await websocket.send_json({"type": "error", "kind": "timeout", "message": "STT timed out"})
