@@ -31,7 +31,7 @@ const multerInstance = multer({
 }).single("image");
 
 /*
-  uploadImage
+  uploadImage 
  
   Drop-in replacement for the previous local disk middleware.
   After this runs, req.file.path holds the public GCS URL —
