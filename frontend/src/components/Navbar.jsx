@@ -355,7 +355,7 @@ export default function Navbar() {
                   component="img"
                   src="/favicon.ico"
                   alt="Stories"
-                  sx={{ maxWidth: '112px', maxHeight: '26px', objectFit: 'contain', flexShrink: 0 }}
+                  sx={{ width: '42px', height: '42px', objectFit: 'contain', flexShrink: 0, display: 'block' }}
                   onError={(e) => { e.currentTarget.style.display = 'none' }}
                 />
                 <TopbarNavWrap>
