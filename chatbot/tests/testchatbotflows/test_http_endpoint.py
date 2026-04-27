@@ -61,8 +61,8 @@ def _make_response(
     )
 
 
-ORCHESTRATOR_TARGET = "app.api.chat.process_chat_message"
-TTS_TARGET = "app.api.chat.tts_service.synthesize"
+ORCHESTRATOR_TARGET = "app.API.chat.process_chat_message"
+TTS_TARGET = "app.API.chat.tts_service.synthesize"
 
 
 class TestChatEndpointValidation(unittest.TestCase):
@@ -120,7 +120,7 @@ class TestChatEndpointResponseShape(unittest.TestCase):
                 "message": "hello",
             })
         body = resp.json()
-        for field in ("status", "reply", "intent", "cart_updated", "suggestions", "audio_base64"):
+        for field in ("status", "reply", "intent", "cart_updated", "suggestions", "audio_base64", "blocks"):
             self.assertIn(field, body, f"Missing field: {field}")
 
     def test_cart_updated_true_when_orchestrator_signals_it(self):

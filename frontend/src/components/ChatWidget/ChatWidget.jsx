@@ -278,6 +278,25 @@ function _parseOptions(raw) {
   }).filter(o => o.label)
 }
 
+function _parseInlineGroupOptionsPrompt(text) {
+  const lines = (text || '').split('\n').map((line) => line.trim()).filter(Boolean)
+  if (lines.length === 0 || lines.length > 2) return null
+
+  if (lines.length === 1) {
+    const inline = lines[0].match(/^([^:]+):\s+(.+)$/)
+    if (!inline) return null
+    const question = `${inline[1].trim()}:`
+    const options = _parseOptions(inline[2])
+    if (options.length < 2 || !options.some((option) => option.price)) return null
+    return { type: 'options_prompt', question, options }
+  }
+
+  if (!/:$/.test(lines[0])) return null
+  const options = _parseOptions(lines[1])
+  if (options.length < 2 || !options.some((option) => option.price)) return null
+  return { type: 'options_prompt', question: lines[0], options }
+}
+
 function _isCustomizationControlLine(line) {
   return /^Got it!/i.test(line)
     || /Would you like to add anything else/i.test(line)
@@ -313,6 +332,9 @@ function _parseCustomizationGroups(lines) {
 
 function parseBotMessage(text) {
   if (!text || typeof text !== 'string') return { type: 'plain', text: text || '' }
+
+  const inlineGroupPrompt = _parseInlineGroupOptionsPrompt(text)
+  if (inlineGroupPrompt) return inlineGroupPrompt
 
   const lines3 = text.split('\n')
   const groups = _parseCustomizationGroups(lines3)
@@ -463,11 +485,141 @@ function renderParsedContent(parsed) {
   ))
 }
 
+function renderBlockContent(block, { suppressRecommendationItems = [] } = {}) {
+  if (!block || typeof block !== 'object') return null
+
+  const normalizeBlockQuestion = (value) => {
+    const text = typeof value === 'string' ? value.trim() : ''
+    if (!text) return ''
+    const optionsIndex = text.indexOf('Options:')
+    if (optionsIndex === -1) return text
+    return text.slice(0, optionsIndex).trim()
+  }
+
+  if (block.type === 'plain_text') {
+    const text = typeof block.text === 'string' ? block.text : ''
+    return text.split('\n').map((line, i, arr) => (
+      <span key={i}>{line}{i < arr.length - 1 && <br />}</span>
+    ))
+  }
+
+  if (block.type === 'cart_confirmation') {
+    const text = typeof block.text === 'string' ? block.text : ''
+    const defaults = Array.isArray(block.defaultsUsed) ? block.defaultsUsed : []
+    return (
+      <>
+        <p style={{ margin: 0, fontSize: CHAT_BUBBLE_FONT_SIZE, color: '#111', lineHeight: 1.45 }}>{text}</p>
+        {defaults.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, rowGap: 8, marginTop: 8 }}>
+            {defaults.map((entry, index) => (
+              <span key={`${String(entry)}-${index}`} style={{
+                background: '#f3f4f6', border: 'none', borderRadius: 6,
+                padding: '5px 9px', fontSize: CHAT_OPTION_FONT_SIZE, color: '#374151',
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1.35,
+              }}>
+                {String(entry)}
+              </span>
+            ))}
+          </div>
+        )}
+      </>
+    )
+  }
+
+  if (block.type === 'recommendations') {
+    const title = typeof block.title === 'string' ? block.title : 'Recommendations'
+    const suppressedNames = new Set(
+      Array.isArray(suppressRecommendationItems)
+        ? suppressRecommendationItems
+          .map((name) => String(name || '').trim().toLowerCase())
+          .filter(Boolean)
+        : []
+    )
+    const items = Array.isArray(block.items)
+      ? block.items.filter((item) => {
+          const itemName = String(item?.itemName || '').trim().toLowerCase()
+          return !itemName || !suppressedNames.has(itemName)
+        })
+      : []
+    return (
+      <>
+        <p style={{ margin: '0 0 8px', fontSize: CHAT_BUBBLE_FONT_SIZE, color: '#111', lineHeight: 1.45 }}>{title}</p>
+        {items.length > 0 && (
+          <div style={{ borderRadius: 8, border: '0.5px solid #e5e7eb', overflow: 'hidden' }}>
+            {items.map((item, i) => (
+              <div key={`${item?.itemName || 'item'}-${i}`} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '6px 10px', background: i % 2 === 0 ? '#f9fafb' : '#fff', fontSize: 12,
+              }}>
+                <span style={{ color: '#111' }}>{item?.itemName || 'Item'}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </>
+    )
+  }
+
+  if (block.type === 'category_list') {
+    const title = typeof block.title === 'string' ? block.title : ''
+    const items = Array.isArray(block.items) ? block.items : []
+    return renderParsedContent({
+      type: 'category_list',
+      header: title,
+      items: items.map((item) => ({
+        name: item?.name || '',
+        price: Number(item?.price || 0).toLocaleString('en-US'),
+      })),
+    })
+  }
+
+  if (block.type === 'options_prompt') {
+    return renderParsedContent({
+      type: 'options_prompt',
+      question: normalizeBlockQuestion(block.question),
+      options: Array.isArray(block.options)
+        ? block.options.map((option) => ({
+            label: option?.label || '',
+            price: Number.isFinite(Number(option?.price)) && Number(option?.price) > 0
+              ? Number(option.price).toLocaleString('en-US')
+              : null,
+          }))
+        : [],
+    })
+  }
+
+  if (block.type === 'customization_review') {
+    return renderParsedContent({
+      type: 'customization_review',
+      summaryLine: typeof block.summary === 'string' ? block.summary : '',
+      subtext: typeof block.prompt === 'string' ? block.prompt : '',
+      hint: typeof block.footer === 'string' ? block.footer : '',
+      groups: Array.isArray(block.groups)
+        ? block.groups.map((group) => ({
+            name: group?.name || 'Options',
+            current: group?.current || null,
+            options: Array.isArray(group?.options)
+              ? group.options.map((option) => ({
+                  label: option?.label || '',
+                  price: Number.isFinite(Number(option?.price)) && Number(option?.price) > 0
+                    ? Number(option.price).toLocaleString('en-US')
+                    : null,
+                }))
+              : [],
+          }))
+        : [],
+    })
+  }
+
+  return renderParsedContent({ type: 'plain', text: typeof block.text === 'string' ? block.text : '' })
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
   const isUser = msg.role === 'user'
   const showTime = msg.time !== prevTime
+  const hasBlock = !isUser && msg.block && typeof msg.block === 'object'
   const hasAudio = !isUser && typeof msg.audioSrc === 'string' && msg.audioSrc.trim()
   const cartSummary = !isUser && msg.pipelineStage === 'view_cart_done' && Array.isArray(msg.cart) && msg.cart.length > 0
     ? msg.cart
@@ -507,6 +659,9 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
   const postAddSuggestions = msg.cartUpdated
     ? rawSuggestions.filter((suggestion) => isPostAddSuggestion(suggestion))
     : []
+  const postAddSuggestionNames = postAddSuggestions
+    .map((suggestion) => (typeof suggestion?.item_name === 'string' ? suggestion.item_name.trim() : ''))
+    .filter(Boolean)
   const interactiveSuggestions = rawSuggestions.filter((suggestion) => !isPostAddSuggestion(suggestion))
   const hasInteractiveSuggestions = interactiveSuggestions.length > 0
   const hasPostAddSuggestions = postAddSuggestions.length > 0
@@ -626,7 +781,7 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
     }
   }
 
-  const parsedBot = !isUser && !cartSummary
+  const parsedBot = !isUser && !cartSummary && !hasBlock
     ? (() => { try { return parseBotMessage(msg.text) } catch { return null } })()
     : null
   const isSplit = parsedBot?.type === 'split'
@@ -796,6 +951,8 @@ function Bubble({ msg, prevTime, onSuggestionClick, onConfirm }) {
       <div className={`msg-bubble ${isUser ? 'msg-bubble-user' : 'msg-bubble-bot'}`}>
         {cartSummary ? (
           <span>{msg.text.split('\n')[0]}</span>
+        ) : hasBlock ? (
+          renderBlockContent(msg.block, { suppressRecommendationItems: postAddSuggestionNames })
         ) : parsedBot ? (
           renderParsedContent(parsedBot)
         ) : (
@@ -854,11 +1011,13 @@ export default function ChatWidget({
   const msgsRef = useRef(null)
   const inputRef = useRef(null)
   const pendingReplyTimeoutRef = useRef(null)
+  const pendingRequestAbortRef = useRef(null)
   const partialTranscriptTimeoutRef = useRef(null)
   const pendingPartialRef = useRef({ confirmed: '', interim: '' })
   const firstPartialRenderedRef = useRef(false)
   const errorResetTimeoutRef = useRef(null)
   const audioCtxRef = useRef(null)
+  const suppressNextFinalRef = useRef(false)
 
   const hasConversation = messages.length > 0
 
@@ -898,9 +1057,14 @@ export default function ChatWidget({
   }
 
   const stopPendingReply = () => {
+    suppressNextFinalRef.current = true
     if (pendingReplyTimeoutRef.current) {
       window.clearTimeout(pendingReplyTimeoutRef.current)
       pendingReplyTimeoutRef.current = null
+    }
+    if (pendingRequestAbortRef.current) {
+      pendingRequestAbortRef.current.abort()
+      pendingRequestAbortRef.current = null
     }
     clearPartials()
     voice.stopReply()
@@ -1025,6 +1189,7 @@ export default function ChatWidget({
       return
     }
     if (voice.micMode === MIC_MODE.FINALIZING) {
+      stopPendingReply()
       return
     }
     if (voice.replyPending || voice.micMode === MIC_MODE.THINKING) {
@@ -1035,6 +1200,7 @@ export default function ChatWidget({
       voice.requestStop()
       return
     }
+    suppressNextFinalRef.current = false
     // iOS requires AudioContext to be created/resumed synchronously inside the click handler,
     // before any await. VoiceInput reads this ref and reuses the context instead of creating its own.
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
@@ -1062,10 +1228,13 @@ export default function ChatWidget({
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
     clearPartials()
+    suppressNextFinalRef.current = false
     voice.beginReply()
     appendMessage({ id: Date.now(), role: 'user', text: trimmed, time: now })
 
     try {
+      const controller = new AbortController()
+      pendingRequestAbortRef.current = controller
       const cartId = localStorage.getItem('cartId') || null
       const response = await axios.post(`${CHATBOT_URL}/chat/message`, {
         session_id: getOrCreateChatSessionId(),
@@ -1073,30 +1242,64 @@ export default function ChatWidget({
         cart_id: cartId,
       }, {
         withCredentials: true,
+        signal: controller.signal,
       })
+      if (pendingRequestAbortRef.current === controller) {
+        pendingRequestAbortRef.current = null
+      }
       const data = response.data
       if (data.cart_id) localStorage.setItem('cartId', data.cart_id)
       if (data.cart_updated) refreshCart()
-      appendMessage({
-        id: Date.now() + 1,
-        role: 'bot',
-        text: data.reply,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        suggestions: Array.isArray(data.suggestions) ? data.suggestions : [],
-        cartUpdated: Boolean(data.cart_updated),
-        intent: typeof data.intent === 'string' ? data.intent : '',
-        pipelineStage: typeof data.metadata?.pipeline_stage === 'string' ? data.metadata.pipeline_stage : '',
-        cart: Array.isArray(data.metadata?.cart) ? data.metadata.cart : null,
-        bill: data.metadata?.bill || null,
-        sizeUpgrade: data.metadata?.size_upgrade || null,
-        audioSrc: typeof data.audio_base64 === 'string' ? data.audio_base64 : '',
-      })
+      const botTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      const blocks = Array.isArray(data.blocks) ? data.blocks.filter((block) => block && typeof block === 'object') : []
+
+      if (blocks.length > 0) {
+        blocks.forEach((block, index) => {
+          const isFirst = index === 0
+          const isLast = index === blocks.length - 1
+          appendMessage({
+            id: Date.now() + 1 + index,
+            role: 'bot',
+            text: typeof block.text === 'string' && block.text.trim() ? block.text : data.reply,
+            block,
+            time: botTime,
+            suggestions: isLast && Array.isArray(data.suggestions) ? data.suggestions : [],
+            cartUpdated: Boolean(data.cart_updated),
+            intent: typeof data.intent === 'string' ? data.intent : '',
+            pipelineStage: typeof data.metadata?.pipeline_stage === 'string' ? data.metadata.pipeline_stage : '',
+            cart: isLast && Array.isArray(data.metadata?.cart) ? data.metadata.cart : null,
+            bill: isLast ? data.metadata?.bill || null : null,
+            sizeUpgrade: isLast ? data.metadata?.size_upgrade || null : null,
+            audioSrc: isFirst && typeof data.audio_base64 === 'string' ? data.audio_base64 : '',
+          })
+        })
+      } else {
+        appendMessage({
+          id: Date.now() + 1,
+          role: 'bot',
+          text: data.reply,
+          time: botTime,
+          suggestions: Array.isArray(data.suggestions) ? data.suggestions : [],
+          cartUpdated: Boolean(data.cart_updated),
+          intent: typeof data.intent === 'string' ? data.intent : '',
+          pipelineStage: typeof data.metadata?.pipeline_stage === 'string' ? data.metadata.pipeline_stage : '',
+          cart: Array.isArray(data.metadata?.cart) ? data.metadata.cart : null,
+          bill: data.metadata?.bill || null,
+          sizeUpgrade: data.metadata?.size_upgrade || null,
+          audioSrc: typeof data.audio_base64 === 'string' ? data.audio_base64 : '',
+        })
+      }
       if (data.intent === 'confirm_checkout' && data.metadata?.pipeline_stage === 'checkout_redirect') {
         setTimeout(() => onConfirm?.(), 1500)
       }
 
     } catch (error) {
-      if (axios.isCancel(error) || error?.code === 'ERR_CANCELED') {
+      if (
+        axios.isCancel(error)
+        || error?.code === 'ERR_CANCELED'
+        || error?.name === 'CanceledError'
+        || error?.name === 'AbortError'
+      ) {
         return
       }
 
@@ -1113,6 +1316,7 @@ export default function ChatWidget({
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       })
     } finally {
+      pendingRequestAbortRef.current = null
       voice.finishReply()
     }
   }
@@ -1187,6 +1391,12 @@ export default function ChatWidget({
     }
 
     if (event.type === 'final') {
+      if (suppressNextFinalRef.current) {
+        suppressNextFinalRef.current = false
+        clearPartials()
+        voice.stopReply()
+        return
+      }
       const finalText = normalizeTranscriptForUi(event.text || '').trim()
       if (!finalText) return
       clearPartials()
@@ -1294,7 +1504,7 @@ export default function ChatWidget({
                     type="button"
                     aria-label={getMicAriaLabel(voice.micMode)}
                     onClick={cycleMicMode}
-                    disabled={!isOnline || voice.micMode === MIC_MODE.FINALIZING}
+                    disabled={!isOnline}
                   >
                     <svg width="26" height="26" viewBox="0 0 100 100" fill="none" overflow="visible">
                       <path d="M65.732 77.6329C65.2176 71.801 63.7431 66.1064 61.5486 60.7204C59.4226 55.3002 56.1993 50.3945 52.7703 45.7633L47.0782 38.9022C46.0495 37.7015 45.1922 36.3979 44.2664 35.1286C43.4435 33.7907 42.5176 32.4871 41.8318 31.0463C38.78 25.4545 37.0312 18.9365 37.1684 12.3842C37.237 8.57633 37.9228 4.80274 39.0543 1.20068C37.6142 1.50943 36.174 1.88679 34.8024 2.33276C34.8024 2.40137 34.7338 2.43568 34.7338 2.50429C32.1621 7.82161 30.6533 13.6192 30.6876 19.4168C30.7562 25.2144 32.4021 30.8748 35.2824 35.8147C38.0256 40.9262 42.1747 44.8027 46.1867 49.6398C49.9243 54.4768 53.4904 59.6226 55.8907 65.4202C58.3939 71.1492 60.1084 77.2556 60.7942 83.5678C61.3085 88.6449 61.1714 93.7907 60.3827 98.8336C61.4457 98.5935 62.5087 98.3533 63.5717 98.0446C65.5948 91.4237 66.3492 84.4597 65.7662 77.6672L65.732 77.6329Z" fill="white" />

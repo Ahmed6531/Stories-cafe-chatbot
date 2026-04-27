@@ -337,4 +337,78 @@ describe('ChatWidget voice routing', () => {
     expect(screen.getByText('Here are our pastries.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Chocolate Croissant' })).not.toBeInTheDocument()
   })
+
+  it('renders multiple blocks as separate bot bubbles and keeps audio on first block only', async () => {
+    axios.post.mockResolvedValueOnce({
+      data: {
+        session_id: 'session-voice-test',
+        status: 'ok',
+        reply: 'Fallback reply text',
+        intent: 'recommendation_query',
+        cart_updated: false,
+        cart_id: 'cart-existing',
+        suggestions: [],
+        metadata: {},
+        audio_base64: 'data:audio/mp3;base64,ZmFrZQ==',
+        blocks: [
+          { type: 'plain_text', text: 'First structured block' },
+          {
+            type: 'recommendations',
+            title: 'You might also like:',
+            items: [{ itemName: 'Cheese Croissant' }, { itemName: 'Blueberry Muffin' }],
+          },
+        ],
+      },
+    })
+
+    const { container } = renderChatWidget()
+
+    await act(async () => {
+      voiceInputMock.onEvent({ type: 'final', text: 'recommend me something' })
+      vi.advanceTimersByTime(151)
+      await flushPromises()
+    })
+
+    expect(screen.getByText('First structured block')).toBeInTheDocument()
+    expect(screen.getByText('You might also like:')).toBeInTheDocument()
+    expect(screen.getByText('Cheese Croissant')).toBeInTheDocument()
+    expect(screen.getByText('Blueberry Muffin')).toBeInTheDocument()
+    expect(container.querySelectorAll('.msg-bubble-bot').length).toBeGreaterThanOrEqual(2)
+    expect(container.querySelectorAll('.msg-audio-btn').length).toBe(1)
+  })
+
+  it('suppresses suggestion chips for list_category_items_done when response uses category_list block', async () => {
+    axios.post.mockResolvedValueOnce({
+      data: {
+        session_id: 'session-voice-test',
+        status: 'ok',
+        reply: 'Legacy category text',
+        intent: 'list_category_items',
+        cart_updated: false,
+        cart_id: 'cart-existing',
+        suggestions: [{ item_name: 'Chocolate Croissant' }],
+        metadata: { pipeline_stage: 'list_category_items_done' },
+        blocks: [
+          {
+            type: 'category_list',
+            title: 'Here\'s what we have in Pastries:',
+            category: 'Pastries',
+            items: [{ name: 'Cheese Croissant', price: 6000 }],
+          },
+        ],
+      },
+    })
+
+    renderChatWidget()
+
+    await act(async () => {
+      voiceInputMock.onEvent({ type: 'final', text: 'show me pastries' })
+      vi.advanceTimersByTime(151)
+      await flushPromises()
+    })
+
+    expect(screen.getByText(/Here's what we have in Pastries/i)).toBeInTheDocument()
+    expect(screen.getByText('Cheese Croissant')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Chocolate Croissant' })).not.toBeInTheDocument()
+  })
 })

@@ -5,12 +5,19 @@ import logging
 import re
 import httpx
 from difflib import SequenceMatcher
+from typing import Any
 
 from app.schemas.chat import ChatMessageResponse
 from app.services.fallback_assistant import generate_fallback_reply
 from app.services.intent_pipeline import resolve_intent
 from app.services.item_clarification import get_menu_detail_variants
 from app.services.llm_interpreter import _extract_json_object, _generate_gemini_content_async
+from app.services.response_blocks import (
+    cart_confirmation_block,
+    category_list_block,
+    plain_text_block,
+    recommendations_block,
+)
 from app.services.menu_utils import (
     ADDON_CANDIDATES,
     GUIDED_SKIP_WORDS,
@@ -231,6 +238,34 @@ GUIDED_REQUIRED_GROUP_KEYWORDS = ("size", "milk type", "milk")
 
 def _fmt_price(value) -> str:
     return f"L.L {int(float(value or 0)):,}"
+
+
+def _build_recommendations_block(items: list[dict[str, Any]], *, title: str) -> dict[str, Any]:
+    return recommendations_block(title=title, items=items)
+
+
+def _build_add_success_blocks(
+    *,
+    reply_text: str,
+    item_name: str | None,
+    defaults_used: list[Any] | None,
+    suggestions: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    blocks = [
+        cart_confirmation_block(
+            text=reply_text,
+            item_name=item_name,
+            defaults_used=defaults_used,
+        )
+    ]
+    if suggestions:
+        blocks.append(
+            _build_recommendations_block(
+                list(suggestions),
+                title="You might also like:",
+            )
+        )
+    return blocks
 
 
 def _build_failed_item(item_name: str | None, message: str) -> dict:
@@ -1180,6 +1215,12 @@ async def _finalize_guided_order(
         session_id=session_id,
         status="ok",
         reply=reply_text,
+        blocks=_build_add_success_blocks(
+            reply_text=reply_text,
+            item_name=item_name,
+            defaults_used=[],
+            suggestions=post_add_suggestions,
+        ),
         intent=intent,
         cart_updated=True,
         cart_id=cart_result["cart_id"],
@@ -1211,8 +1252,11 @@ async def _handle_guided_order_response(
     from app.services.slot_filler import (
         auto_fill_single_option_groups,
         build_group_prompt,
+        build_group_prompt_block,
         build_open_customization_prompt,
+        build_open_customization_block,
         build_suboption_prompt,
+        build_suboption_prompt_block,
         fill_slots_from_fragments,
         fill_slots_from_text,
         find_hidden_option_name,
@@ -1320,12 +1364,18 @@ async def _handle_guided_order_response(
                         set_guided_order_active_group_id(
                             session_id, next_group.get("groupId")
                         )
+                        _group_prompt = build_group_prompt(
+                            item_name, next_group, is_first=False
+                        )
                         return ChatMessageResponse(
                             session_id=session_id,
                             status="ok",
-                            reply=build_group_prompt(
-                                item_name, next_group, is_first=False
-                            ),
+                            reply=_group_prompt,
+                            blocks=[
+                                build_group_prompt_block(
+                                    item_name, next_group, is_first=False
+                                )
+                            ],
                             intent=intent,
                             cart_updated=False,
                             cart_id=cart_id,
@@ -1351,10 +1401,14 @@ async def _handle_guided_order_response(
                     set_guided_order_active_group_id(session_id, None)
                     if not has_optional_groups:
                         set_guided_order_state(session_id, "instructions")
+                        _instructions_reply = (
+                            f"Any special instructions for your {item_name}? Say 'none' to skip."
+                        )
                         return ChatMessageResponse(
                             session_id=session_id,
                             status="ok",
-                            reply=f"Any special instructions for your {item_name}? Say 'none' to skip.",
+                            reply=_instructions_reply,
+                            blocks=[plain_text_block(_instructions_reply)],
                             intent=intent,
                             cart_updated=False,
                             cart_id=cart_id,
@@ -1366,12 +1420,18 @@ async def _handle_guided_order_response(
                             },
                         )
                     set_guided_order_state(session_id, "open")
+                    _open_review_reply = build_open_customization_prompt(
+                        item_name, slot_state, groups_meta
+                    )
                     return ChatMessageResponse(
                         session_id=session_id,
                         status="ok",
-                        reply=build_open_customization_prompt(
-                            item_name, slot_state, groups_meta
-                        ),
+                        reply=_open_review_reply,
+                        blocks=[
+                            build_open_customization_block(
+                                item_name, slot_state, groups_meta
+                            )
+                        ],
                         intent=intent,
                         cart_updated=False,
                         cart_id=cart_id,
@@ -1383,12 +1443,19 @@ async def _handle_guided_order_response(
                         },
                     )
                 else:
+                    _suboption_retry_reply = build_suboption_prompt(
+                        item_name, waiting_opt_name, suboptions
+                    )
                     return ChatMessageResponse(
                         session_id=session_id,
                         status="ok",
-                        reply=build_suboption_prompt(
-                            item_name, waiting_opt_name, suboptions
-                        ),
+                        reply=_suboption_retry_reply,
+                        blocks=[
+                            build_suboption_prompt_block(
+                                waiting_opt_name,
+                                suboptions,
+                            )
+                        ],
                         intent=intent,
                         cart_updated=False,
                         cart_id=cart_id,
@@ -1487,12 +1554,19 @@ async def _handle_guided_order_response(
                         session_id,
                         f"suboption:{active_group.get('groupId')}:{opt_name}",
                     )
+                    _suboption_prompt_reply = build_suboption_prompt(
+                        item_name, opt_name, matched_opt["suboptions"]
+                    )
                     return ChatMessageResponse(
                         session_id=session_id,
                         status="ok",
-                        reply=build_suboption_prompt(
-                            item_name, opt_name, matched_opt["suboptions"]
-                        ),
+                        reply=_suboption_prompt_reply,
+                        blocks=[
+                            build_suboption_prompt_block(
+                                opt_name,
+                                matched_opt["suboptions"],
+                            )
+                        ],
                         intent=intent,
                         cart_updated=False,
                         cart_id=cart_id,
@@ -1512,10 +1586,16 @@ async def _handle_guided_order_response(
                 set_guided_order_active_group_id(
                     session_id, next_group.get("groupId")
                 )
+                _next_group_reply = build_group_prompt(item_name, next_group, is_first=False)
                 return ChatMessageResponse(
                     session_id=session_id,
                     status="ok",
-                    reply=build_group_prompt(item_name, next_group, is_first=False),
+                    reply=_next_group_reply,
+                    blocks=[
+                        build_group_prompt_block(
+                            item_name, next_group, is_first=False
+                        )
+                    ],
                     intent=intent,
                     cart_updated=False,
                     cart_id=cart_id,
@@ -1542,10 +1622,12 @@ async def _handle_guided_order_response(
             set_guided_order_active_group_id(session_id, None)
             if not has_optional_groups:
                 set_guided_order_state(session_id, "instructions")
+                _instructions_reply = f"Any special instructions for your {item_name}? Say 'none' to skip."
                 return ChatMessageResponse(
                     session_id=session_id,
                     status="ok",
-                    reply=f"Any special instructions for your {item_name}? Say 'none' to skip.",
+                    reply=_instructions_reply,
+                    blocks=[plain_text_block(_instructions_reply)],
                     intent=intent,
                     cart_updated=False,
                     cart_id=cart_id,
@@ -1557,12 +1639,18 @@ async def _handle_guided_order_response(
                     },
                 )
             set_guided_order_state(session_id, "open")
+            _open_review_reply = build_open_customization_prompt(
+                item_name, slot_state, groups_meta
+            )
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
-                reply=build_open_customization_prompt(
-                    item_name, slot_state, groups_meta
-                ),
+                reply=_open_review_reply,
+                blocks=[
+                    build_open_customization_block(
+                        item_name, slot_state, groups_meta
+                    )
+                ],
                 intent=intent,
                 cart_updated=False,
                 cart_id=cart_id,
@@ -1584,10 +1672,12 @@ async def _handle_guided_order_response(
         })
         if normalized_phrase in finalize_words:
             set_guided_order_state(session_id, "instructions")
+            _instructions_reply = f"Any special instructions for your {item_name}? Say 'none' to skip."
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
-                reply=f"Any special instructions for your {item_name}? Say 'none' to skip.",
+                reply=_instructions_reply,
+                blocks=[plain_text_block(_instructions_reply)],
                 intent=intent,
                 cart_updated=False,
                 cart_id=cart_id,
@@ -1648,12 +1738,19 @@ async def _handle_guided_order_response(
                             f"suboption:{group_id}:{opt_name}",
                         )
                         set_guided_order_state(session_id, "required")
+                        _suboption_prompt_reply = build_suboption_prompt(
+                            item_name, opt_name, matched_opt["suboptions"]
+                        )
                         return ChatMessageResponse(
                             session_id=session_id,
                             status="ok",
-                            reply=build_suboption_prompt(
-                                item_name, opt_name, matched_opt["suboptions"]
-                            ),
+                            reply=_suboption_prompt_reply,
+                            blocks=[
+                                build_suboption_prompt_block(
+                                    opt_name,
+                                    matched_opt["suboptions"],
+                                )
+                            ],
                             intent=intent,
                             cart_updated=False,
                             cart_id=cart_id,
@@ -1689,6 +1786,7 @@ async def _handle_guided_order_response(
             )
 
         _open_prompt = build_open_customization_prompt(item_name, slot_state, groups_meta)
+        _open_review_block = build_open_customization_block(item_name, slot_state, groups_meta)
         if unmatched:
             _notes: list[str] = []
             for _u in unmatched:
@@ -1698,12 +1796,15 @@ async def _handle_guided_order_response(
                 else:
                     _notes.append(f"I couldn't find '{_u}' in the available options")
             _open_reply = ". ".join(_notes) + ".\n\n" + _open_prompt
+            _open_blocks = [plain_text_block(". ".join(_notes) + "."), _open_review_block]
         else:
             _open_reply = _open_prompt
+            _open_blocks = [_open_review_block]
         return ChatMessageResponse(
             session_id=session_id,
             status="ok",
             reply=_open_reply,
+            blocks=_open_blocks,
             intent=intent,
             cart_updated=False,
             cart_id=cart_id,
@@ -1717,10 +1818,12 @@ async def _handle_guided_order_response(
 
     set_guided_order_state(session_id, "open")
     set_guided_order_active_group_id(session_id, None)
+    _open_default_reply = build_open_customization_prompt(item_name, slot_state, groups_meta)
     return ChatMessageResponse(
         session_id=session_id,
         status="ok",
-        reply=build_open_customization_prompt(item_name, slot_state, groups_meta),
+        reply=_open_default_reply,
+        blocks=[build_open_customization_block(item_name, slot_state, groups_meta)],
         intent=intent,
         cart_updated=False,
         cart_id=cart_id,
@@ -2275,11 +2378,26 @@ async def _run_typed_compiler_executor_intent(
     if not exec_result.needs_followup:
         set_session_stage(session_id, None)
 
+    response_blocks: list[dict[str, Any]] = []
+    if exec_result.cart_updated and (exec_result.intent_for_response or intent) == "add_items":
+        session_last_items = session.get("last_items") if isinstance(session, dict) else []
+        item_name = None
+        if isinstance(session_last_items, list) and session_last_items:
+            first_item = session_last_items[0] if isinstance(session_last_items[0], dict) else {}
+            item_name = str(first_item.get("name") or first_item.get("item_name") or "").strip() or None
+        response_blocks = _build_add_success_blocks(
+            reply_text=exec_result.reply,
+            item_name=item_name,
+            defaults_used=exec_result.defaults_used,
+            suggestions=exec_result.suggestions,
+        )
+
     update_last_action(session_id, normalized_message, exec_result.reply, intent)
     return ChatMessageResponse(
         session_id=session_id,
         status="ok",
         reply=exec_result.reply,
+        blocks=response_blocks,
         intent=exec_result.intent_for_response or intent,
         cart_updated=exec_result.cart_updated,
         cart_id=exec_result.cart_id,
@@ -3723,6 +3841,24 @@ async def process_chat_message(
                 session_id=session_id,
                 status="ok",
                 reply=reply_text,
+                blocks=(
+                    [
+                        _build_recommendations_block(
+                            [
+                                {
+                                    "item_name": suggestion.get("item_name"),
+                                    "menu_item_id": suggestion.get("menu_item_id"),
+                                }
+                                for suggestion in filtered_suggestions
+                                if isinstance(suggestion, dict)
+                                and suggestion.get("item_name")
+                            ],
+                            title="Here are some picks you might like:",
+                        )
+                    ]
+                    if filtered_suggestions
+                    else []
+                ),
                 intent=intent,
                 cart_updated=False,
                 cart_id=cart_result["cart_id"],
@@ -4020,6 +4156,25 @@ async def process_chat_message(
                 session_id=session_id,
                 status="ok",
                 reply=reply_text,
+                blocks=(
+                    [
+                        category_list_block(
+                            title=f"Here's what we have in {cat_label}:",
+                            category=cat_label,
+                            items=[
+                                {
+                                    "name": item.get("name"),
+                                    "price": int(float(item.get("basePrice") or 0)),
+                                }
+                                for item in matched[:12]
+                                if isinstance(item, dict) and item.get("name")
+                            ],
+                            overflow_count=max(len(matched) - 12, 0),
+                        )
+                    ]
+                    if matched
+                    else []
+                ),
                 intent=intent,
                 cart_updated=False,
                 cart_id=cart_id,
@@ -4367,10 +4522,26 @@ async def process_chat_message(
                 exec_result.intent_for_response or intent,
             )
 
+            response_blocks: list[dict[str, Any]] = []
+            _response_intent = exec_result.intent_for_response or intent
+            if exec_result.cart_updated and _response_intent == "add_items":
+                _session_last_items = session.get("last_items") if isinstance(session, dict) else []
+                _item_name = None
+                if isinstance(_session_last_items, list) and _session_last_items:
+                    _first_item = _session_last_items[0] if isinstance(_session_last_items[0], dict) else {}
+                    _item_name = str(_first_item.get("name") or _first_item.get("item_name") or "").strip() or None
+                response_blocks = _build_add_success_blocks(
+                    reply_text=exec_result.reply,
+                    item_name=_item_name,
+                    defaults_used=exec_result.defaults_used,
+                    suggestions=exec_result.suggestions,
+                )
+
             return ChatMessageResponse(
                 session_id=session_id,
                 status="ok",
                 reply=exec_result.reply,
+                blocks=response_blocks,
                 intent=exec_result.intent_for_response or intent,
                 cart_updated=exec_result.cart_updated,
                 cart_id=exec_result.cart_id,

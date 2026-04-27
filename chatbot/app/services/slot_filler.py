@@ -1,5 +1,5 @@
 import re
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from app.services.menu_utils import active_variant_options, normalize_modifier_text
 
@@ -269,6 +269,21 @@ def build_group_prompt(
     return prompt
 
 
+def build_group_prompt_block(
+    item_name: str,
+    group: dict,
+    *,
+    is_first: bool = False,
+) -> dict[str, Any]:
+    question = build_group_prompt(item_name, group, is_first=is_first)
+    options = [_option_block(option) for option in active_variant_options(group)]
+    return {
+        "type": "options_prompt",
+        "question": question,
+        "options": options,
+    }
+
+
 def build_open_customization_prompt(
     item_name: str,
     slot_state: SlotState,
@@ -308,6 +323,55 @@ def build_open_customization_prompt(
     return "\n".join(lines)
 
 
+def build_open_customization_block(
+    item_name: str,
+    slot_state: SlotState,
+    groups_meta: list[dict],
+) -> dict[str, Any]:
+    summary = slot_state_summary(slot_state, groups_meta)
+    optional_groups = [
+        group
+        for group in _active_groups(groups_meta)
+        if group.get("isRequired") is not True
+    ]
+    selected_groups = [
+        group
+        for group in optional_groups
+        if slot_state.get(str(group.get("groupId") or ""))
+    ]
+    unselected_groups = [
+        group
+        for group in optional_groups
+        if not slot_state.get(str(group.get("groupId") or ""))
+    ]
+    grouped = selected_groups + unselected_groups
+
+    groups: list[dict[str, Any]] = []
+    for group in grouped:
+        group_id = str(group.get("groupId") or "")
+        current_entries = slot_state.get(group_id) or []
+        current_values = [
+            _summary_label(entry.get("optionName") or "", entry.get("suboptionName"))
+            for entry in current_entries
+            if isinstance(entry, dict)
+        ]
+        group_block: dict[str, Any] = {
+            "name": _display_group_label(group),
+            "options": [_option_block(option) for option in active_variant_options(group)],
+        }
+        if current_values:
+            group_block["current"] = ", ".join([value for value in current_values if value])
+        groups.append(group_block)
+
+    return {
+        "type": "customization_review",
+        "summary": f"Here's what I have for your {item_name}: {summary}.",
+        "prompt": "Would you like to add anything else?" if optional_groups else "",
+        "groups": groups,
+        "footer": "Say 'done' to add to cart." if optional_groups else f"Any special instructions for your {item_name}? Say 'none' to skip.",
+    }
+
+
 def build_suboption_prompt(
     item_name: str,
     option_name: str,
@@ -319,6 +383,14 @@ def build_suboption_prompt(
         if isinstance(suboption, dict) and str(suboption.get("name") or "").strip()
     ]
     return f"How would you like your {option_name}? Options: {', '.join(option_names)}."
+
+
+def build_suboption_prompt_block(option_name: str, suboptions: list[dict]) -> dict[str, Any]:
+    return {
+        "type": "options_prompt",
+        "question": f"How would you like your {option_name}?",
+        "options": [_option_block(suboption) for suboption in suboptions or []],
+    }
 
 
 def _select_open_prompt_ack(item_name: str, summary: str) -> str:
@@ -696,3 +768,25 @@ def _option_price(option: dict) -> int:
     if isinstance(price, (int, float)):
         return int(price)
     return 0
+
+
+def _option_block(option: dict) -> dict[str, Any]:
+    raw_name = str(option.get("name") or "").strip()
+    block: dict[str, Any] = {
+        "label": raw_name,
+        "rawName": raw_name,
+    }
+
+    suboptions = [
+        str(suboption.get("name") or "").strip()
+        for suboption in option.get("suboptions") or []
+        if isinstance(suboption, dict) and str(suboption.get("name") or "").strip()
+    ]
+    if suboptions:
+        block["label"] = f"{raw_name} ({'/'.join(suboptions)})"
+        return block
+
+    price = _option_price(option)
+    if price > 0:
+        block["price"] = price
+    return block

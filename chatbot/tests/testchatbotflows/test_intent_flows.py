@@ -154,6 +154,59 @@ class TestAddItemsFlow(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(response.cart_updated)
 
+    async def test_add_items_with_post_suggestions_emits_confirmation_and_recommendation_blocks(self):
+        session = fake_session("s-add-blocks")
+        session_store.sessions["s-add-blocks"] = session
+        menu_items = [
+            {**item, "id": 101, "basePrice": item.get("price", 0)} if item.get("name") == "Latte" else {**item, "basePrice": item.get("price", 0)}
+            for item in fake_menu_items()
+        ]
+        cart_after = fake_cart(
+            "cart-555",
+            items=[{
+                "_id": "line-1",
+                "menuItemId": 101,
+                "name": "Latte",
+                "qty": 1,
+                "price": 8000,
+                "category": "beverages",
+                "subcategory": "coffee",
+            }],
+        )
+
+        with (
+            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response(
+                "add_items",
+                [{
+                    "item_name": "Latte",
+                    "quantity": 1,
+                    "size": None,
+                    "options": {"milk": None, "sugar": None},
+                    "addons": [],
+                    "instructions": "",
+                }],
+            ))),
+            patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=menu_items)),
+            patch(MENU_DETAIL_TARGET, new=AsyncMock(return_value=fake_menu_item_detail_no_variants("Latte"))),
+            patch(ADD_CART_TARGET, new=AsyncMock(return_value=cart_after)),
+            patch(GET_CART_TARGET, new=AsyncMock(return_value=cart_after)),
+            patch("app.services.upsell.get_upsell_suggestions", new=AsyncMock(return_value=[
+                {"type": "upsell", "item_name": "Cheese Croissant", "menu_item_id": "item-croissant"}
+            ])),
+            patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
+        ):
+            response = await process_chat_message(
+                session_id="s-add-blocks",
+                message="add a latte",
+                cart_id=None,
+                session=session,
+            )
+
+        self.assertTrue(response.cart_updated)
+        self.assertGreaterEqual(len(response.blocks), 2)
+        self.assertEqual(response.blocks[0].get("type"), "cart_confirmation")
+        self.assertEqual(response.blocks[1].get("type"), "recommendations")
+
     async def test_add_plain_latte_with_real_variant_detail_starts_guided_ordering(self):
         session = fake_session("s-add-guided-real")
         session_store.sessions["s-add-guided-real"] = session
@@ -514,6 +567,7 @@ class TestRecommendationQueryFlow(unittest.IsolatedAsyncioTestCase):
             patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response("recommendation_query"))),
             patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
             patch("app.services.tools.fetch_featured_items", new=AsyncMock(return_value=[])),
+            patch(GET_CART_TARGET, new=AsyncMock(return_value=fake_cart("cart-rec", items=[]))),
             patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
         ):
             response = await process_chat_message(
@@ -525,6 +579,86 @@ class TestRecommendationQueryFlow(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.intent, "recommendation_query")
         self.assertIsInstance(response.reply, str)
+        self.assertIsInstance(response.blocks, list)
+        if response.blocks:
+            self.assertEqual(response.blocks[0].get("type"), "recommendations")
+
+
+class TestListCategoryItemsFlow(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        _flush_sessions()
+
+    async def test_list_category_items_emits_category_list_block(self):
+        session = fake_session("s-list-cat")
+        session_store.sessions["s-list-cat"] = session
+
+        with (
+            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response(
+                "list_category_items",
+                [{"category": "pastries"}],
+            ))),
+            patch(MENU_ITEMS_TARGET, new=AsyncMock(return_value=fake_menu_items())),
+            patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
+        ):
+            response = await process_chat_message(
+                session_id="s-list-cat",
+                message="what pastries do you have",
+                cart_id=None,
+                session=session,
+            )
+
+        self.assertEqual(response.intent, "list_category_items")
+        self.assertTrue(response.blocks)
+        self.assertEqual(response.blocks[0].get("type"), "category_list")
+        self.assertGreater(len(response.blocks[0].get("items") or []), 0)
+
+
+class TestGuidedOrderingBlocks(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        _flush_sessions()
+
+    async def test_guided_open_review_emits_customization_review_block(self):
+        sid = "s-guided-block-open"
+        session = fake_session(sid)
+        session_store.sessions[sid] = session
+        session_store.set_session_stage(sid, "guided_ordering")
+        session_store.set_guided_order_item_id(sid, "item-latte")
+        session_store.set_guided_order_item_name(sid, "Latte")
+        session_store.set_guided_order_quantity(sid, 1)
+        session_store.set_guided_order_state(sid, "open")
+        groups_meta = [
+            {
+                "groupId": "coffee-milk-options",
+                "name": "Milk",
+                "customerLabel": "Milk",
+                "isRequired": False,
+                "maxSelections": 1,
+                "isActive": True,
+                "options": [
+                    {"name": "Full Fat", "isActive": True, "additionalPrice": 0, "suboptions": []},
+                    {"name": "Skim Milk", "isActive": True, "additionalPrice": 0, "suboptions": []},
+                ],
+            }
+        ]
+        session_store.set_guided_order_groups_meta(sid, groups_meta)
+        session_store.set_guided_order_slot_state(sid, {"coffee-milk-options": []})
+
+        with (
+            patch(LLM_TARGET, new=AsyncMock(return_value=mock_llm_response("guided_order_response", []))),
+            patch(COMBO_TARGET, new=AsyncMock(return_value=[])),
+        ):
+            response = await process_chat_message(
+                session_id=sid,
+                message="something else",
+                cart_id=None,
+                session=session,
+            )
+
+        self.assertEqual(response.intent, "guided_order_response")
+        self.assertTrue(response.blocks)
+        review_block = next((block for block in response.blocks if block.get("type") == "customization_review"), None)
+        self.assertIsNotNone(review_block)
+        self.assertGreater(len(review_block.get("groups") or []), 0)
 
 
 # ---------------------------------------------------------------------------
