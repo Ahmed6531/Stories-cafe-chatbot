@@ -1,7 +1,9 @@
 import { randomUUID } from "crypto";
 
 function normalizeRefValue(value) {
-  return typeof value === "string" ? value.trim() : "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" && isFinite(value)) return String(value);
+  return "";
 }
 
 export function generateVariantGroupRefId() {
@@ -13,11 +15,15 @@ export function extractVariantGroupRef(groupRef) {
     return normalizeRefValue(groupRef);
   }
 
+  if (typeof groupRef === "number") {
+    return normalizeRefValue(groupRef);
+  }
+
   if (!groupRef || typeof groupRef !== "object") {
     return "";
   }
 
-  for (const candidate of [groupRef.refId, groupRef.groupId, groupRef.id]) {
+  for (const candidate of [groupRef.groupId, groupRef.refId, groupRef.id]) {
     const normalized = normalizeRefValue(candidate);
     if (normalized) {
       return normalized;
@@ -51,7 +57,7 @@ export function normalizeVariantGroupRefs(variantGroups = []) {
 export function getVariantGroupRefs(group) {
   const refs = [];
 
-  [group?.refId, group?.groupId].forEach((candidate) => {
+  [group?.groupId, group?.refId, group?.id].forEach((candidate) => {
     const normalized = normalizeRefValue(candidate);
     if (normalized && !refs.includes(normalized)) {
       refs.push(normalized);
@@ -74,5 +80,5 @@ export function createVariantGroupRefMap(groups = []) {
 }
 
 export function getCanonicalVariantGroupRef(group) {
-  return normalizeRefValue(group?.refId) || normalizeRefValue(group?.groupId);
+  return normalizeRefValue(group?.groupId);
 }

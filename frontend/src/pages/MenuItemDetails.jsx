@@ -53,25 +53,46 @@ const MenuProps = {
 }
 function seedSelectionsFromCartItem(groups, selectedOptions) {
   const selections = {}
+  const optionNameGroupCounts = new Map()
+
+  for (const g of groups) {
+    const groupKey = String(g?.groupId || g?.refId || g?.id || '').trim()
+    for (const option of g.options || []) {
+      const optionName = String(option?.name || '').trim()
+      if (!optionName) continue
+
+      const knownGroups = optionNameGroupCounts.get(optionName) || new Set()
+      if (groupKey) knownGroups.add(groupKey)
+      optionNameGroupCounts.set(optionName, knownGroups)
+    }
+  }
+
   for (const g of groups) {
     const groupOptionNames = new Set((g.options || []).map((o) => o.name))
+    const groupIds = new Set(
+      [g?.groupId, g?.refId, g?.id]
+        .map((value) => (value == null ? '' : String(value).trim()))
+        .filter(Boolean)
+    )
     const matching = (selectedOptions || []).filter((s) => {
-      const selectionGroupId = s?.groupId
-      if (selectionGroupId != null && String(selectionGroupId).trim() !== '') {
-        return String(selectionGroupId) === String(g.id)
+      const selectionGroupId = s?.groupId == null ? '' : String(s.groupId).trim()
+      if (selectionGroupId) {
+        return groupIds.has(selectionGroupId)
       }
-      return groupOptionNames.has(s.optionName)
+      const optionName = String(s?.optionName || '').trim()
+      const groupsWithOptionName = optionNameGroupCounts.get(optionName)
+      return groupOptionNames.has(optionName) && groupsWithOptionName?.size === 1
     })
     if (g.maxSelections === 1) {
       const match = matching[0]
-      selections[g.id] = {
+      selections[g.groupId] = {
         type: 'single',
-        value: match ? createSelectionEntry(match.optionName, match.suboptionName, g.id) : '',
+        value: match ? createSelectionEntry(match.optionName, match.suboptionName, g.groupId) : '',
       }
     } else {
-      selections[g.id] = {
+      selections[g.groupId] = {
         type: 'multi',
-        values: matching.map((m) => createSelectionEntry(m.optionName, m.suboptionName, g.id)),
+        values: matching.map((m) => createSelectionEntry(m.optionName, m.suboptionName, g.groupId)),
       }
     }
   }
@@ -81,7 +102,7 @@ function initSelections(groups) {
   const next = {}
   for (const g of groups) {
     const isSingle = g.maxSelections === 1
-    next[g.id] = isSingle ? { type: 'single', value: '' } : { type: 'multi', values: [] }
+    next[g.groupId] = isSingle ? { type: 'single', value: '' } : { type: 'multi', values: [] }
   }
   return next
 }
@@ -185,7 +206,7 @@ function optionPriceOf(group, selected) {
 function computeUnitPrice(basePrice, groups, selections) {
   let extra = 0
   for (const g of groups) {
-    const sel = selections[g.id]
+    const sel = selections[g.groupId]
     if (!sel) continue
 
     if (sel.type === 'single') {
@@ -200,13 +221,13 @@ function computeUnitPrice(basePrice, groups, selections) {
 function validate(groups, selections) {
   const errors = {}
   for (const g of groups) {
-    const sel = selections[g.id]
+    const sel = selections[g.groupId]
     const count =
       sel?.type === 'single' ? (sel.value ? 1 : 0) : Array.isArray(sel?.values) ? sel.values.length : 0
 
-    if (g.isRequired && g.isActive !== false && count === 0) errors[g.id] = 'Required'
+    if (g.isRequired && g.isActive !== false && count === 0) errors[g.groupId] = 'Required'
     if (g.maxSelections != null && g.maxSelections > 0 && count > g.maxSelections) {
-      errors[g.id] = `Select up to ${g.maxSelections}`
+      errors[g.groupId] = `Select up to ${g.maxSelections}`
     }
   }
   return errors
@@ -641,10 +662,11 @@ const editLineId = searchParams.get('edit') || null
   }, [item?.id])
 
   const groups = useMemo(() => {
-    if (!item?.variantGroupDetails || item.variantGroupDetails.length === 0) return []
-    return item.variantGroupDetails.map((v) => ({
+    const variantGroups = item?.variantGroupDetails || item?.variants || []
+    if (variantGroups.length === 0) return []
+    return variantGroups.map((v) => ({
       ...v,
-      id: v.id || v.refId || v.groupId,
+      id: v.id || v.groupId || v.refId,
       options: Array.isArray(v.options) ? v.options : [],
     }))
   }, [item])

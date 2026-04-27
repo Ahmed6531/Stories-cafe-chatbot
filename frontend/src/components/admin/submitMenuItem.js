@@ -35,7 +35,7 @@ export async function submitMenuItem({
           typeof groupRef === "string"
             ? groupRef
             : groupRef && typeof groupRef === "object"
-              ? groupRef.refId || groupRef.groupId || groupRef.id
+              ? groupRef.refId || groupRef.groupId || groupRef.id || ""
               : ""
         const groupId = typeof rawId === "string" ? rawId.trim() : ""
         if (!groupId || groupIds.includes(groupId)) {
@@ -89,6 +89,14 @@ export async function submitMenuItem({
     }
 
     // ── Refresh list ───────────────────────────────────────────────────────
+    // fetchMenu is cached for customer performance; admin submits must
+    // force-refresh so the list reflects the saved item immediately.
+    try {
+      const { invalidateMenuCache } = await import("../../API/menuApi")
+      invalidateMenuCache?.()
+    } catch {
+      // ignore cache invalidation errors; fetch still works
+    }
     const data = await fetchMenu();
     setItems(data.items);
 

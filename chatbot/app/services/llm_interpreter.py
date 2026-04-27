@@ -4,24 +4,10 @@ import os
 import re
 from typing import Optional, Dict, Any
 
-import google.generativeai as genai
-
 from app.core.config import settings
+from app.utils.log_redaction import redact
 
 logger = logging.getLogger(__name__)
-
-GEMINI_MODEL_CANDIDATES = (
-    "gemini-2.5-flash",
-    "gemini-flash-latest",
-    "gemini-2.5-flash-lite",
-)
-
-
-def _normalize_gemini_model_name(model_name: str | None) -> str:
-    normalized = (model_name or "").strip()
-    if normalized.startswith("models/"):
-        return normalized.split("/", 1)[1]
-    return normalized
 
 WORD_TO_NUMBER = {
     "a": 1,
@@ -100,6 +86,10 @@ INSTRUCTION_CANONICAL = {
     "extra foam": "extra foam",
     "no foam": "no foam",
     "no whip": "no whip",
+    "no warming": "no warming",
+    "not warmed": "no warming",
+    "not warmed up": "no warming",
+    "unwarmed": "no warming",
     "on the side": "on the side",
 }
 
@@ -131,6 +121,159 @@ MODIFIER_LEADS = {
     "yirgacheffe",
     "on",
 }
+
+import time as _time
+
+# ── Menu vocabulary cache ─────────────────────────────────────────
+# A condensed text summary of the menu injected into every LLM
+# classification prompt. Refreshed every 10 minutes.
+
+_MENU_VOCAB_CACHE: str = ""
+_MENU_VOCAB_TIMESTAMP: float = 0.0
+_MENU_VOCAB_TTL: float = 600.0  # 10 minutes
+
+
+async def _get_menu_vocab_block() -> str:
+    """
+    Returns a condensed menu vocabulary block for injection into
+    the LLM classification prompt.
+
+    Format:
+        Menu categories: Coffee, Tea, Yogurt, Sandwiches, ...
+        Menu items (sample): Latte, Espresso, Americano, ...
+        Known variant options: Small, Medium, Large, Full Fat,
+            Skim Milk, Oat Milk, Almond Milk, Granola, Honey, ...
+
+    Capped at a safe token budget — item list is limited to 40,
+    variant options to 60. Returns empty string on failure so the
+    prompt still works without menu context.
+    """
+    global _MENU_VOCAB_CACHE, _MENU_VOCAB_TIMESTAMP
+
+    now = _time.monotonic()
+    if (
+        _MENU_VOCAB_CACHE
+        and (now - _MENU_VOCAB_TIMESTAMP) < _MENU_VOCAB_TTL
+    ):
+        return _MENU_VOCAB_CACHE
+
+    try:
+        from app.services.tools import fetch_menu_items, fetch_menu_item_detail
+
+        menu_items = await fetch_menu_items()
+        if not menu_items:
+            return ""
+
+        # Collect categories
+        categories: list[str] = []
+        seen_cats: set[str] = set()
+        for item in menu_items:
+            if not isinstance(item, dict):
+                continue
+            cat = item.get("category")
+            cat_name = (
+                cat.get("name") if isinstance(cat, dict) else str(cat or "")
+            ).strip()
+            if cat_name and cat_name.lower() not in seen_cats:
+                seen_cats.add(cat_name.lower())
+                categories.append(cat_name)
+
+        # Collect item names (cap at 40)
+        item_names: list[str] = []
+        seen_names: set[str] = set()
+        for item in menu_items:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            if name and name.lower() not in seen_names:
+                seen_names.add(name.lower())
+                item_names.append(name)
+            if len(item_names) >= 40:
+                break
+
+        # Collect variant option names from a sample of items
+        # Fetch detail for up to 8 items to get variant coverage
+        # without too many API calls
+        option_names: list[str] = []
+        seen_options: set[str] = set()
+        sample_items = [
+            item for item in menu_items
+            if isinstance(item, dict) and item.get("id")
+        ][:8]
+
+        for sample_item in sample_items:
+            item_id = sample_item.get("id") or sample_item.get("_id")
+            if item_id is None:
+                continue
+            try:
+                detail = await fetch_menu_item_detail(item_id)
+                if not isinstance(detail, dict):
+                    continue
+                variants = detail.get("variantGroupDetails") or \
+                           detail.get("variants") or []
+                for group in variants:
+                    if not isinstance(group, dict):
+                        continue
+                    if group.get("isActive") is False:
+                        continue
+                    for option in (group.get("options") or []):
+                        if not isinstance(option, dict):
+                            continue
+                        if option.get("isActive") is False:
+                            continue
+                        opt_name = str(option.get("name") or "").strip()
+                        if opt_name and opt_name.lower() not in seen_options:
+                            seen_options.add(opt_name.lower())
+                            option_names.append(opt_name)
+                        if len(option_names) >= 60:
+                            break
+                    if len(option_names) >= 60:
+                        break
+            except Exception:
+                continue
+            if len(option_names) >= 60:
+                break
+
+        # Build the vocab block
+        lines: list[str] = []
+        if categories:
+            lines.append(
+                f"Menu categories: {', '.join(categories)}"
+            )
+        if item_names:
+            lines.append(
+                f"Menu items (sample): {', '.join(item_names)}"
+            )
+        if option_names:
+            lines.append(
+                f"Known variant options: {', '.join(option_names)}"
+            )
+
+        if not lines:
+            return ""
+
+        vocab_block = (
+            "Current menu context (use this to recognize item names, "
+            "categories, and variant options):\n"
+            + "\n".join(lines)
+        )
+
+        _MENU_VOCAB_CACHE = vocab_block
+        _MENU_VOCAB_TIMESTAMP = now
+        logger.info({
+            "stage": "menu_vocab_cache_refreshed",
+            "categories": len(categories),
+            "items": len(item_names),
+            "options": len(option_names),
+        })
+        return vocab_block
+
+    except Exception as exc:
+        logger.warning({
+            "stage": "menu_vocab_cache_failed",
+            "error": str(exc),
+        })
+        return ""
 
 
 def _normalize_phrase(value: Any) -> str:
@@ -176,7 +319,6 @@ def _base_item() -> Dict[str, Any]:
         "size": None,
         "options": {
             "milk": None,
-            "sugar": None,
         },
         "addons": [],
         "instructions": "",
@@ -198,40 +340,60 @@ def _normalize_item(item: Any, default_quantity: int | None = None) -> Optional[
 
     normalized_item = _base_item()
     normalized_item.update(item)
-
+    if item.get("item_query") and not item.get("item_name"):
+        normalized_item["item_name"] = str(item.get("item_query") or "").strip()
     if isinstance(item.get("options"), dict):
         normalized_item["options"].update(item["options"])
 
+    addon_values = []
     raw_addons = item.get("addons")
     if isinstance(raw_addons, list):
-        normalized_item["addons"] = _unique_strings(
-            [str(addon).strip() for addon in raw_addons if str(addon).strip()]
-        )
+        addon_values.extend(str(addon).strip() for addon in raw_addons if str(addon).strip())
     elif isinstance(raw_addons, str) and raw_addons.strip():
-        normalized_item["addons"] = [raw_addons.strip()]
-    else:
-        normalized_item["addons"] = []
+        addon_values.append(raw_addons.strip())
 
-    raw_instructions = item.get("instructions")
-    if isinstance(raw_instructions, list):
-        normalized_item["instructions"] = ", ".join(
-            str(value).strip() for value in raw_instructions if str(value).strip()
-        ).strip()
-    elif isinstance(raw_instructions, str):
-        normalized_item["instructions"] = raw_instructions.strip()
+    size_words = {"small", "medium", "large", "regular", "tall", "grande", "venti", "short", "xl", "extra large"}
+    for modifier in item.get("modifiers") or []:
+        cleaned_modifier = str(modifier).strip()
+        lowered_modifier = cleaned_modifier.lower()
+        if not cleaned_modifier:
+            continue
+        if not normalized_item.get("size") and lowered_modifier in size_words:
+            normalized_item["size"] = cleaned_modifier
+        elif not normalized_item["options"].get("milk") and "milk" in lowered_modifier:
+            normalized_item["options"]["milk"] = cleaned_modifier
+        else:
+            addon_values.append(cleaned_modifier)
+    normalized_item["addons"] = _unique_strings(addon_values)
+
+    if isinstance(item.get("instructions"), list):
+        normalized_item["instructions"] = "; ".join(
+            str(value).strip() for value in item["instructions"] if str(value).strip()
+        )
+    elif isinstance(item.get("instructions"), str):
+        normalized_item["instructions"] = item["instructions"].strip()
     else:
         normalized_item["instructions"] = ""
+    if isinstance(item.get("notes"), list):
+        notes_text = "; ".join(str(value).strip() for value in item["notes"] if str(value).strip())
+        if notes_text:
+            normalized_item["instructions"] = (
+                f"{normalized_item['instructions']}; {notes_text}".strip("; ")
+                if normalized_item["instructions"] else notes_text
+            )
 
     if normalized_item.get("quantity") is None and default_quantity is not None:
         normalized_item["quantity"] = default_quantity
+    if isinstance(normalized_item.get("item_name"), str):
+        normalized_item["item_name"] = normalized_item["item_name"].strip()
 
-    item_name = normalized_item.get("item_name")
-    if isinstance(item_name, str):
-        normalized_item["item_name"] = item_name.strip()
-
-    if not normalized_item.get("item_name"):
+    follow_up_ref = str(item.get("follow_up_ref") or "").strip()
+    if follow_up_ref:
+        normalized_item["follow_up_ref"] = follow_up_ref
+    if item.get("use_defaults"):
+        normalized_item["use_defaults"] = True
+    if not normalized_item.get("item_name") and not follow_up_ref:
         return None
-
     return normalized_item
 
 
@@ -287,7 +449,7 @@ def _normalize_add_message(message: str) -> str:
     message = (message or "").lower().strip()
     message = re.sub(r"[.!?]+", "", message)
     message = re.sub(
-        r"^(i would like to order|i would like to add|i would like to|get me|i want to order|i want to add|i want|please)\s+",
+        r"^(i would like to order|i would like to add|i would like to|i d like to order|i d like to add|i d like to|get me|i want to order|i want to add|i want|could i get|could i have|can i get|can i have|please)\s+",
         "",
         message,
     )
@@ -397,6 +559,8 @@ def _parse_add_item_segment(segment: str) -> Dict[str, Any] | None:
     size, segment = _extract_first_match(segment, SIZE_ALIASES)
     sugar, segment = _extract_first_match(segment, SUGAR_CANONICAL)
     instruction_parts, segment = _extract_repeated_matches(segment, INSTRUCTION_CANONICAL)
+    if sugar:
+        instruction_parts.append(sugar)
 
     modifier_source = ""
     modifier_match = re.search(r"\b(with|without)\b", segment)
@@ -427,7 +591,6 @@ def _parse_add_item_segment(segment: str) -> Dict[str, Any] | None:
         "size": size,
         "options": {
             "milk": milk,
-            "sugar": sugar,
         },
         "addons": addons,
         "instructions": ", ".join(instruction_parts),
@@ -472,11 +635,14 @@ def _should_use_heuristic_items(parsed_items: list[Dict[str, Any]], heuristic_it
         )
     )
 
-    # Preserve richer Gemini structure when it already extracted usable
-    # customizations. The heuristic parser is intentionally simpler and can
-    # flatten modifiers back into item_name.
-    if parsed_items_are_usable and any(_has_customization_data(item) for item in parsed_items):
+    parsed_has_customization = any(_has_customization_data(item) for item in parsed_items)
+    heuristic_has_customization = any(_has_customization_data(item) for item in heuristic_items)
+
+    if parsed_items_are_usable and parsed_has_customization and not heuristic_has_customization:
         return False
+
+    if parsed_items_are_usable and heuristic_has_customization and not parsed_has_customization:
+        return True
 
     if not parsed_items or len(parsed_items) != len(heuristic_items):
         return True
@@ -487,209 +653,711 @@ def _should_use_heuristic_items(parsed_items: list[Dict[str, Any]], heuristic_it
         parsed_quantity = parsed_item.get("quantity") or 1
         heuristic_quantity = heuristic_item.get("quantity") or 1
 
-        if parsed_name != heuristic_name or parsed_quantity != heuristic_quantity:
+        if parsed_name != heuristic_name:
+            return True
+        if parsed_quantity != heuristic_quantity:
+            if parsed_quantity > 1 and heuristic_quantity == 1:
+                continue
             return True
 
     return False
 
 
-def _iter_gemini_models(preferred_model: str | None):
-    seen = set()
-    for model_name in (preferred_model, *GEMINI_MODEL_CANDIDATES):
-        normalized = _normalize_gemini_model_name(model_name)
-        if normalized and normalized not in seen:
-            seen.add(normalized)
-            yield normalized
-
-
-def _generate_gemini_content(prompt: str) -> str | None:
+async def _generate_gemini_content_async(
+    prompt: str,
+    timeout: float = 12.0,
+) -> str | None:
     api_key = (settings.gemini_api_key or os.getenv("GEMINI_API_KEY") or "").strip()
-    preferred_model = _normalize_gemini_model_name(
-        settings.gemini_model or os.getenv("GEMINI_MODEL")
-    )
+    primary_model = (
+        settings.gemini_model or os.getenv("GEMINI_MODEL") or "gemini-2.0-flash-lite"
+    ).strip()
+    fallback_model = (
+        getattr(settings, "gemini_fallback_model", None)
+        or os.getenv("GEMINI_FALLBACK_MODEL")
+        or "gemini-2.0-flash"
+    ).strip()
 
     if not api_key:
         logger.warning({"stage": "llm_api_key_missing"})
         return None
 
-    genai.configure(api_key=api_key)
-    last_error = None
+    from google import genai as google_genai
 
-    for model_name in _iter_gemini_models(preferred_model):
+    client = google_genai.Client(api_key=api_key)
+
+    async def _try_model(model_name: str) -> str | None:
         try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
-            return (response.text or "").strip()
-        except Exception as exc:
-            last_error = exc
-            logger.warning(
-                {
-                    "stage": "llm_model_attempt_failed",
-                    "model": model_name,
-                    "error": str(exc),
-                }
+            import asyncio
+
+            logger.info({
+                "stage": "llm_model_attempt",
+                "model": model_name,
+            })
+            response = await asyncio.wait_for(
+                client.aio.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                ),
+                timeout=timeout,
             )
-            error_text = str(exc).lower()
-            if "not found" in error_text or "not supported" in error_text:
-                continue
-            break
+            return (response.text or "").strip()
+        except asyncio.TimeoutError:
+            logger.warning({
+                "stage": "llm_gemini_timeout",
+                "model": model_name,
+                "timeout": timeout,
+            })
+            return None
+        except Exception as exc:
+            logger.warning({
+                "stage": "llm_model_attempt_failed",
+                "model": model_name,
+                "error": str(exc),
+            })
+            return None
 
-    if last_error:
-        logger.warning(
-            {
-                "stage": "llm_all_model_attempts_failed",
-                "preferred_model": preferred_model,
-                "error": str(last_error),
-            }
-        )
+    result = await _try_model(primary_model)
+    if result is not None:
+        return result
 
+    if fallback_model and fallback_model != primary_model:
+        logger.info({
+            "stage": "llm_fallback_triggered",
+            "primary": primary_model,
+            "fallback": fallback_model,
+        })
+        result = await _try_model(fallback_model)
+        if result is not None:
+            return result
+
+    logger.warning({
+        "stage": "llm_all_models_failed",
+        "primary": primary_model,
+        "fallback": fallback_model,
+    })
     return None
 
 
-def try_interpret_message(message: str, context=None) -> Optional[Dict[str, Any]]:
-    try:
-        history_block = ""
-        if context and isinstance(context, list):
-            recent = context[-10:]  # last 5 exchanges
-            lines = []
-            for turn in recent:
-                role = turn.get("role", "")
-                text = turn.get("text", "")
-                if role == "user":
-                    lines.append(f"User: {text}")
-                elif role == "bot":
-                    lines.append(f"Bot: {text}")
-            if lines:
-                history_block = "\nConversation so far:\n" + "\n".join(lines) + "\n"
+def _build_intent_prompt(
+    context_block: str,
+    message: str,
+    menu_vocab_block: str = "",
+) -> str:
+    return f"""
+Classify the user's intent for a cafe ordering chatbot. Return ONLY valid JSON matching this schema.
 
-        prompt = f"""
-You are an ordering-intent parser for a cafe chatbot.
-
-Your job is to extract structured data from the user's message with high accuracy.
-{history_block}
-Return ONLY valid JSON.
-Do not add markdown.
-Do not add explanations.
-Do not wrap the JSON in triple backticks.
-
-Use exactly this schema:
+Output schema:
 {{
-  "intent": "add_items" | "update_quantity" | "remove_item" | "view_cart" | "checkout" | "unknown",
-  "items": [
+  "operations": [
     {{
-      "item_name": string,
-      "quantity": number,
-      "size": string or null,
-      "options": {{
-        "milk": string or null,
-        "sugar": string or null
-      }},
-      "addons": [string],
-      "instructions": string or null
+      "intent": string,
+      "items": [
+        {{
+          "item_query": string,
+          "quantity": number or null,
+          "modifiers": [string],
+          "notes": [string],
+          "follow_up_ref": string or null,
+          "use_defaults": boolean
+        }}
+      ],
+      "needs_clarification": boolean,
+      "reason": string
     }}
   ],
-  "confidence": number,
-  "fallback_needed": boolean
+  "confidence": number between 0.0 and 1.0,
+  "needs_clarification": boolean,
+  "reason": string
 }}
 
-Critical Rules for Multi-Item Orders:
-- For messages with "and" or commas: extract EVERY item separately. Do not merge items.
-- When parsing "X item and Y item2": extract item with quantity X, then item2 with quantity Y.
-- When parsing "item and Z item2": extract item with quantity 1, then item2 with quantity Z.
-- Each "and" or comma signals a new item. Keep them as separate array entries.
-- Examples:
-  * "latte and 2 water" → [{{item_name: "latte", quantity: 1}}, {{item_name: "water", quantity: 2}}]
-  * "2 espresso and caramel frap" → [{{item_name: "espresso", quantity: 2}}, {{item_name: "caramel frap", quantity: 1}}]
-  * "1 latte and 2 water and 3 croissant" → 3 separate items with quantities 1, 2, 3
+Rules for the operations array:
+- ALWAYS return at least one operation, even for single-intent messages
+- Group items by what needs to happen to them — each distinct action gets its own
+  operation entry with its own intent and items array
+- Single-intent messages return exactly one operation
+- Multi-operation messages return one entry per distinct action:
+    "add a latte and remove the croissant" →
+      operations: [
+        {{"intent": "add_items", "items": [{{"item_name": "latte", ...}}]}},
+        {{"intent": "remove_item", "items": [{{"item_name": "croissant", ...}}]}}
+      ]
+    "add an espresso and change the latte to 2" →
+      operations: [
+        {{"intent": "add_items", "items": [{{"item_name": "espresso", ...}}]}},
+        {{"intent": "update_quantity", "items": [{{"item_name": "latte", "quantity": 2, ...}}]}}
+      ]
+- The top-level confidence and needs_clarification apply to the whole message
+- Each operation's needs_clarification applies to that operation only
+- Valid intents per operation are the same thirteen as before:
+    "add_items", "remove_item", "update_quantity", "update_item", "clear_cart", "view_cart",
+    "recommendation_query", "describe_item", "checkout", "confirm_checkout",
+    "repeat_order", "guided_order_response", "unknown"
+- All existing classification rules apply per operation unchanged
+- BARE AFFIRMATIONS rule still applies: if the entire message is a bare affirmation,
+  return one operation with intent "unknown" and reason "bare_affirmation_needs_context"
 
-General Rules:
-- Use "add_items" if the user is ordering, adding, or requesting one or more menu items.
-- Use "update_quantity" if the user wants to change the quantity of an item already in the cart.
-- Use "remove_item" if the user wants to remove or delete an item from the cart.
-- Use "view_cart" if the user asks to see the cart.
-- Use "unknown" if the request is unclear.
-- Put every requested item in the "items" array as a separate object.
-- For "update_quantity", include the target item in "items" and set its quantity to the requested new quantity.
-- For "remove_item", include the target item in "items" and set its quantity to null.
-- If the user does not mention quantity for an add_items item, use 1.
-- If quantity is missing or unclear for update_quantity, set quantity to null.
-- item_name should be only the menu item phrase (no quantity, no size, no options).
-- If the user says a size (small, medium, large), put it in each item's "size", not in item_name.
-- If the user mentions milk type, put it in each item's options.milk, not in item_name.
-- If the user mentions sugar preferences, put them in each item's options.sugar when possible.
-- Put selectable add-ons such as syrup flavors, extra shot, whipped cream, drizzle, or decaf into each item's addons array.
-- Put free-form prep requests such as extra hot, less ice, no whip, light foam, or on the side into each item's instructions field.
-- Set fallback_needed to false if you are confident in the interpretation. Set to true otherwise.
+Valid intents (use only these 13):
+  "add_items"             - add to cart
+  "remove_item"           - remove from cart
+  "update_quantity"       - change quantity
+  "update_item"           - modify variant options on a cart item
+  "clear_cart"            - clear cart
+  "view_cart"             - view cart
+  "recommendation_query"  - ask for suggestions
+  "describe_item"         - describe an item
+  "checkout"              - start checkout
+  "confirm_checkout"      - confirm checkout
+  "repeat_order"          - repeat prior order
+  "guided_order_response" - guided-order follow-up
+  "unknown"               - unclear or conversational
 
+Rules:
+1. BARE AFFIRMATIONS ("yes", "ok", "okay", "sure", "yep", "sounds good", "do it", "go ahead" - the message is ONLY this word or phrase): intent "unknown", reason "bare_affirmation_needs_context". NEVER classify a bare affirmation as "confirm_checkout". Context is resolved by a separate layer that checks the session state.
+2. When session_stage is "guided_ordering":
+   - Phase 1 (required variants): replies naming a size, milk, flavor, or other variant option should be "guided_order_response" with confidence 0.9 or higher.
+   - Phase 2 (review prompt): short replies like "done", "add it", "yes", or "i want toppings" should be "guided_order_response" with confidence 0.9 or higher.
+   - Phase 3 (open customization): replies asking about options, asking how many can be chosen, naming add-ons, or changing a previous selection should be "guided_order_response" with confidence 0.9 or higher.
+   - Phase 4 (instructions): short instruction replies or skip words like "none" should be "guided_order_response" with confidence 0.9 or higher.
+   In all guided phases, item_query should be null and the reply is a follow-up to guided_current_group / guided_order_item_name.
+   Exception: if the user is clearly asking for a different action like clearing the cart or checking out, classify that action normally instead.
+2b. VARIANT CHANGES DURING GUIDED ORDERING: When session_stage is
+    "guided_ordering" and the user requests a change to the size,
+    milk, or any variant option for the item currently being built
+    (guided_order_item_name), this is ALWAYS "guided_order_response",
+    NOT "update_item".
+
+    Examples during guided ordering for "Iced Latte":
+    - "wait make it medium instead" -> guided_order_response
+    - "actually I want skim milk" -> guided_order_response
+    - "can we make it medium instead, and for milk I want skim milk"
+      -> ONE guided_order_response operation with modifiers: ["Medium", "Skim Milk"]
+    - "change that to large" -> guided_order_response
+
+    When the user names multiple variant options in one message during
+    guided ordering (for example, "medium and skim milk"), return ONE
+    guided_order_response operation with all options in the modifiers
+    array, not separate operations.
+
+    Use "update_item" ONLY when the user is modifying an item that
+    is already confirmed in their cart, not one currently being
+    customized through guided ordering.
+3. Natural language patterns:
+   - "repeat my last order", "same as before", "order again", "same thing again" -> "repeat_order"
+   - "what's good", "surprise me", "any suggestions", "what do you recommend" -> "recommendation_query"
+   - "what is X", "tell me about X", "describe X", "what's in X" -> "describe_item"
+   - "what [category] do you have/provide/sell/offer/carry",
+     "show me your [category]", "what kinds of [category]",
+     "what [category] options do you have" → "list_category_items"
+     when the word matches a menu category (coffee, tea, food, drinks,
+     pastry, dessert, etc.). Do NOT classify as "describe_item".
+     For list_category_items, ALWAYS populate items with exactly one
+     entry containing the category name, even if the user has a typo:
+       "what salds do you have" →
+         intent: "list_category_items",
+         items: [{{"item_query": "salad", "quantity": null, ...}}]
+       "wht cofee do you have" →
+         intent: "list_category_items",
+         items: [{{"item_query": "coffee", "quantity": null, ...}}]
+       "what teas do you have" →
+         intent: "list_category_items",
+         items: [{{"item_query": "tea", "quantity": null, ...}}]
+
+     CRITICAL: Never return items: [] for list_category_items. Never
+     return "describe_item" when the user is asking what items exist in
+     a category (words like "have", "got", "offer", "serve",
+     "available", "options", "do you have", "what [category]").
+     describe_item is only for asking about a SPECIFIC named item
+     ("what's in the croissant", "describe the latte", "tell me about
+     the greek salad").
+
+     The category in item_query should be the normalized singular form:
+     "salads" → "salad", "coffees" → "coffee", "teas" → "tea",
+     "pastries" → "pastry" or "pastries" (keep as-is if unsure).
+     Note: "ingredients", "toppings", "extras", "add-ons" are NOT
+     menu categories — they are variant group names within items.
+     Do NOT classify "what toppings does the labneh have" as
+     list_category_items. Classify it as "describe_item" instead.
+   - quantity changes like "make it 3", "change that to 2", "set the latte to 2" -> "update_quantity" (first such pattern note; do not treat as add_items)
+   - removals like "take out X", "remove X", "cancel X", "delete X", "i don't want X anymore" -> "remove_item"
+   - "remove all X", "delete all X", "take out all X",
+     "get rid of all X", "remove every X" -> "remove_item" with
+     quantity: null. The execution layer will remove all matching
+     cart lines.
+   - follow-up references like "same one", "that last one", "it", "that one", "another one of those" -> set the item's follow_up_ref to the exact phrase and leave item_query empty
+4. Confidence: use >=0.8 when clear, 0.6-0.79 when plausible but uncertain, <0.6 for ambiguity, mixed operations, or unclear references; never force high confidence when unsure.
+5. Quantity defaults: "a couple" -> 2, "a few" -> 3, "some" -> 2; if add_items has no quantity, use 1; put prep or serving requests in "instructions".
+6. Multi-item rules: "A and B" or "A, B" means separate item entries; each item gets its own item_query, quantity, modifiers (flat list of user-language modifiers like 'medium', 'oat milk', 'extra shot'), and notes (free-text instructions like 'less ice', 'no whip').
+6a. Size adjectives before the item name MUST be extracted into modifiers.
+    When the user says "a small latte" or "two large fraps", the size word
+    is a variant option, not part of the item name. Always move it to
+    modifiers and keep item_query as the bare item name:
+      "a small latte"                      → item_query: "latte",          modifiers: ["small"]
+      "two large fraps"                    → item_query: "frap",           modifiers: ["large"]
+      "a small chocolate cream frap"       → item_query: "chocolate cream frap", modifiers: ["small"]
+      "medium iced latte with oat milk"    → item_query: "iced latte",     modifiers: ["medium", "oat milk"]
+    NEVER include the size word in item_query. NEVER leave it out of modifiers.
+    This applies even when a size word is the only adjective before the name.
+6c. Suboptions (intensity/quantity qualifiers on options):
+    Some options have intensity variants like Less, Regular, Extra.
+    When the user specifies both an option and its intensity, include
+    both as a single modifier string:
+      "extra mayo"      → modifiers: ["extra mayo"]
+      "regular bbq"     → modifiers: ["bbq regular"]
+      "less mustard"    → modifiers: ["mustard less"]
+      "mayo extra"      → modifiers: ["mayo extra"]
+    The slot filler will split these into option + suboption pairs.
+    Do NOT create separate item entries for the option and its intensity.
+    Do NOT put the intensity in notes — keep it with the option name
+    in modifiers as a single combined string.
+    If no intensity is specified, just use the option name:
+      "add mayo"        → modifiers: ["mayo"]
+      "with pickles"    → modifiers: ["pickles"]
+6b. Modifying variant options on an item already in the cart
+    ("change the milk on my latte to oat", "swap the syrup to caramel",
+    "remove the skim milk from my espresso keep full fat",
+    "make my americano large instead", "add a shot to the latte in my cart",
+    "update the latte to have almond milk") → "update_item"
+
+    CRITICAL DISTINCTION:
+    - "update_item" = changing WHAT OPTIONS an item has (milk, size,
+      addons, syrup, other modifiers — the variants/customizations)
+    - "update_quantity" = changing HOW MANY of an item (numbers only)
+
+    For update_item, populate the items array with:
+    - item_query: the cart item being modified
+    - quantity: set only when changing quantity simultaneously (e.g. "make
+      my latte 2 and change the milk to oat"); null otherwise
+    - modifiers: the NEW option values to apply — use the bare value only,
+      NOT the full phrase. Examples:
+        "change milk to oat milk"      → modifiers: ["oat milk"]
+        "make it medium"               → modifiers: ["medium"]
+        "swap syrup to caramel drizzle and add a shot" → modifiers: ["caramel drizzle", "shot"]
+      Never put positive changes like "change X to Y" or "make it X" in modifiers;
+      extract only the target value.
+    - notes: ONLY removal/negation instructions, e.g. "no sugar", "no whip",
+      "without vanilla", "remove skim milk". Do NOT put positive option
+      changes in notes.
+
+    The execution layer merges modifiers with the item's existing cart
+    options (replacing the same variant group) and appends negation notes
+    as barista instructions.
+7. Use "unknown" for purely conversational, off-topic, or genuinely unclear messages. Do not guess.
+8. If the user says "default", "whatever", "surprise me", "your choice",
+   "just the default", "no preference", or similar for a specific item -
+   meaning they want the item added without customization - set
+   use_defaults: true for that item. Do not set it for items where the
+   user specified options.
+9. Short follow-up messages must be interpreted using the
+   "Recent conversation context" above:
+   - If "Visible choices shown to the user" is present, ordinal
+     references like "first one", "second one", "number 3", or
+     "the last one" must resolve ONLY from that visible list. Never
+     resolve ordinal references from the hidden Current menu context.
+   - If the previous bot reply was a question or confirmation prompt
+     (contains "Sound good?", "Want to change?", "Did you mean?",
+     "Still want to", "Shall I", "Would you like"), and the user
+     replies with "yes", "yep", "sounds good", "perfect", "great",
+     "nvm sounds good", "all good", "looks good", "no thanks",
+     "nah", "nevermind" -> classify as "unknown" with reason
+     "acknowledged_bot_question". Do NOT classify as confirm_checkout
+     or any other intent.
+   - If the previous bot reply mentioned a specific item and the user
+     says "change it", "change that", "update it", "modify it" ->
+     classify as "update_item" with item_query set to the item name
+     from "Recently added items" or from the previous bot reply.
+   - If the user says "it", "that one", "same one", "the same" and
+     recently added items are listed -> set follow_up_ref to the
+     first recently added item name.
+   - If the previous bot reply asked "what size/milk/option" and
+     the user gives a direct answer -> classify as
+     "guided_order_response" with confidence >= 0.9.
+
+{context_block}
+{f"{menu_vocab_block}" + chr(10) if menu_vocab_block else ""}
 User message:
 "{message}"
 """
 
-        raw_text = _generate_gemini_content(prompt)
+
+async def try_interpret_message(
+    message: str,
+    context=None,
+    menu_vocab_block: str = "",
+) -> Optional[Dict[str, Any]]:
+    """
+    Layer 3 — Structured LLM Intent Parser.
+
+    Calls the LLM with a structured prompt covering all 12 valid intents,
+    parses the JSON response, and returns the raw schema dict.
+
+    No post-parse reclassification or intent overrides happen here.
+    All enrichment and routing decisions live in Layer 4 (intent_pipeline.py).
+
+    Args:
+        message: Normalised user message (already lowercased/trimmed).
+        context: Optional execution context for session-aware prompting.
+
+    Returns:
+        Parsed dict matching the Layer 3 schema, or None if the LLM call or
+        JSON parsing fails.
+    """
+    import sys
+
+    try:
+        session_stage = None
+        guided_order_phase = None
+        guided_current_group = None
+        guided_order_item_name = None
+        last_bot_message = ""
+        last_user_message = ""
+        last_added_items: list[str] = []
+        cart_item_names: list[str] = []
+        visible_choices: list[str] = []
+        if isinstance(context, dict):
+            session_stage = context.get("session_stage")
+            guided_order_phase = context.get("guided_order_phase")
+            guided_current_group = context.get("guided_current_group")
+            guided_order_item_name = context.get("guided_order_item_name")
+            last_bot_message = str(context.get("last_bot_message") or "")
+            last_user_message = str(context.get("last_user_message") or "")
+            raw_last_added_items = context.get("last_added_items") or []
+            if isinstance(raw_last_added_items, list):
+                last_added_items = [
+                    str(item).strip()
+                    for item in raw_last_added_items
+                    if str(item).strip()
+                ]
+            raw_cart_item_names = context.get("cart_item_names") or []
+            if isinstance(raw_cart_item_names, list):
+                cart_item_names = [
+                    str(item).strip()
+                    for item in raw_cart_item_names
+                    if str(item).strip()
+                ]
+            raw_visible_choices = context.get("visible_choices") or []
+            if isinstance(raw_visible_choices, list):
+                visible_choices = [
+                    str(item).strip()
+                    for item in raw_visible_choices
+                    if str(item).strip()
+                ]
+
+        context_parts: list[str] = []
+
+        if session_stage or guided_order_phase is not None or guided_current_group or guided_order_item_name:
+            context_parts.append(f"""Ordering session context:
+- session_stage: {json.dumps(session_stage or "")}
+- guided_order_phase: {json.dumps(guided_order_phase)}
+- guided_current_group: {json.dumps(guided_current_group or "")}
+- guided_order_item_name: {json.dumps(guided_order_item_name or "")}""")
+
+        if last_bot_message or last_user_message or last_added_items or cart_item_names or visible_choices:
+            conv_lines = ["Recent conversation context:"]
+            if last_user_message:
+                conv_lines.append(f'- Previous user message: "{last_user_message}"')
+            if last_bot_message:
+                conv_lines.append(f'- Previous bot reply: "{last_bot_message}"')
+            if last_added_items:
+                conv_lines.append(f"- Recently added items: {', '.join(last_added_items)}")
+            if cart_item_names:
+                conv_lines.append(f"- Current cart items: {', '.join(cart_item_names)}")
+            if visible_choices:
+                choice_lines = [f"  {index}. {name}" for index, name in enumerate(visible_choices, start=1)]
+                conv_lines.append("Visible choices shown to the user:\n" + "\n".join(choice_lines))
+            context_parts.append("\n".join(conv_lines))
+
+        context_block = "\n\n".join(context_parts)
+
+        # Fetch menu vocabulary if not provided by caller
+        if not menu_vocab_block:
+            try:
+                menu_vocab_block = await _get_menu_vocab_block()
+            except Exception:
+                menu_vocab_block = ""
+
+        prompt = _build_intent_prompt(context_block, message, menu_vocab_block)
+        print(f"[LLM INPUT] {redact(prompt)}", file=sys.stderr, flush=True)
+        raw_text = await _generate_gemini_content_async(prompt)
+        print(f"[LLM OUTPUT] {redact(raw_text)}", file=sys.stderr, flush=True)
         if not raw_text:
             return None
 
-        logger.info(
-            {
-                "stage": "llm_raw_response",
-                "message": message,
-                "raw_text": raw_text,
-            }
-        )
+        logger.info(redact({
+            "stage": "llm_raw_response",
+            "message": message,
+            "raw_text": raw_text,
+        }))
 
         parsed = _extract_json_object(raw_text)
+        print(
+            f"[LLM PARSED OPERATIONS] {parsed.get('operations') if parsed else None}",
+            file=sys.stderr,
+            flush=True,
+        )
         if not parsed:
-            logger.warning(
-                {
-                    "stage": "llm_parse_failed",
-                    "message": message,
-                    "raw_text": raw_text,
-                }
-            )
+            logger.warning({
+                "stage": "llm_parse_failed",
+                "message": message,
+                "raw_text": raw_text,
+            })
             return None
 
-        result = _base_result()
-        result.update(parsed)
-        result["items"] = _normalize_items(parsed)
+        # Extract operations array — with legacy single-intent fallback
+        operations_raw = parsed.get("operations")
+        if not isinstance(operations_raw, list):
+            # Legacy fallback: LLM returned old single-intent shape
+            if "intent" in parsed:
+                operations_raw = [parsed]
+            else:
+                return None
 
-        if not result.get("intent"):
-            result["intent"] = "unknown"
+        # Normalize each operation
+        normalized_operations = []
+        for op in operations_raw:
+            if not isinstance(op, dict):
+                continue
+            op_intent = op.get("intent") or "unknown"
+            if not op_intent:
+                op_intent = "unknown"
 
-        if result["items"] and result["intent"] in {"add_items", "unknown"}:
-            result["intent"] = "add_items"
+            # Run _normalize_items on this operation's items
+            op_items = _normalize_items(op)
 
-        if _looks_like_add_request(message) and result["intent"] in {"add_item", "add_items", "unknown"}:
-            heuristic_items = _extract_add_items_from_message(message)
-            if heuristic_items and result["intent"] == "unknown":
-                result["intent"] = "add_items"
-            if _should_use_heuristic_items(result["items"], heuristic_items):
-                logger.info(
-                    {
-                        "stage": "llm_heuristic_items_applied",
-                        "message": message,
-                        "heuristic_items": heuristic_items,
-                    }
+            # Apply heuristic for add_items per operation
+            if op_intent == "add_items":
+                op_item_names = [
+                    item.get("item_name") or ""
+                    for item in op_items
+                    if isinstance(item, dict)
+                ]
+                op_item_text = (
+                    ", ".join(name for name in op_item_names if name).strip()
+                    if len(op_item_names) > 1
+                    else " ".join(op_item_names).strip()
                 )
-                result["items"] = heuristic_items
+                heuristic_source = op_item_text if op_item_text else message
+                heuristic_items = _extract_add_items_from_message(heuristic_source)
+                if _should_use_heuristic_items(op_items, heuristic_items):
+                    op_items = heuristic_items
 
-        logger.info(
-            {
-                "stage": "llm_interpretation_ready",
-                "message": message,
-                "intent": result["intent"],
-                "items": result["items"],
-                "fallback_needed": result.get("fallback_needed", True),
+            op_follow_up_ref = str(op.get("follow_up_ref") or "").strip() or None
+            if not op_follow_up_ref:
+                for normalized_item in op_items:
+                    if not isinstance(normalized_item, dict):
+                        continue
+                    item_follow_up_ref = str(normalized_item.get("follow_up_ref") or "").strip()
+                    if item_follow_up_ref:
+                        op_follow_up_ref = item_follow_up_ref
+                        break
+
+            normalized_op = {
+                "intent": op_intent,
+                "items": op_items,
+                "follow_up_ref": op_follow_up_ref,
+                "needs_clarification": bool(op.get("needs_clarification", False)),
+                "reason": op.get("reason") or "",
             }
-        )
+            normalized_operations.append(normalized_op)
 
-        return result
+        if not normalized_operations:
+            return None
+
+        # Top-level fields
+        confidence = float(parsed.get("confidence") or 0.0)
+        needs_clarification = bool(parsed.get("needs_clarification", False))
+        reason = parsed.get("reason") or ""
+
+        # fallback_needed: derive from confidence when not set by LLM
+        fallback_needed = parsed.get("fallback_needed")
+        if not isinstance(fallback_needed, bool):
+            fallback_needed = confidence < 0.6
+
+        legacy_result = {
+            "operations": normalized_operations,
+            "confidence": confidence,
+            "needs_clarification": needs_clarification,
+            "reason": reason,
+            "fallback_needed": fallback_needed,
+            # Legacy fields for backward compatibility — derived from first operation
+            "intent": normalized_operations[0]["intent"],
+            "items": normalized_operations[0]["items"],
+            "follow_up_ref": normalized_operations[0].get("follow_up_ref"),
+        }
+        logger.info({
+            "stage": "llm_interpretation_ready",
+            "message": message,
+            "intent": legacy_result["intent"],
+            "op_count": len(normalized_operations),
+            "confidence": legacy_result.get("confidence"),
+            "follow_up_ref": legacy_result.get("follow_up_ref"),
+            "needs_clarification": legacy_result.get("needs_clarification"),
+        })
+
+        return legacy_result
 
     except Exception as e:
-        logger.exception(
-            {
-                "stage": "llm_unexpected_error",
-                "message": message,
-                "error": str(e),
-            }
-        )
+        logger.exception({
+            "stage": "llm_unexpected_error",
+            "message": message,
+            "error": str(e),
+        })
         return None
+
+
+async def extract_modifiers_for_item(
+    message: str,
+    item_name: str,
+    menu_detail: dict | None,
+    timeout: float = 8.0,
+) -> Dict[str, Any]:
+    """
+    Phase B modifier extraction — runs after item match.
+
+    Given the user's original message and the matched item's
+    full variant data, extracts the requested modifiers as a
+    structured dict matching the item schema.
+
+    Returns a dict with keys:
+        size, options (milk), addons, instructions
+    All keys present, unrecognized fields set to null/empty.
+
+    Returns empty defaults on failure — caller falls back to
+    whatever the LLM already extracted during classification.
+    """
+    _DEFAULTS: Dict[str, Any] = {
+        "size": None,
+        "options": {"milk": None},
+        "addons": [],
+        "instructions": "",
+    }
+
+    if not message or not isinstance(menu_detail, dict):
+        return _DEFAULTS
+
+    # Build variant context from menu_detail
+    variant_lines: list[str] = []
+    variants = (
+        menu_detail.get("variantGroupDetails")
+        or menu_detail.get("variants")
+        or []
+    )
+    for group in variants:
+        if not isinstance(group, dict):
+            continue
+        if group.get("isActive") is False:
+            continue
+        group_label = (
+            str(group.get("customerLabel") or "").strip()
+            or str(group.get("name") or "").strip()
+            or str(group.get("adminName") or "").strip()
+        )
+        if not group_label:
+            continue
+        options = group.get("options") or []
+        option_names = [
+            str(opt.get("name") or "").strip()
+            for opt in options
+            if isinstance(opt, dict)
+            and opt.get("isActive") is not False
+            and opt.get("name")
+        ]
+        if option_names:
+            is_required = bool(group.get("isRequired"))
+            required_hint = " (required)" if is_required else ""
+            max_sel = group.get("maxSelections")
+            max_hint = (
+                f" (pick up to {max_sel})"
+                if isinstance(max_sel, int) and max_sel > 1
+                else ""
+            )
+            variant_lines.append(
+                f"  - {group_label}{required_hint}{max_hint}: "
+                f"{', '.join(option_names)}"
+            )
+
+    if not variant_lines:
+        return _DEFAULTS
+
+    variant_context = "\n".join(variant_lines)
+
+    prompt = f"""
+You are extracting customization options from a customer's message
+for a specific café menu item.
+
+Item: {item_name}
+
+Available variant options for this item:
+{variant_context}
+
+Customer message: "{message}"
+
+Return ONLY valid JSON with this exact schema:
+{{
+  "size": string or null,
+  "options": {{
+    "milk": string or null
+  }},
+  "addons": [string],
+  "instructions": string or null
+}}
+
+Rules:
+1. Only use EXACT option names from the available variants above.
+   Never invent option names not listed.
+2. If the customer mentions a modifier that matches an available
+   option, include it using the exact name from the list.
+3. If the customer does not mention a particular variant type,
+   set it to null or empty array.
+4. If the customer mentions something that is not in the variant
+   list, put it in "instructions" as free text.
+5. For addons, include all mentioned options as an array.
+6. Return null for size/milk if not mentioned.
+7. Never include quantity in this response.
+"""
+
+    try:
+        raw_text = await _generate_gemini_content_async(
+            prompt, timeout=timeout
+        )
+        if not raw_text:
+            return _DEFAULTS
+
+        parsed = _extract_json_object(raw_text)
+        if not isinstance(parsed, dict):
+            return _DEFAULTS
+
+        result = dict(_DEFAULTS)
+        if isinstance(parsed.get("size"), str):
+            result["size"] = parsed["size"].strip() or None
+        if isinstance(parsed.get("options"), dict):
+            opts = parsed["options"]
+            result["options"] = {
+                "milk": (
+                    str(opts.get("milk") or "").strip() or None
+                ),
+            }
+        if isinstance(parsed.get("addons"), list):
+            result["addons"] = [
+                str(a).strip()
+                for a in parsed["addons"]
+                if str(a).strip()
+            ]
+        if isinstance(parsed.get("instructions"), str):
+            result["instructions"] = parsed["instructions"].strip()
+
+        logger.info({
+            "stage": "modifier_extraction_done",
+            "item_name": item_name,
+            "size": result["size"],
+            "milk": result["options"]["milk"],
+            "addons": result["addons"],
+        })
+        return result
+
+    except Exception as exc:
+        logger.warning({
+            "stage": "modifier_extraction_failed",
+            "item_name": item_name,
+            "error": str(exc),
+        })
+        return _DEFAULTS

@@ -5,14 +5,14 @@ import re
 import time
 from difflib import SequenceMatcher, get_close_matches
 
-from app.services.http_client import ExpressHttpClient, ExpressAPIError
+from app.services.http_client import ExpressAPIError, ExpressHttpClient
 from app.utils.normalize import normalize_user_message
 
 logger = logging.getLogger(__name__)
 
-# ---------- Simple in‑memory cache with TTL ----------
+# ---------- Simple in-memory cache with TTL ----------
 _cache = {}
-CACHE_TTL_SECONDS = 60  # 1 minute
+CACHE_TTL_SECONDS = 60
 
 
 def _cache_get(key: str):
@@ -116,34 +116,46 @@ async def fetch_menu_item_detail(menu_item_id):
         })
         data, _ = await client.get(f"/menu/{menu_item_id}")
         result = data.get("item")
+        variant_group_refs = result.get("variantGroups") if isinstance(result, dict) else []
+        variant_group_details = result.get("variantGroupDetails") if isinstance(result, dict) else []
+        logger.info({
+            "service": "express",
+            "method": "GET",
+            "path": f"/menu/{menu_item_id}",
+            "menu_item_id": menu_item_id,
+            "variant_group_refs_count": len(variant_group_refs) if isinstance(variant_group_refs, list) else 0,
+            "variant_group_details_count": len(variant_group_details) if isinstance(variant_group_details, list) else 0,
+            "variant_group_refs": variant_group_refs if isinstance(variant_group_refs, list) else [],
+        })
         _cache_set(cache_key, result)
         return result
     except ExpressAPIError:
         return None
 
 async def fetch_my_orders(auth_cookie: str | None = None, limit: int = 20):
-    """Fetch authenticated user's recent orders from backend."""
-    try:
-        client = ExpressHttpClient()
-        headers = {}
-        if isinstance(auth_cookie, str) and auth_cookie.strip():
-            headers["cookie"] = auth_cookie.strip()
+    """Fetch authenticated user's recent orders from backend.
 
-        logger.info({
-            "service": "express",
-            "method": "GET",
-            "path": "/orders/my",
-        })
+    Raises ExpressAPIError (including auth errors) so callers can
+    distinguish failure from an empty order history.
+    """
+    client = ExpressHttpClient()
+    headers = {}
+    if isinstance(auth_cookie, str) and auth_cookie.strip():
+        headers["cookie"] = auth_cookie.strip()
 
-        data, _ = await client.get("/orders/my", headers=headers)
-        orders = data.get("orders", []) if isinstance(data, dict) else []
-        if not isinstance(orders, list):
-            return []
-        if isinstance(limit, int) and limit > 0:
-            return [order for order in orders if isinstance(order, dict)][:limit]
-        return [order for order in orders if isinstance(order, dict)]
-    except ExpressAPIError:
+    logger.info({
+        "service": "express",
+        "method": "GET",
+        "path": "/orders/my",
+    })
+
+    data, _ = await client.get("/orders/my", headers=headers)
+    orders = data.get("orders", []) if isinstance(data, dict) else []
+    if not isinstance(orders, list):
         return []
+    if isinstance(limit, int) and limit > 0:
+        return [order for order in orders if isinstance(order, dict)][:limit]
+    return [order for order in orders if isinstance(order, dict)]
 
 async def fetch_featured_items():
     cache_key = "featured_items"
@@ -171,7 +183,7 @@ async def fetch_featured_items():
 # ------------------ CART ------------------
 
 async def get_cart(cart_id=None):
-    # Carts are session‑specific, so we don't cache them.
+    # Carts are session-specific, so we do not cache them.
     try:
         client = ExpressHttpClient()
         headers = {"x-cart-id": cart_id} if cart_id else {}
@@ -200,31 +212,36 @@ async def get_cart(cart_id=None):
 
 
 async def add_item_to_cart(menu_item_id, qty, selected_options, instructions, cart_id):
-    try:
-        client = ExpressHttpClient()
-        headers = {"x-cart-id": cart_id} if cart_id else {}
+    # Preserve this branch's contract: let ExpressAPIError bubble so the orchestrator
+    # can inspect the failure and return a meaningful user-facing message.
+    client = ExpressHttpClient()
+    headers = {"x-cart-id": cart_id} if cart_id else {}
 
-        payload = {
-            "menuItemId": menu_item_id,
-            "qty": qty,
-            "selectedOptions": selected_options or [],
-            "instructions": instructions or "",
-        }
+    payload = {
+        "menuItemId": menu_item_id,
+        "qty": qty,
+        "selectedOptions": selected_options or [],
+        "instructions": instructions or "",
+    }
 
-        logger.info({
-            "service": "express",
-            "method": "POST",
-            "path": "/cart/items",
-            "cart_id": cart_id,
-        })
+    logger.info({
+        "service": "express",
+        "method": "POST",
+        "path": "/cart/items",
+        "cart_id": cart_id,
+    })
 
-        data, resp_headers = await client.post("/cart/items", json=payload, headers=headers)
-        resolved_cart_id = resp_headers.get("x-cart-id") or cart_id or (data.get("cartId") if isinstance(data, dict) else None)
-        cart_items = data.get("items", []) if isinstance(data, dict) else []
+    data, resp_headers = await client.post("/cart/items", json=payload, headers=headers)
+    resolved_cart_id = resp_headers.get("x-cart-id") or cart_id or (data.get("cartId") if isinstance(data, dict) else None)
+    cart_items = data.get("items", []) if isinstance(data, dict) else []
 
-        return {"cart_id": resolved_cart_id, "cart": [item for item in cart_items if isinstance(item, dict)]}
-    except ExpressAPIError:
-        return {"cart_id": cart_id, "cart": []}
+    logger.info({
+        "service": "express",
+        "status": 201,
+        "returned_cart_id": resp_headers.get("x-cart-id"),
+    })
+
+    return {"cart_id": resolved_cart_id, "cart": [item for item in cart_items if isinstance(item, dict)]}
 
 
 async def update_cart_item_quantity(line_id, qty, cart_id):
@@ -234,6 +251,47 @@ async def update_cart_item_quantity(line_id, qty, cart_id):
         data, resp_headers = await client.patch(
             f"/cart/items/{line_id}",
             json={"qty": qty},
+            headers=headers,
+        )
+        resolved_cart_id = resp_headers.get("x-cart-id") or cart_id or (data.get("cartId") if isinstance(data, dict) else None)
+        cart_items = data.get("items", []) if isinstance(data, dict) else []
+        return {"cart_id": resolved_cart_id, "cart": [item for item in cart_items if isinstance(item, dict)]}
+    except ExpressAPIError:
+        return {"cart_id": cart_id, "cart": []}
+
+
+async def update_cart_item(
+    *,
+    line_id: str,
+    qty: int,
+    selected_options: list[dict],
+    instructions: str,
+    cart_id: str | None,
+) -> dict:
+    """
+    PATCH /cart/items/:lineId -- in-place update of a cart line.
+    Replaces qty, selectedOptions, and instructions on the line.
+    Returns the updated cart dict with cart_id and cart keys.
+    """
+    try:
+        client = ExpressHttpClient()
+        headers = {"x-cart-id": cart_id} if cart_id else {}
+        payload = {
+            "qty": qty,
+            "selectedOptions": selected_options or [],
+            "instructions": instructions or "",
+        }
+
+        logger.info({
+            "service": "express",
+            "method": "PATCH",
+            "path": f"/cart/items/{line_id}",
+            "cart_id": cart_id,
+        })
+
+        data, resp_headers = await client.patch(
+            f"/cart/items/{line_id}",
+            json=payload,
             headers=headers,
         )
         resolved_cart_id = resp_headers.get("x-cart-id") or cart_id or (data.get("cartId") if isinstance(data, dict) else None)
@@ -344,37 +402,50 @@ def _is_safe_fuzzy_candidate(item_query: str, candidate: str) -> bool:
 
         return False
 
-    # If there's no meaningful content token, avoid aggressive fuzzy picks.
+    # If there is no meaningful content token, avoid aggressive fuzzy picks.
     return False
 
 
-async def find_menu_item_by_name(menu_items, item_query):
+def _query_mentions_sparkling(item_query: str) -> bool:
+    """Return True if item_query contains 'sparkling' or a close typo of it."""
+    if "sparkling" in item_query:
+        return True
+    return any(
+        SequenceMatcher(None, token, "sparkling").ratio() >= 0.75
+        for token in item_query.split()
+        if len(token) >= 5
+    )
+
+
+async def find_menu_item_by_name(menu_items, item_query, *, include_unavailable: bool = False):
     if not item_query:
         return None
 
     item_query = _normalize_lookup_text(item_query)
 
-    # Only consider items that are currently available
-    available_items = [
-        item for item in menu_items
-        if isinstance(item, dict) and item.get("isAvailable", True) is not False
-    ]
+    candidates = [item for item in menu_items if isinstance(item, dict)]
+    if not include_unavailable:
+        candidates = [
+            item for item in candidates
+            if item.get("isAvailable", True) is not False
+        ]
 
-    # Special case: "water" or "cold water" etc should map to "Rim 330ML" not "Rim Sparkling Water"
-    # unless the user explicitly says "sparkling"
-    if "water" in item_query and "sparkling" not in item_query:
-        for item in available_items:
+    # Special case: "water" or "cold water" etc should map to "Rim 330ML" not
+    # "Rim Sparkling Water" unless the user explicitly says "sparkling" (or a
+    # close typo like "dparkling").
+    if "water" in item_query and not _query_mentions_sparkling(item_query):
+        for item in candidates:
             if item.get("name", "").strip().lower() == "rim 330ml":
                 return item
 
     # 1) exact match
-    for item in available_items:
+    for item in candidates:
         name = _normalize_lookup_text(item.get("name", ""))
         if item_query == name:
             return item
 
     # 2) contains match
-    for item in available_items:
+    for item in candidates:
         name = _normalize_lookup_text(item.get("name", ""))
         if item_query in name or name in item_query:
             return item
@@ -385,7 +456,7 @@ async def find_menu_item_by_name(menu_items, item_query):
     best_item = None
     best_overlap = 0
 
-    for item in available_items:
+    for item in candidates:
         name = _normalize_lookup_text(item.get("name", ""))
         name_words = set(name.split())
         overlap = len(query_words & name_words)
@@ -403,7 +474,7 @@ async def find_menu_item_by_name(menu_items, item_query):
     # 4) fuzzy match
     menu_name_map = {
         _normalize_lookup_text(item.get("name", "")): item
-        for item in available_items
+        for item in candidates
         if item.get("name")
     }
 

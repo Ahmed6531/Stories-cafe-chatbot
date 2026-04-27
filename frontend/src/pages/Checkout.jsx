@@ -14,6 +14,7 @@ import {
 import { useCart } from '../state/useCart'
 import { submitOrder } from '../API/ordersApi'
 import { lockDeadCart } from '../API/http'
+import { resetChatClientState } from '../utils/chatSession'
 import CartSummary from '../components/CartSummary'
 
 const formGroupSx = {
@@ -129,9 +130,7 @@ export default function Checkout() {
         }))
         lockDeadCart(localStorage.getItem('cartId'))
         localStorage.removeItem('cartId')
-        localStorage.removeItem('chatSessionId')
-        localStorage.removeItem('chatMessages')
-        localStorage.removeItem('chatMessagesSavedAt')
+        resetChatClientState()
         resetCart()
         navigate('/success', { state: { orderNumber: response.data.orderNumber } })
       }

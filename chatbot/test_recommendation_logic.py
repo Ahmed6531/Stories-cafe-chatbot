@@ -76,8 +76,13 @@ class RecommendationReplyTests(unittest.IsolatedAsyncioTestCase):
 
         interpreted = {
             "intent": "recommendation_query",
-            "items": [],
             "confidence": 0.95,
+            "items": [],
+            "follow_up_ref": None,
+            "needs_clarification": False,
+            "reason": "",
+            "source": "llm",
+            "route_to_fallback": False,
             "fallback_needed": False,
         }
 
@@ -105,7 +110,7 @@ class RecommendationReplyTests(unittest.IsolatedAsyncioTestCase):
             },
         ]
 
-        with patch("app.services.orchestrator.try_interpret_message", return_value=interpreted), \
+        with patch("app.services.orchestrator.resolve_intent", new=AsyncMock(return_value=interpreted)), \
              patch("app.services.tools.fetch_featured_items", new=AsyncMock(return_value=featured_items)), \
              patch("app.services.tools.get_cart", new=AsyncMock(return_value={"cart": [], "cart_id": "cart-1"})), \
              patch("app.services.tools.fetch_menu_items", new=AsyncMock(return_value=menu_items)), \
@@ -127,7 +132,22 @@ class RecommendationReplyTests(unittest.IsolatedAsyncioTestCase):
                     "last_intent": None,
                     "stage": None,
                     "checkout_initiated": False,
+                    "pending_clarification": None,
                     "history": [],
+                    "guided_order_item_id": None,
+                    "guided_order_item_name": None,
+                    "guided_order_phase": 1,
+                    "guided_order_step": 0,
+                    "guided_order_groups": [],
+                    "guided_order_required_groups": [],
+                    "guided_order_optional_groups": [],
+                    "guided_order_selections": {},
+                    "guided_order_quantity": None,
+                    "last_user_message": None,
+                    "last_bot_response": None,
+                    "last_matched_items": None,
+                    "last_action_type": None,
+                    "last_action_data": None,
                 },
             )
 
@@ -157,6 +177,74 @@ class FuzzyLookupSafetyTests(unittest.IsolatedAsyncioTestCase):
         result = await find_menu_item_by_name(menu_items, "cinammon roll")
         self.assertIsNotNone(result)
         self.assertEqual((result or {}).get("name"), "Cinnamon Roll")
+
+    async def test_typo_sparkling_still_maps_to_sparkling_water(self) -> None:
+        """Bug 1: 'dparkling rim water' (typo of sparkling) must resolve to Rim Sparkling Water."""
+        menu_items = [
+            {"id": 10, "name": "Rim 330ML", "isAvailable": True},
+            {"id": 11, "name": "Rim Sparkling Water", "isAvailable": True},
+        ]
+
+        result = await find_menu_item_by_name(menu_items, "dparkling rim water")
+        self.assertIsNotNone(result)
+        self.assertEqual((result or {}).get("name"), "Rim Sparkling Water")
+
+    async def test_plain_water_maps_to_still_water(self) -> None:
+        """'water' without sparkling must still map to Rim 330ML (non-sparkling)."""
+        menu_items = [
+            {"id": 10, "name": "Rim 330ML", "isAvailable": True},
+            {"id": 11, "name": "Rim Sparkling Water", "isAvailable": True},
+        ]
+
+        result = await find_menu_item_by_name(menu_items, "water")
+        self.assertIsNotNone(result)
+        self.assertEqual((result or {}).get("name"), "Rim 330ML")
+
+
+class CategoryFilterFallbackTests(unittest.TestCase):
+    def test_drink_category_filter_works_when_menu_item_lookup_fails(self) -> None:
+        """Bug 5: when item_name doesn't exactly match menu_items_by_name, partial match
+        should still allow category filtering to work."""
+        # Featured items may come with slightly different names than the menu endpoint.
+        suggestions = [
+            {"item_name": "Cold Brew Coffee"},  # menu item is "Cold Brew"
+            {"item_name": "Caesar Salad"},
+        ]
+        menu_items_by_name = {
+            "cold brew": {"category": "Beverages", "subcategory": "Coffee"},
+            "caesar salad": {"category": "Salads", "subcategory": "Food"},
+        }
+
+        filtered = filter_by_category(
+            suggestions=suggestions,
+            category_filter="drink",
+            menu_items_by_name=menu_items_by_name,
+            query_terms=[],
+        )
+
+        self.assertEqual([s["item_name"] for s in filtered], ["Cold Brew Coffee"])
+
+    def test_food_suggestions_filtered_when_drink_category_requested(self) -> None:
+        """Food items must be excluded when only drinks are requested."""
+        suggestions = [
+            {"item_name": "Iced Latte"},
+            {"item_name": "Chocolate Muffin"},
+            {"item_name": "Caesar Salad"},
+        ]
+        menu_items_by_name = {
+            "iced latte": {"category": "Beverages", "subcategory": "Coffee"},
+            "chocolate muffin": {"category": "Bakery", "subcategory": "Food"},
+            "caesar salad": {"category": "Salads", "subcategory": "Food"},
+        }
+
+        filtered = filter_by_category(
+            suggestions=suggestions,
+            category_filter="drink",
+            menu_items_by_name=menu_items_by_name,
+            query_terms=[],
+        )
+
+        self.assertEqual([s["item_name"] for s in filtered], ["Iced Latte"])
 
 
 if __name__ == "__main__":

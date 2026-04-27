@@ -2,6 +2,7 @@ import logging
 
 import httpx
 from app.core.config import settings
+from app.utils.log_redaction import redact
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +26,11 @@ class ExpressHttpClient:
             response = await client.get(url, params=params, headers=headers)
 
         if response.status_code >= 400:
-            logger.error({
+            logger.error(redact({
                 "service": "express",
                 "status": response.status_code,
-                "body": response.text,
-            })
+                "body": redact(response.text),
+            }))
             raise ExpressAPIError(
                 f"GET {path} failed with {response.status_code}: {response.text}"
             )
@@ -48,11 +49,11 @@ class ExpressHttpClient:
             response = await client.post(url, json=json, headers=headers)
 
         if response.status_code >= 400:
-            logger.error({
+            logger.error(redact({
                 "service": "express",
                 "status": response.status_code,
-                "body": response.text,
-            })
+                "body": redact(response.text),
+            }))
             raise ExpressAPIError(
                 f"POST {path} failed with {response.status_code}: {response.text}"
             )
@@ -71,11 +72,11 @@ class ExpressHttpClient:
             response = await client.patch(url, json=json, headers=headers)
 
         if response.status_code >= 400:
-            logger.error({
+            logger.error(redact({
                 "service": "express",
                 "status": response.status_code,
-                "body": response.text,
-            })
+                "body": redact(response.text),
+            }))
             raise ExpressAPIError(
                 f"PATCH {path} failed with {response.status_code}: {response.text}"
             )
@@ -93,11 +94,11 @@ class ExpressHttpClient:
             response = await client.delete(url, headers=headers)
 
         if response.status_code >= 400:
-            logger.error({
+            logger.error(redact({
                 "service": "express",
                 "status": response.status_code,
-                "body": response.text,
-            })
+                "body": redact(response.text),
+            }))
             raise ExpressAPIError(
                 f"DELETE {path} failed with {response.status_code}: {response.text}"
             )

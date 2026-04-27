@@ -12,6 +12,7 @@ class ChatMessageResponse(BaseModel):
     session_id: str
     status: str = "ok"
     reply: str
+    blocks: list[dict[str, Any]] = Field(default_factory=list)
 
     intent: str = "unknown"
     cart_updated: bool = False

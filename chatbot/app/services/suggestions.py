@@ -22,10 +22,6 @@ def safe_lower(value: Any) -> str:
     return _extract_text(value).lower()
 
 
-# ---------------------------------------------------------------------------
-# Category extraction from user message
-# ---------------------------------------------------------------------------
-
 _DRINK_KEYWORDS = {
     "drink", "drinks", "beverage", "beverages", "coffee", "coffees",
     "latte", "lattes", "tea", "teas", "frap", "frappe", "frappuccino",
@@ -68,10 +64,6 @@ def extract_recommendation_query_terms(message: str) -> list[str]:
 
     target_text = re.sub(r"[?.!,]+$", "", target_text)
 
-    # Phrase aliases first so terms like "ice cream" map to menu language.
-    # Track which individual words are covered by matched phrases so they are
-    # NOT re-added as raw tokens (e.g. "cream" from "ice cream" would otherwise
-    # match "Caramel Cream Frap").
     phrase_terms: list[str] = []
     aliased_words: set[str] = set()
     for phrase, aliases in _REC_PHRASE_ALIASES.items():
@@ -80,8 +72,8 @@ def extract_recommendation_query_terms(message: str) -> list[str]:
             aliased_words.update(phrase.split())
 
     tokens = [
-        t for t in re.split(r"\s+", target_text)
-        if t and t not in _REC_STOPWORDS and t not in aliased_words
+        token for token in re.split(r"\s+", target_text)
+        if token and token not in _REC_STOPWORDS and token not in aliased_words
     ]
     if not tokens and not phrase_terms:
         return []
@@ -95,8 +87,6 @@ def extract_recommendation_query_terms(message: str) -> list[str]:
             normalized.append(cleaned)
 
     for token in tokens:
-        # Use the singular form when the token looks plural — substring matching
-        # in filter_by_category means "burger" still hits "burgers" in the haystack.
         canonical = token[:-1] if token.endswith("s") and len(token) > 3 else token
         if canonical not in seen:
             seen.add(canonical)
@@ -132,11 +122,18 @@ def filter_by_category(
     if not suggestions:
         return suggestions
 
-    terms = [t for t in (query_terms or []) if t]
+    terms = [term for term in (query_terms or []) if term]
     result = []
-    for s in suggestions:
-        name = safe_lower(s.get("item_name") or "")
+    for suggestion in suggestions:
+        name = safe_lower(suggestion.get("item_name") or "").strip()
         menu_item = menu_items_by_name.get(name) if isinstance(menu_items_by_name, dict) else None
+        # Fallback: partial name match when featured/upsell items have slightly
+        # different names than the canonical menu item list.
+        if menu_item is None and isinstance(menu_items_by_name, dict) and name:
+            for key, candidate in menu_items_by_name.items():
+                if name in key or key in name:
+                    menu_item = candidate
+                    break
         cat = safe_lower(menu_item.get("category") or "") if isinstance(menu_item, dict) else ""
         sub = safe_lower(menu_item.get("subcategory") or "") if isinstance(menu_item, dict) else ""
         hay = f"{name} {cat} {sub}"
@@ -145,22 +142,22 @@ def filter_by_category(
             continue
 
         if not category_filter:
-            result.append(s)
+            result.append(suggestion)
             continue
 
         if category_filter == "drink":
             if is_drink_category(cat) or is_drink_category(sub) or is_drink_category(name):
-                result.append(s)
+                result.append(suggestion)
             continue
 
         if category_filter == "food":
             if is_food_category(cat) or is_food_category(sub) or is_food_category(name):
-                result.append(s)
+                result.append(suggestion)
             continue
 
         if category_filter == "yogurt":
             if any(kw in hay for kw in ["yogurt", "yoghurt", "froyo", "frozen yogurt"]):
-                result.append(s)
+                result.append(suggestion)
             continue
 
     return result
@@ -194,8 +191,8 @@ def is_food_category(category: str) -> bool:
     category = safe_lower(category)
     return any(word in category for word in [
         "dessert", "desserts", "pastry", "bakery", "cake", "cookie", "muffin", "croissant",
-        "food", "foods", "sandwich", "sandwiches", "salad", "salads", "soft drink","soft drinks","mixed beverage","mixed beverages",
-        "meal", "meals", "snack", "snacks", "bite", "eat",
+        "food", "foods", "sandwich", "sandwiches", "salad", "salads", "soft drink", "soft drinks",
+        "mixed beverage", "mixed beverages", "meal", "meals", "snack", "snacks", "bite", "eat",
     ])
 
 
@@ -224,18 +221,14 @@ def suggest_complementary_items(
         item_category = safe_lower(item.get("category"))
         item_subcategory = safe_lower(item.get("subcategory"))
 
-        # don't suggest the same item
         if item_name == last_item_name:
             continue
 
         item_is_drink = is_drink_category(item_category) or is_drink_category(item_subcategory)
         item_is_food = is_food_category(item_category) or is_food_category(item_subcategory)
 
-        # drink -> suggest food
         if last_item_is_drink and item_is_food:
             complementary_pool.append(item)
-
-        # food -> suggest drink
         elif last_item_is_food and item_is_drink:
             complementary_pool.append(item)
 

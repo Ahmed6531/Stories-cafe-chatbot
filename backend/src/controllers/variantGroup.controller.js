@@ -4,29 +4,13 @@ import { MenuItem } from "../models/MenuItem.js";
 import { generateVariantGroupRefId } from "../utils/variantGroupRefs.js";
 
 function buildScopedGroupFilter(groupRef, categoryId) {
-  const refFilter = {
-    $or: [
-      { groupId: groupRef },
-      { refId: groupRef },
-    ],
-  };
-
-  if (!categoryId) {
-    return refFilter;
-  }
-
-  return {
-    $and: [
-      refFilter,
-      { categoryId },
-    ],
-  };
+  const filter = { groupId: groupRef };
+  return categoryId ? { $and: [filter, { categoryId }] } : filter;
 }
 
 function getGroupRefs(group) {
-  return [group?.refId, group?.groupId]
-    .filter((value) => typeof value === "string" && value.trim())
-    .map((value) => value.trim());
+  const value = group?.groupId;
+  return typeof value === "string" && value.trim() ? [value.trim()] : [];
 }
 
 export async function createVariantGroup(req, res) {

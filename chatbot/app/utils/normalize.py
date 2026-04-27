@@ -18,7 +18,7 @@ def _build_menu_vocab() -> tuple[set[str], set[str]]:
     """
     seed_path = os.path.join(
         os.path.dirname(__file__),
-        "..", "..", "..", "..",  # chatbot/app/utils → project root
+        "..", "..", "..", "..",
         "backend", "src", "seed", "menu.seed.json",
     )
     seed_path = os.path.normpath(seed_path)
@@ -41,28 +41,135 @@ def _build_menu_vocab() -> tuple[set[str], set[str]]:
                     if len(clean) >= 3:
                         vocab.add(clean)
     except Exception:
-        pass  # If the file is missing, autocorrect is silently disabled.
+        pass
 
     return vocab, phrases
 
 
 _MENU_VOCAB, _MENU_PHRASES = _build_menu_vocab()
 
+# Filler prefixes common in voice transcription and casual chat.
+# Applied once at normalization time so every downstream layer
+# (Layer 2, Layer 3, guided ordering, static replies) benefits.
+_FILLER_PREFIX_RE = re.compile(
+    r"^(?:"
+    r"um+\s+|uh+\s+|uhh+\s+|hmm+\s+|hm+\s+|err+\s+|"
+    r"oh\s+|oh\s+wait\s+|oh\s+um\s+|"
+    r"so\s+(?:um\s+|uh\s+|like\s+)?|"
+    r"like\s+(?:um\s+|uh\s+|can\s+i\s+)?|"
+    r"i\s+mean\s+|i\s+meant\s+to\s+say\s+|"
+    r"actually\s+(?:wait\s+|um\s+|uh\s+|no\s+wait\s+)?|"
+    r"wait\s+(?:actually\s+|no\s+|um\s+|uh\s+)?|"
+    r"no\s+wait\s+(?:actually\s+)?|"
+    r"ok\s+so\s+|okay\s+so\s+|"
+    r"right\s+so\s+|right\s+um\s+|"
+    r"anyway\s+|anyways\s+|"
+    r"basically\s+|literally\s+|"
+    r"you\s+know\s+(?:what\s+)?|"
+    r"just\s+to\s+(?:say\s+|ask\s+|check\s+)"
+    r")+",
+    re.IGNORECASE,
+)
+
+# Filler suffixes — trailing noise after the real content
+_FILLER_SUFFIX_RE = re.compile(
+    r"\s+(?:you\s+know|i\s+guess|i\s+think|right|yeah|yea|ya|tho|though|tbh|lol|lmao)$",
+    re.IGNORECASE,
+)
+
 # Extra non-menu words so command-style typos can still be corrected.
 _EXTRA_VOCAB: set[str] = {
-    "clear", "cart", "empty", "reset", "delete", "remove",
+    "add", "append", "clear", "cart", "empty", "reset", "delete", "remove",
     "checkout", "check", "out", "order", "pay", "confirm",
     "cancel", "nevermind", "recommend", "suggest", "describe",
+    "update", "change", "modify", "edit", "set", "switch", "swap",
+    "make", "view", "show", "list", "repeat", "reorder", "again",
     "available", "because", "please", "thanks",
 }
 
 # High-confidence typo replacements applied before fuzzy matching.
 _FORCE_CORRECTIONS: dict[str, str] = {
+    "ad": "add",
+    "addd": "add",
+    "aad": "add",
+    "aadd": "add",
+    "apend": "append",
+    "appendd": "append",
     "cler": "clear",
     "clera": "clear",
     "cleer": "clear",
     "lear": "clear",
+    "claer": "clear",
+    "clrear": "clear",
     "crt": "cart",
+    "car": "cart",
+    "caart": "cart",
+    "carrt": "cart",
+    "emty": "empty",
+    "emtpy": "empty",
+    "rest": "reset",
+    "reeset": "reset",
+    "delte": "delete",
+    "delet": "delete",
+    "deleet": "delete",
+    "dlete": "delete",
+    "remve": "remove",
+    "remvoe": "remove",
+    "romove": "remove",
+    "remoove": "remove",
+    "rmve": "remove",
+    "udpate": "update",
+    "updat": "update",
+    "udate": "update",
+    "updte": "update",
+    "updae": "update",
+    "upate": "update",
+    "chnage": "change",
+    "chagne": "change",
+    "chage": "change",
+    "chaneg": "change",
+    "chaange": "change",
+    "modfy": "modify",
+    "modifiy": "modify",
+    "modiy": "modify",
+    "edti": "edit",
+    "edt": "edit",
+    "swich": "switch",
+    "swtich": "switch",
+    "swith": "switch",
+    "swtch": "switch",
+    "swp": "swap",
+    "swao": "swap",
+    "swpa": "swap",
+    "mak": "make",
+    "maek": "make",
+    "maake": "make",
+    "veiw": "view",
+    "viwe": "view",
+    "viei": "view",
+    "sho": "show",
+    "shwo": "show",
+    "lst": "list",
+    "lsit": "list",
+    "chekout": "checkout",
+    "chcekout": "checkout",
+    "checkoutt": "checkout",
+    "checout": "checkout",
+    "checokut": "checkout",
+    "payy": "pay",
+    "cnfirm": "confirm",
+    "confim": "confirm",
+    "confrim": "confirm",
+    "comfirm": "confirm",
+    "canel": "cancel",
+    "cnacel": "cancel",
+    "cancell": "cancel",
+    "repat": "repeat",
+    "repete": "repeat",
+    "repeet": "repeat",
+    "rpeat": "repeat",
+    "reoder": "reorder",
+    "reordr": "reorder",
     "criossant": "croissant",
     "croisant": "croissant",
     "crossant": "croissant",
@@ -72,11 +179,17 @@ _FORCE_CORRECTIONS: dict[str, str] = {
     "nevrmind": "nevermind",
     "becuase": "because",
     "reccomend": "recommend",
+    "recomend": "recommend",
+    "recommed": "recommend",
     "sugget": "suggest",
+    "sugest": "suggest",
+    "suggets": "suggest",
+    "desribe": "describe",
+    "descrbe": "describe",
+    "decribe": "describe",
 }
 
-# Tokens that should never be autocorrected (common chat words that could
-# accidentally fuzzy-match a menu word).
+# Tokens that should never be autocorrected.
 _STOP_TOKENS: set[str] = {
     "the", "and", "for", "can", "you", "add", "get", "please", "want",
     "like", "have", "give", "some", "with", "this", "that", "how",
@@ -102,7 +215,6 @@ def _autocorrect_token(token: str, vocab: set[str]) -> str:
     matches = get_close_matches(cleaned, vocab, n=1, cutoff=cutoff)
     if matches:
         candidate = matches[0]
-        # Require a reasonably safe similarity to reduce false positives.
         if SequenceMatcher(None, cleaned, candidate).ratio() >= cutoff:
             return candidate
     return token
@@ -126,7 +238,7 @@ def _autocorrect_phrase(message: str) -> str:
         if len(src_tokens) == len(dst_tokens):
             # Only allow typo-like token substitutions. This prevents semantic
             # replacements such as "matcha" -> "mocha" while still allowing
-            # close misspellings (e.g., "cinammon" -> "cinnamon").
+            # close misspellings.
             for src, dst in zip(src_tokens, dst_tokens):
                 if src == dst:
                     continue
@@ -143,12 +255,12 @@ def autocorrect_message(message: str) -> str:
     """
     vocab = _MENU_VOCAB | _EXTRA_VOCAB
     if not vocab:
-        return message  # No vocab loaded — pass through unchanged.
+        return message
 
     normalized = " ".join(str(message or "").split())
     phrase_corrected = _autocorrect_phrase(normalized)
     tokens = phrase_corrected.split()
-    corrected = [_autocorrect_token(t, vocab) for t in tokens]
+    corrected = [_autocorrect_token(token, vocab) for token in tokens]
     return " ".join(corrected)
 
 
@@ -165,4 +277,15 @@ def normalize_user_message(message: str) -> str:
     """
     normalized = " ".join(message.strip().split()).lower()
     normalized = autocorrect_message(normalized)
+
+    # Strip leading filler words (critical for voice transcription)
+    # Apply repeatedly until stable — handles "um uh actually um add latte"
+    prev = None
+    while prev != normalized:
+        prev = normalized
+        normalized = _FILLER_PREFIX_RE.sub("", normalized).strip()
+
+    # Strip trailing filler
+    normalized = _FILLER_SUFFIX_RE.sub("", normalized).strip()
+
     return normalized

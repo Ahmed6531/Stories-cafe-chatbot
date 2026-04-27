@@ -1,16 +1,51 @@
 import random
 from typing import Any
 
+from app.core.config import settings
+from app.services.menu_utils import active_variant_options, get_variant_group_key
 from app.services.tools import fetch_combo_suggestions
 
-# Cooldown: tracks the last turn index when upsell was shown per session
 _upsell_last_shown: dict[str, int] = {}
 _session_turn_counter: dict[str, int] = {}
 
-UPSELL_COOLDOWN_TURNS = 3  # don't upsell again for 3 turns after showing one
+# Tracks the last copy template index used per session to avoid
+# repeating the same phrasing back-to-back.
+_last_upgrade_template: dict[str, int] = {}
+
+UPSELL_COOLDOWN_TURNS = 3
 
 _NO_UPSELL_INTENTS = {"checkout", "clear_cart", "remove_item"}
 MIN_COMBO_COUNT_FOR_UPSELL = 2
+
+_SIZE_UPGRADE_COPY: dict[str, list[str]] = {
+    # Small jump (price_delta <= 50,000 LL)
+    # Feel: casual, obvious yes, barely worth hesitating over
+    "small": [
+        "{upgrade} is only {delta} more. Most people go for it.",
+        "For {delta} more you get {upgrade} — honestly a no-brainer.",
+        "Quick one: {upgrade} is just {delta} extra. Worth it?",
+        "Most customers upgrade to {upgrade} — only {delta} more.",
+        "{delta} more gets you {upgrade}. Up to you!",
+    ],
+    # Medium jump (50,001–150,000 LL)
+    # Feel: informative, light social proof, respectful of the decision
+    "medium": [
+        "Want to go {upgrade}? It's {delta} more — solid upgrade.",
+        "{upgrade} is {delta} extra if you want the bigger size.",
+        "Thinking {upgrade}? {delta} more and you're set.",
+        "A lot of regulars go {upgrade} for {delta} more. Just saying.",
+        "{upgrade} for {delta} more — plenty of room for that extra shot.",
+    ],
+    # Large jump (> 150,000 LL)
+    # Feel: honest, no pressure, acknowledge it's a real cost
+    "large": [
+        "{upgrade} is available for {delta} more — worth it if you're thirsty.",
+        "You could go {upgrade} for {delta} more. Entirely up to you.",
+        "{upgrade} is {delta} extra — bigger pour, same great taste.",
+        "If you want more, {upgrade} is {delta} more.",
+        "Going big? {upgrade} is {delta} extra today.",
+    ],
+}
 
 _PAIR_FUN_FACTS = {
     ("latte", "cheese croissant"): "The creamy body of a latte balances the flaky, salty richness of a cheese croissant.",
@@ -85,15 +120,11 @@ def _is_item_active(item: dict[str, Any] | None) -> bool:
     if not isinstance(item, dict):
         return False
 
-    # Keep existing availability gate.
     if item.get("isAvailable", True) is False:
         return False
-
-    # New model may expose active status on the item itself.
     if item.get("isActive") is False:
         return False
 
-    # Category can be a string or object in newer payloads.
     category = item.get("category")
     if isinstance(category, dict) and category.get("isActive") is False:
         return False
@@ -169,7 +200,6 @@ def _is_complementary_pair(anchor_item: dict[str, Any] | None, suggested_item: d
     suggested_is_drink = _is_drink_item(suggested_item)
     suggested_is_food = _is_food_item(suggested_item)
 
-    # Be conservative: only treat as "perfect pairing" if both sides are classifiable.
     if not (anchor_is_drink or anchor_is_food):
         return False
     if not (suggested_is_drink or suggested_is_food):
@@ -244,7 +274,6 @@ def _pick_diverse_random(
 
     selected: list[dict[str, Any]] = []
 
-    # Pass 1: prefer categories not used yet.
     for item in shuffled:
         if len(selected) >= limit:
             break
@@ -254,7 +283,6 @@ def _pick_diverse_random(
         selected.append(item)
         used_categories.add(key)
 
-    # Pass 2: fill any remaining slots regardless of category.
     if len(selected) < limit:
         selected_ids = {
             _item_id(item)
@@ -280,9 +308,7 @@ def should_upsell(session_id: str, intent: str, cart_items: list[dict]) -> bool:
     if not cart_items:
         return False
 
-    # Turn is incremented once per incoming chat message via record_turn().
     turn = _session_turn_counter.get(session_id, 0)
-
     last_shown = _upsell_last_shown.get(session_id, -999)
     if turn - last_shown < UPSELL_COOLDOWN_TURNS:
         return False
@@ -291,10 +317,123 @@ def should_upsell(session_id: str, intent: str, cart_items: list[dict]) -> bool:
 
 
 def record_turn(session_id: str) -> int:
-    """Increment and return the conversation turn for this session."""
     turn = _session_turn_counter.get(session_id, 0) + 1
     _session_turn_counter[session_id] = turn
     return turn
+
+
+def get_size_upgrade_suggestion(
+    session_id: str,
+    menu_detail: dict | None,
+    selected_option_names: list[str],
+    is_repeat_customer: bool = False,
+) -> dict | None:
+    """
+    Returns a size upgrade suggestion dict or None.
+
+    Fires with dynamic probability based on price delta and customer
+    type. Copy rotates across tier-appropriate templates, never
+    repeating the same phrasing back-to-back in the same session.
+    Shares the same cooldown as the complementary upsell system so
+    both never fire in the same turn.
+    """
+    if not isinstance(menu_detail, dict):
+        return None
+    groups = (
+        menu_detail.get("variantGroupDetails")
+        if isinstance(menu_detail.get("variantGroupDetails"), list)
+        else menu_detail.get("variants")
+        if isinstance(menu_detail.get("variants"), list)
+        else []
+    )
+    size_group = None
+    for group in groups:
+        if isinstance(group, dict) and get_variant_group_key(group) == "size":
+            size_group = group
+            break
+    if not size_group:
+        return None
+
+    options = [
+        opt for opt in active_variant_options(size_group)
+        if isinstance(opt.get("additionalPrice"), (int, float))
+    ]
+    options.sort(key=lambda o: float(o["additionalPrice"]))
+    if len(options) < 2:
+        return None
+
+    selected_lower = {str(s).strip().lower() for s in selected_option_names}
+    current_idx = 0
+    for i, opt in enumerate(options):
+        if str(opt.get("name", "")).strip().lower() in selected_lower:
+            current_idx = i
+            break
+
+    upgrade_opt = None
+    for opt in options[current_idx + 1:]:
+        upgrade_opt = opt
+        break
+    if upgrade_opt is None:
+        return None
+
+    current_price = float(options[current_idx]["additionalPrice"])
+    upgrade_price = float(upgrade_opt["additionalPrice"])
+    price_delta = upgrade_price - current_price
+    if price_delta <= 0:
+        return None
+
+    max_delta = float(options[-1]["additionalPrice"]) - float(options[0]["additionalPrice"])
+    delta_ratio = price_delta / max_delta if max_delta > 0 else 0.5
+
+    turn = _session_turn_counter.get(session_id, 0)
+    base_rate = (
+        settings.size_upgrade_repeat_probability
+        if is_repeat_customer
+        else settings.size_upgrade_base_probability
+    )
+    force_upgrade = base_rate >= 1.0
+    if not force_upgrade:
+        last_shown = _upsell_last_shown.get(session_id, -999)
+        if turn - last_shown < UPSELL_COOLDOWN_TURNS:
+            return None
+
+    probability = 1.0 if force_upgrade else base_rate * (1 - delta_ratio * 0.4)
+
+    if random.random() >= probability:
+        return None
+
+    delta_formatted = f"L.L {int(price_delta):,}"
+
+    if price_delta <= 50_000:
+        tier = "small"
+    elif price_delta <= 150_000:
+        tier = "medium"
+    else:
+        tier = "large"
+
+    templates = _SIZE_UPGRADE_COPY[tier]
+    last_idx = _last_upgrade_template.get(f"{session_id}:{tier}", -1)
+
+    candidates = [i for i in range(len(templates)) if i != last_idx]
+    chosen_idx = random.choice(candidates)
+    _last_upgrade_template[f"{session_id}:{tier}"] = chosen_idx
+
+    message = templates[chosen_idx].format(
+        upgrade=upgrade_opt["name"],
+        delta=delta_formatted,
+    )
+
+    _upsell_last_shown[session_id] = turn
+
+    return {
+        "type": "size_upgrade",
+        "item_name": menu_detail.get("name") or menu_detail.get("item_name"),
+        "current_size": options[current_idx]["name"],
+        "upgrade_size": upgrade_opt["name"],
+        "price_delta": int(price_delta),
+        "message": message,
+        "menu_item_id": menu_detail.get("id") or menu_detail.get("_id"),
+    }
 
 
 async def suggest_upsell_items(
@@ -308,14 +447,13 @@ async def suggest_upsell_items(
         for item in menu_items
         if _item_id(item) is not None
     }
-    cart_names = {_safe_lower(i.get("name")) for i in cart_items}
+    cart_names = {_safe_lower(item.get("name")) for item in cart_items}
     cart_menu_item_ids = {
-        _item_id(i)
-        for i in cart_items
-        if _item_id(i) is not None
+        _item_id(item)
+        for item in cart_items
+        if _item_id(item) is not None
     }
-    cart_categories = {_safe_lower(i.get("category")) for i in cart_items}
-    # Use the explicitly provided anchor (just-added item) rather than the last cart item.
+    cart_categories = {_safe_lower(item.get("category")) for item in cart_items}
     recent_item = anchor_menu_item if anchor_menu_item is not None else (cart_items[-1] if cart_items else None)
     recent_menu_item_id = _item_id(recent_item)
     recent_is_drink = _is_drink_item(recent_item)
@@ -330,8 +468,6 @@ async def suggest_upsell_items(
             return _is_drink_item(item)
         return True
 
-    # Try to fetch combos for the most recent item first (primary anchor)
-    # to ensure upsell suggestions are anchored to the item just added.
     primary_combo_stats = []
     if recent_menu_item_id is not None:
         primary_combo_stats = await fetch_combo_suggestions(
@@ -340,7 +476,6 @@ async def suggest_upsell_items(
             limit=max(limit * 10, 20),
         )
 
-    # If insufficient results from primary anchor, fall back to full cart
     combo_stats = (
         primary_combo_stats
         if primary_combo_stats and len(primary_combo_stats) >= limit
@@ -377,7 +512,6 @@ async def suggest_upsell_items(
         fun_fact = _build_combo_fun_fact(anchor_item, item)
         existing = combo_ranked_by_id.get(suggested_id)
 
-        # Keep the strongest signal per suggested item id.
         if (
             existing is None
             or combo_count > int(existing.get("count") or 0)
@@ -394,12 +528,12 @@ async def suggest_upsell_items(
                 combo_fun_facts_by_id[suggested_id] = fun_fact
 
     has_drink = any(
-        w in cat for cat in cart_categories
-        for w in ["beverage", "coffee", "latte", "tea", "drink", "frap"]
+        word in cat for cat in cart_categories
+        for word in ["beverage", "coffee", "latte", "tea", "drink", "frap"]
     )
     has_food = any(
-        w in cat for cat in cart_categories
-        for w in ["pastry", "dessert", "bakery", "cake", "cookie", "muffin", "croissant"]
+        word in cat for cat in cart_categories
+        for word in ["pastry", "dessert", "bakery", "cake", "cookie", "muffin", "croissant"]
     )
 
     candidates: list[dict[str, Any]] = []
@@ -412,10 +546,9 @@ async def suggest_upsell_items(
         cat = _safe_lower(item.get("category", ""))
         sub = _safe_lower(item.get("subcategory", ""))
 
-        item_is_drink = any(w in cat or w in sub for w in ["beverage", "coffee", "latte", "tea", "drink", "frap"])
-        item_is_food = any(w in cat or w in sub for w in ["pastry", "dessert", "bakery", "cake", "cookie", "muffin", "croissant"])
+        item_is_drink = any(word in cat or word in sub for word in ["beverage", "coffee", "latte", "tea", "drink", "frap"])
+        item_is_food = any(word in cat or word in sub for word in ["pastry", "dessert", "bakery", "cake", "cookie", "muffin", "croissant"])
 
-        # Prefer complement of the most recently added item.
         if recent_is_food:
             if item_is_drink:
                 candidates.append(item)
@@ -425,7 +558,6 @@ async def suggest_upsell_items(
                 candidates.append(item)
             continue
 
-        # Fallback when recent item category is unclear.
         if has_drink and item_is_food:
             candidates.append(item)
         elif has_food and item_is_drink:
@@ -433,10 +565,6 @@ async def suggest_upsell_items(
 
     combo_records = list(combo_ranked_by_id.values())
 
-    # Priority policy:
-    # 1) high-frequency complementary combos
-    # 2) high-frequency combos (any category)
-    # 3) any observed combo
     scoped_combo_records = (
         [
             record
@@ -460,8 +588,6 @@ async def suggest_upsell_items(
     if not priority_combo_records:
         priority_combo_records = scoped_combo_records
 
-    # Strict anchor matching: only keep combo suggestions that complement
-    # the most recently added item when its type is known.
     if recent_is_food or recent_is_drink:
         priority_combo_records = [
             record for record in priority_combo_records
@@ -480,7 +606,6 @@ async def suggest_upsell_items(
         if isinstance(record.get("item"), dict)
     ]
 
-    # Merge candidates while preserving combo priority and avoiding duplicates.
     merged_candidates: list[dict] = []
     seen_names: set[str] = set()
 
@@ -494,10 +619,8 @@ async def suggest_upsell_items(
         merged_candidates.append(item)
 
     if not merged_candidates:
-        # If we know the latest item type, do not offer unrelated upsells.
         if recent_is_food or recent_is_drink:
             return []
-        # Ultimate fallback: suggest any available item not already in cart.
         merged_candidates = [
             item
             for item in menu_items
@@ -508,10 +631,8 @@ async def suggest_upsell_items(
         if not merged_candidates:
             return []
 
-    # Stage 1: always take the highest-frequency combos first.
     selected: list[dict[str, Any]] = combo_items_ordered[:limit]
 
-    # Stage 2: if we still need slots, fill with diverse random candidates.
     if len(selected) < limit:
         selected_ids = {
             _item_id(item)

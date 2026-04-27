@@ -1,0 +1,20 @@
+STATIC_REPLY_TABLE: dict[str, str] = {
+    "hi": "Hi! What can I get for you today?",
+    "hey": "Hey! What can I get for you?",
+    "hello": "Hello! What would you like to order?",
+    "hiya": "Hi there! What can I get you?",
+    "yo": "Hey! What would you like to order?",
+    "hallo": "Hi there! What would you like to order?",
+    "good morning": "Good morning! What can I get for you?",
+    "good afternoon": "Good afternoon! What would you like?",
+    "good evening": "Good evening! What can I get for you?",
+    "thanks": "You're welcome! Anything else?",
+    "thank you": "You're welcome! Let me know if you need anything else.",
+    "thx": "You're welcome!",
+    "cheers": "Cheers! Anything else I can help with?",
+    "great": "Great! Anything else?",
+    "perfect": "Perfect! Anything else?",
+    "awesome": "Glad to help! Anything else?",
+    "nice": "Glad to help! Anything else?",
+    "ty":"You're welcome! Anything else you would like?"
+}

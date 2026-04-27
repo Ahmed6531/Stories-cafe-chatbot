@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { getOrCreateChatSessionId } from "../utils/chatSession";
 
 const SILENCE_THRESHOLD = 6;
 const CONFIRMED_SPEECH_MS = 300;
@@ -23,12 +24,6 @@ function pickMime() {
   if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) return "audio/webm;codecs=opus";
   if (MediaRecorder.isTypeSupported("audio/mp4;codecs=mp4a.40.2")) return "audio/mp4;codecs=mp4a.40.2";
   return null;
-}
-
-function getSessionId() {
-  let id = sessionStorage.getItem("chatSessionId");
-  if (!id) { id = crypto.randomUUID(); sessionStorage.setItem("chatSessionId", id); }
-  return id;
 }
 
 function toWsUrl(url) {
@@ -236,7 +231,7 @@ export default function VoiceInput({ active, onEvent, audioContextRef }) {
         setTimer("finalization", () => { if (!terminalRef.current) resolveTerminal("timeout", "Transcription timed out."); }, FINALIZATION_TIMEOUT_MS);
       };
 
-      ws.send(JSON.stringify({ type: "start", session_id: getSessionId(), utterance_id: crypto.randomUUID(), mime_type: rec.mimeType }));
+      ws.send(JSON.stringify({ type: "start", session_id: getOrCreateChatSessionId(), utterance_id: crypto.randomUUID(), mime_type: rec.mimeType }));
       rec.start(TIMESLICE_MS);
       recStartRef.current = Date.now();
       setPhase(PHASE.RECORDING);

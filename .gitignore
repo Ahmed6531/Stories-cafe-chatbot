@@ -14,7 +14,11 @@ chatbot/venv_old/
 __pycache__/
 *.pyc
 .venv/
+.venv/
+venv/
 *.pyc"chatbot/gcp-credentials.json" 
 chatbot/**/__pycache__/
 *.pyo
 *.pyd
+
+.pytest_cache/

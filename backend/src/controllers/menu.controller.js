@@ -80,7 +80,7 @@ function serializeInvalidVariantGroups(invalidGroups = []) {
 }
 
 function findVariantGroupByRef(groupRef, groupsByRef) {
-  return groupsByRef.get(String(groupRef)) || null;
+  return groupsByRef.get(String(groupRef).trim()) || null;
 }
 
 function getVariantGroupCategoryId(group) {
@@ -107,7 +107,7 @@ async function validateVariantGroupsForCategory({ categoryId, variantGroups, con
       { refId: { $in: normalizedRefs } },
     ],
   })
-    .select("refId groupId adminName name categoryId isActive")
+    .select("groupId refId adminName name categoryId isActive")
     .lean();
 
   const groupsByRef = createVariantGroupRefMap(matchedGroups);
@@ -140,12 +140,9 @@ async function validateVariantGroupsForCategory({ categoryId, variantGroups, con
     context,
     categoryId: String(categoryId),
     requestedGroupRefs: normalizedRefs,
-    matchedGroups: matchedGroups.map((group) => ({
-      refId: group.refId || null,
-      groupId: group.groupId,
-    })),
+    matchedGroups: matchedGroups.map((group) => group.refId || group.groupId),
     matchedCategoryRefs: matchedGroups.map((group) => ({
-      refId: group.refId ? String(group.refId) : null,
+      refId: group.refId || null,
       groupId: group.groupId,
       categoryId: group.categoryId ? String(group.categoryId) : null,
       isActive: group.isActive !== false,
@@ -216,19 +213,37 @@ export async function getMenuItem(req, res) {
     let itemResponse = menuItem.toObject();
     if (menuItem.variantGroups?.length > 0) {
       const variantGroups = await VariantGroup.find({
-        $or: [
+          $or: [
           { groupId: { $in: menuItem.variantGroups } },
           { refId: { $in: menuItem.variantGroups } },
         ],
         isActive: { $ne: false },
       });
       const groupsByRef = createVariantGroupRefMap(variantGroups);
+      console.log("[menu/item/variant-groups]", {
+        itemId: menuItem.id,
+        itemName: menuItem.name,
+        requestedRefs: menuItem.variantGroups,
+        matchedGroups: variantGroups.map((group) => ({
+          groupId: group.groupId,
+          refId: group.refId || null,
+          isActive: group.isActive !== false,
+        })),
+        lookupKeys: [...groupsByRef.keys()],
+      });
       itemResponse.variantGroupDetails = menuItem.variantGroups
         .map((groupRef) => {
           const group = findVariantGroupByRef(groupRef, groupsByRef);
           return group ? group.toObject() : null;
         })
         .filter(Boolean);
+      console.log("[menu/item/variant-groups/resolved]", {
+        itemId: menuItem.id,
+        itemName: menuItem.name,
+        requestedCount: menuItem.variantGroups.length,
+        resolvedCount: itemResponse.variantGroupDetails.length,
+        unresolvedRefs: menuItem.variantGroups.filter((groupRef) => !findVariantGroupByRef(groupRef, groupsByRef)),
+      });
     }
     console.log(
       `📤 Returning menu item "${menuItem.name}" with ${itemResponse.variantGroupDetails?.length || 0} variant groups`

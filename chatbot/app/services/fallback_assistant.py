@@ -1,44 +1,104 @@
 import logging
+import os
 import re
 from collections.abc import Awaitable, Callable
 
 import httpx
 
 from app.core.config import settings
+from app.utils.static_replies import STATIC_REPLY_TABLE
+
+google_genai = None
 
 try:
-    import google.generativeai as genai
+    from google import genai as google_genai
+
     _GENAI_AVAILABLE = True
 except ImportError:
     _GENAI_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
-GEMINI_MODEL_CANDIDATES = (
-    "gemini-2.5-flash",
-    "gemini-flash-latest",
-    "gemini-2.5-flash-lite",
-)
-
-FALLBACK_SYSTEM_PROMPT = (
-    "You are Stories Cafe's barista and assistant. "
-    "Reply to customers in a friendly, helpful, and concise way using complete sentences. "
-    "Do not invent policies, prices, or order status. "
-    "If you are unsure, guide the user to menu, cart, or checkout actions."
-)
-
-FALLBACK_TEMPERATURE = 0.35
+_FALLBACK_TEMPERATURE = 0.35
 FALLBACK_MAX_TOKENS = 420
 FALLBACK_HTTP_TIMEOUT_SECONDS = 6.0
+GEMINI_MODEL_CANDIDATES = (
+    "gemini-2.0-flash-lite",
+    "gemini-2.0-flash",
+)
 
+_FALLBACK_BASE_PROMPT = (
+    "You are the transactional ordering assistant for Stories Cafe. "
+    "You help customers order food and drinks, answer menu questions, "
+    "and assist with their cart. "
+    "Keep replies short, neutral, and professional. "
+    "Do not flirt, make romantic jokes, compliment the user's appearance or personality, "
+    "use pet names, tease, roleplay, or ask personal questions unrelated to the order. "
+    "Do not sound intimate, playful, or emotionally suggestive. "
+    "Never fabricate cart actions, menu items, prices, or order status. "
+    "Redirect unclear or off-topic messages back to ordering help in one or two sentences. "
+    "Prefer transactional language about menu details, cart updates, and checkout."
+)
+
+_FALLBACK_REASON_HINTS: dict[str, str] = {
+    "bare_affirmation_needs_context": (
+        " The customer said yes/ok/sure with no clear context. "
+        "Ask what they meant - for example: "
+        "'Just to confirm - did you want to checkout, or is there something else I can help with?'"
+    ),
+    "entity_not_found": (
+        " The item the user mentioned was not found on the menu. "
+        "Acknowledge this politely and ask them to clarify or browse the menu."
+    ),
+    "low_confidence": (
+        " The request was unclear. "
+        "Gently ask the customer to rephrase what they would like to do."
+    ),
+    "unknown_intent": (
+        " The customer said something unclear or unexpected. "
+        "Do not say 'Welcome' - they are already in a conversation. "
+        "Respond as if you did not quite catch what they meant: "
+        "ask them what they would like to order or how you can help. "
+        "Keep it to one or two sentences."
+    ),
+    "llm_parse_failed": (
+        " There was a technical issue parsing the request. "
+        "Apologize briefly and ask the customer to try again."
+    ),
+    "repeat_order_no_history": (
+        " The customer wants to repeat a previous order but no history is available. "
+        "Let them know and invite them to place a fresh order."
+    ),
+}
+
+
+def _build_fallback_system_prompt(reason: str) -> str:
+    return _FALLBACK_BASE_PROMPT + _FALLBACK_REASON_HINTS.get(reason, "")
+
+
+FALLBACK_SYSTEM_PROMPT = _FALLBACK_BASE_PROMPT
+
+_OFF_SCRIPT_REPLY_PATTERNS = (
+    r"\bbabe\b",
+    r"\bbaby\b",
+    r"\bcutie\b",
+    r"\bsweetheart\b",
+    r"\bhandsome\b",
+    r"\bbeautiful\b",
+    r"\bgorgeous\b",
+    r"\bmy love\b",
+    r"\blove\b.*\byou\b",
+    r"\bdate\b",
+    r"\bflirt\b",
+    r"\bkiss\b",
+)
 
 def _safe_static_reply(user_message: str) -> str:
-    normalized = (user_message or "").strip().lower()
-    if any(token in normalized for token in ["thanks", "thank you", "thx"]):
-        return "You're welcome! Happy to help."
-    if any(token in normalized for token in ["hi", "hello", "hey"]):
-        return "Hi! How can I help with your order today?"
-    return "I didn't quite understand that. Can you repeat or rephrase?"
+    normalized = " ".join((user_message or "").strip().lower().split())
+    static_reply = STATIC_REPLY_TABLE.get(normalized)
+    if static_reply:
+        return static_reply
+    return "I can help with menu details, cart updates, or checkout."
 
 
 def _is_incomplete_reply(text: str) -> bool:
@@ -46,21 +106,17 @@ def _is_incomplete_reply(text: str) -> bool:
     if not cleaned:
         return True
 
-    # Single-word or very short fragments usually indicate a cut-off generation.
     if len(cleaned) < 12:
         return True
 
     if len(cleaned.split()) < 2:
         return True
 
-    # Handle common dangling starts like: "You're", "I can", "Sure,".
     if cleaned.endswith("'"):
         return True
     if cleaned in {"You're", "You are", "I can", "Sure", "Certainly"}:
         return True
 
-    # Detect dangling trailing clause after a complete sentence,
-    # e.g. "That's wonderful to hear! Is there"
     clauses = [part.strip() for part in re.split(r"[.!?]\s+", cleaned) if part.strip()]
     if clauses:
         last_clause = clauses[-1]
@@ -81,13 +137,9 @@ def _is_incomplete_reply(text: str) -> bool:
             if last_words[0] in {"is", "are", "do", "does", "can", "could", "would", "will", "shall"}:
                 return True
 
-    # If the reply ends without terminal punctuation, it's often clipped.
-    # Be stricter for short/medium responses because well-formed assistant
-    # replies should normally terminate cleanly.
     if cleaned[-1] not in {".", "!", "?"} and len(cleaned.split()) <= 18:
         return True
 
-    # Common clipped endings in model output.
     if cleaned.endswith((":", ";", ",", " -", " --", "(", "[", "{")):
         return True
     if cleaned.count("(") > cleaned.count(")"):
@@ -97,24 +149,63 @@ def _is_incomplete_reply(text: str) -> bool:
     if cleaned.count("{") > cleaned.count("}"):
         return True
 
-    # Trailing connector words usually mean an unfinished thought.
     trailing_words = cleaned.lower().split()
     if trailing_words:
         if trailing_words[-1] in {
-            "and", "or", "but", "with", "to", "for", "of", "in", "on", "because",
-            "if", "when", "while", "that", "which",
+            "and",
+            "or",
+            "but",
+            "with",
+            "to",
+            "for",
+            "of",
+            "in",
+            "on",
+            "because",
+            "if",
+            "when",
+            "while",
+            "that",
+            "which",
         }:
             return True
         if trailing_words[-1] in {
-            "other", "another", "more", "different", "various", "several",
-            "many", "some", "those", "these",
+            "other",
+            "another",
+            "more",
+            "different",
+            "various",
+            "several",
+            "many",
+            "some",
+            "those",
+            "these",
         }:
             return True
 
     return False
 
 
-def _extract_openai_style_content(data: dict) -> str | None:
+def _looks_off_script_reply(text: str) -> bool:
+    cleaned = (text or "").strip().lower()
+    if not cleaned:
+        return False
+    return any(re.search(pattern, cleaned) for pattern in _OFF_SCRIPT_REPLY_PATTERNS)
+
+
+def _finalize_reply(user_message: str, reply: str | None) -> str | None:
+    if not reply:
+        return None
+    cleaned = reply.strip()
+    if _looks_off_script_reply(cleaned):
+        logger.warning("Fallback assistant reply rejected as off-script: %s", cleaned)
+        return _safe_static_reply(user_message)
+    if _is_incomplete_reply(cleaned):
+        return _safe_static_reply(user_message)
+    return cleaned
+
+
+def _extract_openai_style_content(data: dict[str, object]) -> str | None:
     choices = data.get("choices") if isinstance(data, dict) else None
     if not isinstance(choices, list) or not choices:
         return None
@@ -145,8 +236,6 @@ def _extract_gemini_content(response: object) -> str | None:
 
         normalized_reason = str(finish_reason or "").strip().lower()
         if normalized_reason:
-            # Accept only natural stops. Numeric enum values may surface in some
-            # SDK versions, so allow "1" as the Gemini STOP enum value.
             if not any(token in normalized_reason for token in {"stop", "unspecified", "1"}):
                 return None
 
@@ -159,7 +248,6 @@ async def _generate_complete_reply_once(
     user_message: str,
     generate_fn: Callable[[str], Awaitable[str | None]],
 ) -> str | None:
-    """Generate a fallback reply and retry once if the first reply is clipped."""
     first = await generate_fn(user_message)
     if not first:
         return None
@@ -183,23 +271,19 @@ async def _generate_complete_reply_once(
     return _safe_static_reply(user_message)
 
 
-def _normalize_gemini_model_name(model_name: str | None) -> str:
-    normalized = (model_name or "").strip()
-    if normalized.startswith("models/"):
-        return normalized.split("/", 1)[1]
-    return normalized
-
-
-def _iter_gemini_models(preferred_model: str | None):
+def _iter_gemini_models(preferred_model: str | None) -> list[str]:
     seen = set()
-    for model_name in (preferred_model, *GEMINI_MODEL_CANDIDATES):
-        normalized = _normalize_gemini_model_name(model_name)
+    models: list[str] = []
+    configured_fallback = getattr(settings, "gemini_fallback_model", None)
+    for model_name in (preferred_model, configured_fallback, *GEMINI_MODEL_CANDIDATES):
+        normalized = str(model_name or "").strip()
         if normalized and normalized not in seen:
             seen.add(normalized)
-            yield normalized
+            models.append(normalized)
+    return models
 
 
-async def _generate_with_azure_openai(user_message: str) -> str | None:
+async def _generate_with_azure_openai(user_message: str, system_prompt: str) -> str | None:
     if not settings.azure_openai_api_key or not settings.azure_openai_endpoint:
         return None
 
@@ -214,10 +298,10 @@ async def _generate_with_azure_openai(user_message: str) -> str | None:
     }
     payload = {
         "messages": [
-            {"role": "system", "content": FALLBACK_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
-        "temperature": FALLBACK_TEMPERATURE,
+        "temperature": _FALLBACK_TEMPERATURE,
         "max_tokens": FALLBACK_MAX_TOKENS,
     }
 
@@ -232,7 +316,7 @@ async def _generate_with_azure_openai(user_message: str) -> str | None:
         return None
 
 
-async def _generate_with_openai(user_message: str) -> str | None:
+async def _generate_with_openai(user_message: str, system_prompt: str) -> str | None:
     if not settings.openai_api_key:
         return None
 
@@ -244,10 +328,10 @@ async def _generate_with_openai(user_message: str) -> str | None:
     payload = {
         "model": settings.openai_model,
         "messages": [
-            {"role": "system", "content": FALLBACK_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
-        "temperature": FALLBACK_TEMPERATURE,
+        "temperature": _FALLBACK_TEMPERATURE,
         "max_tokens": FALLBACK_MAX_TOKENS,
     }
 
@@ -262,27 +346,33 @@ async def _generate_with_openai(user_message: str) -> str | None:
         return None
 
 
-async def _generate_with_gemini(user_message: str) -> str | None:
-    if not _GENAI_AVAILABLE or not settings.gemini_api_key:
+async def _generate_with_gemini(user_message: str, system_prompt: str) -> str | None:
+    api_key = (settings.gemini_api_key or os.getenv("GEMINI_API_KEY") or "").strip()
+    if not _GENAI_AVAILABLE or not api_key:
         return None
 
-    genai.configure(api_key=settings.gemini_api_key)
+    import asyncio
+
+    client = google_genai.Client(api_key=api_key)
     last_error = None
 
     for model_name in _iter_gemini_models(settings.gemini_model):
         try:
-            model = genai.GenerativeModel(
-                model_name=model_name,
-                system_instruction=FALLBACK_SYSTEM_PROMPT,
-            )
-            response = await model.generate_content_async(
-                user_message,
-                generation_config={
-                    "temperature": FALLBACK_TEMPERATURE,
-                    "max_output_tokens": FALLBACK_MAX_TOKENS,
-                },
+            response = await asyncio.wait_for(
+                client.aio.models.generate_content(
+                    model=model_name,
+                    contents=(
+                        f"{system_prompt}\n\n"
+                        f"User message: {user_message}"
+                    ),
+                ),
+                timeout=FALLBACK_HTTP_TIMEOUT_SECONDS,
             )
             return _extract_gemini_content(response)
+        except asyncio.TimeoutError as exc:
+            last_error = exc
+            logger.warning("Gemini fallback assistant call timed out for model %s: %s", model_name, exc)
+            continue
         except Exception as exc:
             last_error = exc
             logger.warning("Gemini fallback assistant call failed for model %s: %s", model_name, exc)
@@ -293,44 +383,59 @@ async def _generate_with_gemini(user_message: str) -> str | None:
 
     if last_error:
         logger.warning("Gemini fallback assistant unavailable after model fallbacks: %s", last_error)
-
     return None
 
 
-async def generate_fallback_reply(user_message: str) -> str | None:
+async def _generate_and_finalize(
+    user_message: str,
+    generate_fn: Callable[[str], Awaitable[str | None]],
+) -> str | None:
+    reply = await _generate_complete_reply_once(user_message, generate_fn)
+    return _finalize_reply(user_message, reply)
+
+
+async def generate_fallback_reply(user_message: str, reason: str = "") -> str | None:
     message = (user_message or "").strip()
     if not message:
         return None
 
+    system_prompt = _build_fallback_system_prompt(reason)
     provider = (settings.openai_provider or "").lower().strip()
 
+    async def generate_with_gemini(prompt: str) -> str | None:
+        return await _generate_with_gemini(prompt, system_prompt)
+
+    async def generate_with_openai(prompt: str) -> str | None:
+        return await _generate_with_openai(prompt, system_prompt)
+
+    async def generate_with_azure(prompt: str) -> str | None:
+        return await _generate_with_azure_openai(prompt, system_prompt)
+
     if provider == "gemini":
-        reply = await _generate_complete_reply_once(message, _generate_with_gemini)
+        reply = await _generate_and_finalize(message, generate_with_gemini)
         if reply:
             return reply
-        # cascade to OpenAI then Azure as fallbacks
-        reply = await _generate_complete_reply_once(message, _generate_with_openai)
+        reply = await _generate_and_finalize(message, generate_with_openai)
         if reply:
             return reply
-        return await _generate_complete_reply_once(message, _generate_with_azure_openai)
+        return await _generate_and_finalize(message, generate_with_azure)
 
     if provider == "azure":
-        reply = await _generate_complete_reply_once(message, _generate_with_azure_openai)
+        reply = await _generate_and_finalize(message, generate_with_azure)
         if reply:
             return reply
-        return await _generate_complete_reply_once(message, _generate_with_openai)
+        return await _generate_and_finalize(message, generate_with_openai)
 
     if provider == "openai":
-        reply = await _generate_complete_reply_once(message, _generate_with_openai)
+        reply = await _generate_and_finalize(message, generate_with_openai)
         if reply:
             return reply
-        return await _generate_complete_reply_once(message, _generate_with_azure_openai)
+        return await _generate_and_finalize(message, generate_with_azure)
 
-    # unknown provider — try all in order
-    reply = await _generate_complete_reply_once(message, _generate_with_gemini)
+    reply = await _generate_and_finalize(message, generate_with_gemini)
     if reply:
         return reply
-    reply = await _generate_complete_reply_once(message, _generate_with_azure_openai)
+    reply = await _generate_and_finalize(message, generate_with_azure)
     if reply:
         return reply
-    return await _generate_complete_reply_once(message, _generate_with_openai)
+    return await _generate_and_finalize(message, generate_with_openai)

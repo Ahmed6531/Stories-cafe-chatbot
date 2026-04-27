@@ -8,11 +8,14 @@ class Settings(BaseSettings):
     app_port: int = 8000
 
     express_api_base_url: str = "http://localhost:5000"
+    redis_url: str = "redis://localhost:6379/0"
+    redis_session_ttl_seconds: int = 3600
 
     openai_provider: str = "gemini"
 
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "models/gemini-2.5-flash-lite"
+    gemini_fallback_model: str = "models/gemini-2.5-flash"
 
     azure_openai_api_key: str = ""
     azure_openai_endpoint: str = ""
@@ -22,7 +25,6 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
 
-    groq_api_key: str = ""
     stt_model: str = "whisper-large-v3-turbo"
     stt_language: str = "en"
     google_credentials_json: str = ""
@@ -30,6 +32,8 @@ class Settings(BaseSettings):
     tts_enabled: bool = False
     tts_voice: str = "en-US-Journey-F"
     tts_personality: str = "fun_demo"
+    size_upgrade_base_probability: float = 0.30
+    size_upgrade_repeat_probability: float = 0.50
 
     model_config = SettingsConfigDict(
         env_file=".env",

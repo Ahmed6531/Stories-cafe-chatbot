@@ -16,15 +16,10 @@ import re
 
 from app.schemas.chat import ChatMessageResponse
 from app.services.item_clarification import get_menu_detail_variants
+from app.services.menu_utils import is_menu_item_available
 from app.utils.normalize import normalize_user_message
 
 
-# ---------------------------------------------------------------------------
-# Keyword sets
-# ---------------------------------------------------------------------------
-
-# Phrases that route to this handler (used by detect_special_command /
-# detect_intent in orchestrator to return "describe_item").
 DETAIL_TRIGGER_PHRASES: list[str] = [
     "what sizes",
     "what size",
@@ -71,7 +66,6 @@ DETAIL_TRIGGER_PHRASES: list[str] = [
     "can u describe",
 ]
 
-# Maps user keywords to variant group name substrings for focused replies.
 _FOCUS_MAP: dict[str, str] = {
     "size": "size",
     "sizes": "size",
@@ -88,15 +82,14 @@ _FOCUS_MAP: dict[str, str] = {
     "addons": "add",
 }
 
-# Words stripped when extracting the item name from a detail query.
 _STRIP_WORDS = {
     "what", "which", "are", "is", "the", "for", "of", "a", "an",
-    "available", "avialable", "availble", "avalable",  # common misspellings
+    "available", "avialable", "availble", "avalable",
     "do", "you", "have", "can", "tell", "me", "about",
     "o",
     "describe", "please", "pls", "u", "in", "on", "this", "options",
     "sizes", "size", "flavors", "flavour", "flavours", "flavor",
-    "toppings", "topping", "milk", "add-ons", "addons", "add-on",
+    "toppings", "topping", "add-ons", "addons", "add-on",
     "addon", "variants", "variant", "comes", "with", "whats", "s",
     "it",
 }
@@ -108,33 +101,21 @@ _DIETARY_ALIASES: dict[str, list[str]] = {
     "dairy-free": ["dairy free", "dairy-free", "no dairy", "lactose free", "lactose-free"],
 }
 
-# ---------------------------------------------------------------------------
-# Detection helpers
-# ---------------------------------------------------------------------------
 
 def is_menu_detail_query(message: str) -> bool:
-    """Return True if the message looks like a menu-detail / describe query."""
     msg = message.lower()
     return any(phrase in msg for phrase in DETAIL_TRIGGER_PHRASES)
 
 
 def extract_detail_query(message: str) -> tuple[str, str | None]:
-    """
-    Parse a menu-detail message into (item_name, focus).
-
-    focus is a normalised variant-group keyword, e.g. "size", "flavor",
-    "topping", "milk", "add" — or None if the user just asked generally.
-    """
     msg = re.sub(r"[^a-z0-9\s\-]+", " ", message.lower()).strip()
 
-    # Detect focus keyword before stripping
     focus: str | None = None
     for kw, mapped in _FOCUS_MAP.items():
         if re.search(r"\b" + re.escape(kw) + r"\b", msg):
             focus = mapped
             break
 
-    # Remove known trigger prefixes
     prefixes = [
         "do you have",
         "do u have",
@@ -179,12 +160,10 @@ def extract_detail_query(message: str) -> tuple[str, str | None]:
             msg = msg[len(prefix):].strip()
             break
 
-    # Remove trailing "have", "offer", "available" fragments
     msg = re.sub(r"\b(have|offer|available|offered)\b\??\s*$", "", msg).strip()
     msg = re.sub(r"\?$", "", msg).strip()
 
-    # Strip noise words from remaining tokens
-    tokens = [t for t in msg.split() if t and t not in _STRIP_WORDS]
+    tokens = [token for token in msg.split() if token and token not in _STRIP_WORDS]
     item_name = " ".join(tokens).strip()
     return item_name, focus
 
@@ -205,7 +184,6 @@ def _looks_like_ice_cream_query(item_name: str) -> bool:
 
 
 def _is_availability_question(message: str) -> bool:
-    """Return True for direct availability checks like 'do you have X?'"""
     msg = (message or "").lower().strip()
     return (
         msg.startswith("do you have")
@@ -220,7 +198,6 @@ def _is_availability_question(message: str) -> bool:
 
 
 def _extract_dietary_preferences(message: str, item_query: str) -> list[str]:
-    """Extract dietary preference keywords from message/query."""
     hay = f"{(message or '').lower()} {(item_query or '').lower()}"
     matched: list[str] = []
     for canonical, aliases in _DIETARY_ALIASES.items():
@@ -230,7 +207,6 @@ def _extract_dietary_preferences(message: str, item_query: str) -> list[str]:
 
 
 def _find_dietary_menu_matches(menu_items: list[dict], preferences: list[str], limit: int = 5) -> list[str]:
-    """Find menu items whose text suggests they satisfy requested dietary preferences."""
     if not preferences:
         return []
 
@@ -275,15 +251,22 @@ def _find_dietary_menu_matches(menu_items: list[dict], preferences: list[str], l
 
 
 def _resolve_ordinal_reference(message: str, session: dict | None) -> str:
-    """Resolve references like 'the first one' from last recommendation results."""
     if not isinstance(session, dict):
         return ""
 
-    candidates = session.get("last_recommendation_items")
-    if not isinstance(candidates, list):
-        return ""
-
-    names = [str(name).strip() for name in candidates if isinstance(name, str) and str(name).strip()]
+    visible_choices = session.get("last_visible_choices")
+    if isinstance(visible_choices, list) and visible_choices:
+        names = [
+            str(choice.get("item_name") or choice.get("label") or "").strip()
+            for choice in visible_choices
+            if isinstance(choice, dict)
+            and str(choice.get("item_name") or choice.get("label") or "").strip()
+        ]
+    else:
+        candidates = session.get("last_recommendation_items")
+        if not isinstance(candidates, list):
+            return ""
+        names = [str(name).strip() for name in candidates if isinstance(name, str) and str(name).strip()]
     if not names:
         return ""
 
@@ -301,7 +284,6 @@ def _resolve_ordinal_reference(message: str, session: dict | None) -> str:
 
 
 def _is_confident_availability_match(item_query: str, matched_item: dict | None) -> bool:
-    """Be stricter for yes/no availability checks to avoid weak fuzzy matches."""
     if not item_query or not isinstance(matched_item, dict):
         return False
 
@@ -315,16 +297,11 @@ def _is_confident_availability_match(item_query: str, matched_item: dict | None)
     if query == matched_name:
         return True
 
-    # All words the user typed must appear in the matched item's name.
-    # e.g. query="latte" → "iced latte" ✓ (subset)
-    # but query="matcha latte" → "latte" ✗ ("matcha" missing)
     query_words = set(query.split())
     matched_words = set(matched_name.split())
     if query_words.issubset(matched_words):
         return True
 
-    # Single-token typo allowance (e.g. "cappicuno" -> "cappuccino") while
-    # still blocking semantically different words like "matcha" -> "mocha".
     if len(query_words) == 1 and len(matched_words) == 1:
         q = next(iter(query_words))
         m = next(iter(matched_words))
@@ -333,10 +310,6 @@ def _is_confident_availability_match(item_query: str, matched_item: dict | None)
 
     return SequenceMatcher(None, query, matched_name).ratio() >= 0.84
 
-
-# ---------------------------------------------------------------------------
-# Reply builder
-# ---------------------------------------------------------------------------
 
 def _fmt_price(value) -> str:
     return f"L.L {int(float(value or 0)):,}"
@@ -351,7 +324,6 @@ def _group_label(group: dict) -> str:
 
 
 def _build_variants_text(variants: list[dict], focus: str | None) -> str:
-    """Format variant groups into a readable reply section."""
     if not isinstance(variants, list) or not variants:
         return ""
 
@@ -364,80 +336,54 @@ def _build_variants_text(variants: list[dict], focus: str | None) -> str:
         if not group_name:
             continue
 
-        # If the user asked about a specific variant type, skip unrelated groups.
         if focus and focus.lower() not in group_name.lower():
             continue
 
         options = group.get("options") or []
         active_options = [
-            o for o in options
-            if isinstance(o, dict) and o.get("isActive", True) is not False and o.get("name")
+            option for option in options
+            if isinstance(option, dict) and option.get("isActive", True) is not False and option.get("name")
         ]
         if not active_options:
             continue
 
         max_sel = group.get("maxSelections", 1)
-
-        # Header line for the group
-        if max_sel and max_sel > 1:
-            header = f"{group_name} (pick up to {max_sel})"
-        else:
-            header = group_name
+        header = f"{group_name} (pick up to {max_sel})" if max_sel and max_sel > 1 else group_name
         lines.append(header)
 
-        for opt in active_options:
-            opt_name = opt.get("name", "").strip()
-            price_delta = opt.get("additionalPrice") or opt.get("priceDelta") or 0
+        for option in active_options:
+            opt_name = option.get("name", "").strip()
+            price_delta = option.get("additionalPrice") or option.get("priceDelta") or 0
             if price_delta and float(price_delta) > 0:
-                lines.append(f"• {opt_name} (+{_fmt_price(price_delta)})")
+                lines.append(f"- {opt_name} (+{_fmt_price(price_delta)})")
             else:
-                lines.append(f"• {opt_name}")
+                lines.append(f"- {opt_name}")
 
-        lines.append("")  # blank line between groups
+        lines.append("")
 
     return "\n".join(lines).strip()
 
 
-def build_item_detail_reply(
-    source_item: dict,
-    focus: str | None = None,
-) -> str:
-    """
-    Build a human-readable reply for an item detail query.
-
-    source_item should be the full detail dict returned by fetch_menu_item_detail.
-    Falls back gracefully if variant groups are absent.
-    """
+def build_item_detail_reply(source_item: dict, focus: str | None = None) -> str:
     item_name = (source_item.get("name") or "This item").strip()
     description = (source_item.get("description") or "").strip()
     base_price = source_item.get("basePrice") or source_item.get("price")
     variants = get_menu_detail_variants(source_item)
 
     parts: list[str] = []
-
-    # ---- Basic info --------------------------------------------------------
-    if description:
-        parts.append(f"{item_name}\n{description}")
-    else:
-        parts.append(item_name)
+    parts.append(f"{item_name}\n{description}" if description else item_name)
 
     if base_price:
         parts.append(f"\nStarting price: {_fmt_price(base_price)}")
 
-    # ---- Variant groups ----------------------------------------------------
     variants_text = _build_variants_text(variants, focus)
     if variants_text:
         parts.append(f"\n{variants_text}")
     elif focus:
-        # User asked about a specific group but none found
         parts.append(f"\nNo {focus} options were found for {item_name}.")
 
     return "\n".join(parts)
 
-
-# ---------------------------------------------------------------------------
-# Main handler — called directly from orchestrator
-# ---------------------------------------------------------------------------
 
 async def process_describe_item(
     *,
@@ -446,24 +392,14 @@ async def process_describe_item(
     intent: str,
     cart_id: str | None,
 ) -> ChatMessageResponse:
-    """
-    Full handler for the describe_item intent.  Fetches item detail from the
-    backend and returns a rich ChatMessageResponse.
-    """
-    from app.services.tools import (
-        fetch_menu_items,
-        fetch_menu_item_detail,
-        find_menu_item_by_name,
-    )
+    from app.services.tools import fetch_menu_items, fetch_menu_item_detail, find_menu_item_by_name
     from app.services.session_store import get_session, set_session_stage
 
-    # Determine query and focus
     item_name, focus = extract_detail_query(normalized_message)
     item_name = _normalize_item_query_alias(item_name)
     is_availability_query = _is_availability_question(normalized_message)
     is_ice_cream_query = _looks_like_ice_cream_query(item_name)
 
-    # Keep extraction self-contained in this module.
     if not item_name:
         fallback = re.sub(r"[^a-z0-9\s\-]+", " ", (normalized_message or "").lower()).strip()
         fallback = re.sub(
@@ -471,34 +407,27 @@ async def process_describe_item(
             "",
             fallback,
         ).strip()
-        tokens = [t for t in fallback.split() if t and t not in _STRIP_WORDS]
+        tokens = [token for token in fallback.split() if token and token not in _STRIP_WORDS]
         item_name = " ".join(tokens).strip()
         item_name = _normalize_item_query_alias(item_name)
         is_ice_cream_query = _looks_like_ice_cream_query(item_name)
 
     sess = get_session(session_id)
 
-    if not item_name:
-        if sess:
-            candidate = (
-                sess.get("last_item_query")
-                or sess.get("last_described_item")
-            )
-            if not candidate:
-                last_items = sess.get("last_items")
-                if isinstance(last_items, list) and last_items and isinstance(last_items[0], dict):
-                    candidate = last_items[0].get("item_name")
+    if not item_name and sess:
+        candidate = sess.get("last_item_query") or sess.get("last_described_item")
+        if not candidate:
+            last_items = sess.get("last_items")
+            if isinstance(last_items, list) and last_items and isinstance(last_items[0], dict):
+                candidate = last_items[0].get("item_name")
 
-            if isinstance(candidate, str) and candidate.strip():
-                item_name = _normalize_item_query_alias(candidate)
-                is_ice_cream_query = _looks_like_ice_cream_query(item_name)
+        if isinstance(candidate, str) and candidate.strip():
+            item_name = _normalize_item_query_alias(candidate)
+            is_ice_cream_query = _looks_like_ice_cream_query(item_name)
 
     if sess:
         ordinal_item = _resolve_ordinal_reference(normalized_message, sess)
         if ordinal_item:
-            # Ordinal references ("first one", "second one", etc.) should
-            # take precedence over brittle phrase extraction like
-            # "tell me more about the first one" -> "more first one".
             item_name = _normalize_item_query_alias(ordinal_item)
             is_ice_cream_query = _looks_like_ice_cream_query(item_name)
 
@@ -512,10 +441,7 @@ async def process_describe_item(
             cart_id=cart_id,
             defaults_used=[],
             suggestions=[],
-            metadata={
-                "normalized_message": normalized_message,
-                "pipeline_stage": "describe_item_missing_query",
-            },
+            metadata={"normalized_message": normalized_message, "pipeline_stage": "describe_item_missing_query"},
         )
 
     menu_items = await fetch_menu_items()
@@ -563,12 +489,47 @@ async def process_describe_item(
             },
         )
 
-    matched_item = await find_menu_item_by_name(menu_items, item_name)
+    _q = item_name.lower().strip()
+    _available_items = [i for i in menu_items if isinstance(i, dict) and i.get("isAvailable", True) is not False]
+    _contains_matches = [
+        i for i in _available_items
+        if _q and _q in (i.get("name") or "").lower()
+    ]
+    _exact_match = next(
+        (i for i in _contains_matches if (i.get("name") or "").lower().strip() == _q),
+        None,
+    )
+    if len(_contains_matches) > 1 and not _exact_match:
+        names = ", ".join(i["name"] for i in _contains_matches[:6] if i.get("name"))
+        reply = (
+            f"We have a few options matching \"{item_name.title()}\": {names}. "
+            f"Which one {'did you mean' if not is_availability_query else 'are you asking about'}?"
+        )
+        return ChatMessageResponse(
+            session_id=session_id,
+            status="ok",
+            reply=reply,
+            intent=intent,
+            cart_updated=False,
+            cart_id=cart_id,
+            defaults_used=[],
+            suggestions=[],
+            metadata={
+                "normalized_message": normalized_message,
+                "item_query": item_name,
+                "pipeline_stage": "describe_item_ambiguous",
+            },
+        )
+
+    matched_item = await find_menu_item_by_name(
+        menu_items,
+        item_name,
+        include_unavailable=True,
+    )
     if is_availability_query and matched_item and not _is_confident_availability_match(item_name, matched_item):
         matched_item = None
 
-    # Item exists but is marked unavailable/out of stock
-    if is_availability_query and matched_item and matched_item.get("isAvailable") is False:
+    if is_availability_query and matched_item and not is_menu_item_available(matched_item):
         display_name = (matched_item.get("name") or item_name).strip()
         return ChatMessageResponse(
             session_id=session_id,
@@ -579,31 +540,23 @@ async def process_describe_item(
             cart_id=cart_id,
             defaults_used=[],
             suggestions=[],
-            metadata={
-                "normalized_message": normalized_message,
-                "item_query": item_name,
-                "pipeline_stage": "describe_item_unavailable",
-            },
+            metadata={"normalized_message": normalized_message, "item_query": item_name, "pipeline_stage": "describe_item_unavailable"},
         )
 
     if not matched_item:
-        # Check for ice cream query FIRST, before checking for availability questions
-        # This ensures "add ice cream", "get ice cream", etc. all get the frozen yogurt response
         if is_ice_cream_query:
             reply = "No, we don't have ice cream right now, but we do have frozen yogurt."
         elif is_availability_query:
             reply = f"No, we don't have {item_name} right now."
         else:
             reply = f"I couldn't find \"{item_name}\" on the menu. Want me to recommend something?"
-        
-        # Store the item query in session for follow-up recommendations
         if not is_availability_query and not is_ice_cream_query and item_name:
             set_session_stage(session_id, "recommendation_requested")
             sess = get_session(session_id)
             if sess:
                 sess["last_recommendation_query"] = item_name
-            sess["last_item_query"] = item_name
-        
+                sess["last_item_query"] = item_name
+
         return ChatMessageResponse(
             session_id=session_id,
             status="ok",
@@ -617,7 +570,7 @@ async def process_describe_item(
                 "normalized_message": normalized_message,
                 "item_query": item_name,
                 "pipeline_stage": "describe_item_not_found",
-                "recommendation_category": item_name if not is_ice_cream_query else None,  # Store for recommendation generation  
+                "recommendation_category": item_name if not is_ice_cream_query else None,
             },
         )
 
@@ -630,11 +583,7 @@ async def process_describe_item(
         sess["last_item_query"] = item_name
 
     detail_text = build_item_detail_reply(source_item, focus=focus)
-    if is_availability_query:
-        display_name = (source_item.get("name") or matched_item.get("name") or item_name).strip()
-        reply_text = f"Yes, we have {display_name}.\n\n{detail_text}"
-    else:
-        reply_text = detail_text
+    reply_text = f"Yes, we have {(source_item.get('name') or matched_item.get('name') or item_name).strip()}.\n\n{detail_text}" if is_availability_query else detail_text
 
     return ChatMessageResponse(
         session_id=session_id,
@@ -649,10 +598,7 @@ async def process_describe_item(
             "normalized_message": normalized_message,
             "item_query": item_name,
             "focus": focus,
-            "matched_item": {
-                "id": matched_item.get("id") or matched_item.get("_id"),
-                "name": matched_item.get("name"),
-            },
+            "matched_item": {"id": matched_item.get("id") or matched_item.get("_id"), "name": matched_item.get("name")},
             "pipeline_stage": "describe_item_done",
         },
     )

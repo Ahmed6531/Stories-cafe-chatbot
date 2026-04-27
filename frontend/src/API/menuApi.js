@@ -4,6 +4,15 @@ import { normalizeVariantGroupIds } from "../utils/variantGroups"
 let categoriesCache = null
 let categoriesRequest = null
 
+let menuCache = new Map()
+let menuRequest = new Map()
+
+const MENU_CACHE_TTL_MS = 2 * 60 * 1000
+const MENU_CACHE_ALL_KEY = "__all__"
+
+let featuredCache = null
+let featuredRequest = null
+
 /**
  * Transform backend menu item to frontend format
  */
@@ -40,7 +49,7 @@ function transformMenuItem(item) {
     variantGroups: normalizeVariantGroupIds(item.variantGroups),
     variantGroupDetails: (item.variantGroupDetails || []).map(v => ({
       ...v,
-      id: v.refId || v.groupId || v.id
+      id: v.id || v.groupId || v.refId,
     })).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)),
   }
 }
@@ -48,6 +57,14 @@ function transformMenuItem(item) {
 export function invalidateCategoriesCache() {
   categoriesCache = null
   categoriesRequest = null
+  invalidateMenuCache()
+}
+
+export function invalidateMenuCache() {
+  menuCache = new Map()
+  menuRequest = new Map()
+  featuredCache = null
+  featuredRequest = null
 }
 
 export async function fetchMenuCategories() {
@@ -75,24 +92,50 @@ export async function fetchMenuCategories() {
  */
 export async function fetchMenu(category) {
   try {
-    if (!category) {
-      const [categories, response] = await Promise.all([
-        fetchMenuCategories(),
-        http.get('/menu'),
-      ])
-      const allItems = response.data.items || []
-      return {
-        items: allItems.map(transformMenuItem).filter(Boolean),
-        categories,
-      }
+    const cacheKey = category ? String(category) : MENU_CACHE_ALL_KEY
+    const now = Date.now()
+    const cached = menuCache.get(cacheKey)
+    if (cached && cached.expiresAt > now) {
+      return cached.value
     }
 
-    const [categories, response] = await Promise.all([
-      fetchMenuCategories(),
-      http.get(`/menu/category/${encodeURIComponent(category)}`),
-    ])
-    const items = (response.data.items || []).map(transformMenuItem).filter(Boolean)
-    return { items, categories }
+    const inFlight = menuRequest.get(cacheKey)
+    if (inFlight) {
+      return await inFlight
+    }
+
+    const request = (async () => {
+      if (!category) {
+        const [categories, response] = await Promise.all([
+          fetchMenuCategories(),
+          http.get('/menu'),
+        ])
+        const allItems = response.data.items || []
+        const value = {
+          items: allItems.map(transformMenuItem).filter(Boolean),
+          categories,
+        }
+        menuCache.set(cacheKey, { value, expiresAt: now + MENU_CACHE_TTL_MS })
+        return value
+      }
+
+      const [categories, response] = await Promise.all([
+        fetchMenuCategories(),
+        http.get(`/menu/category/${encodeURIComponent(category)}`),
+      ])
+      const items = (response.data.items || []).map(transformMenuItem).filter(Boolean)
+      const value = { items, categories }
+      menuCache.set(cacheKey, { value, expiresAt: now + MENU_CACHE_TTL_MS })
+      return value
+    })()
+
+    menuRequest.set(cacheKey, request)
+    try {
+      return await request
+    } finally {
+      menuRequest.delete(cacheKey)
+    }
+
   } catch (error) {
     console.error('Failed to fetch menu:', error)
     throw new Error(error.response?.data?.error || 'Failed to load menu');
@@ -105,8 +148,24 @@ export async function fetchMenu(category) {
  */
 export async function fetchFeaturedMenu() {
   try {
-    const response = await http.get('/menu/featured')
-    return (response.data.items || []).map(transformMenuItem).filter(Boolean)
+    const now = Date.now()
+    if (featuredCache && featuredCache.expiresAt > now) {
+      return featuredCache.value
+    }
+
+    if (!featuredRequest) {
+      featuredRequest = http.get('/menu/featured')
+        .then((response) => {
+          const value = (response.data.items || []).map(transformMenuItem).filter(Boolean)
+          featuredCache = { value, expiresAt: now + MENU_CACHE_TTL_MS }
+          return value
+        })
+        .finally(() => {
+          featuredRequest = null
+        })
+    }
+
+    return await featuredRequest
   } catch (error) {
     console.error('Failed to fetch featured menu:', error)
     throw new Error(error.response?.data?.error || 'Failed to load featured menu')

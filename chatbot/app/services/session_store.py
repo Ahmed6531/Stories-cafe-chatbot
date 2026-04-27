@@ -1,44 +1,71 @@
-from typing import Any, TypedDict, Optional
+import asyncio
+import json
+import logging
+import threading
 import uuid
+from queue import Queue
+from typing import Any, Callable, TypedDict
+
+from app.core.config import settings
+
+try:
+    from redis import asyncio as redis_async
+    from redis.exceptions import RedisError
+except ImportError:  # pragma: no cover - exercised through fallback behavior
+    redis_async = None
+
+    class RedisError(Exception):
+        pass
+
+
+logger = logging.getLogger(__name__)
 
 
 class Session(TypedDict):
     session_id: str
     cart_id: str | None
-    last_items: list
+    last_items: list[dict[str, Any]]
     last_intent: str | None
     stage: str | None
     checkout_initiated: bool
     pending_clarification: dict[str, Any] | None
-    history: list
-
-    # NEW fields for context tracking
+    history: list[dict[str, str]]
+    guided_order_item_id: int | str | None
+    guided_order_item_name: str | None
+    guided_order_phase: int
+    guided_order_step: int
+    guided_order_groups: list[dict[str, Any]]
+    guided_order_required_groups: list[dict[str, Any]]
+    guided_order_optional_groups: list[dict[str, Any]]
+    guided_order_selections: dict[str, Any]
+    guided_order_defaulted_groups: list[str]
+    guided_order_slot_state: dict
+    guided_order_groups_meta: list
+    guided_order_state: str | None
+    guided_order_active_group_id: str | None
+    guided_order_quantity: int | None
     last_user_message: str | None
     last_bot_response: str | None
-    last_matched_items: list[dict] | None   # full item objects from last add/update
-    last_action_type: str | None            # e.g., "add_items", "update_quantity", "describe_item"
-    last_action_data: dict[str, Any] | None # extra data like item name, quantity
+    last_matched_items: list[dict[str, Any]] | None
+    last_action_type: str | None
+    last_action_data: dict[str, Any] | None
+    last_visible_choices: list[dict[str, Any]]
+    last_recommendation_items: list[str]
+    _schema_version: int
+    pending_operations: list[dict]
+    pending_operations_context: dict
 
 
 sessions: dict[str, Session] = {}
+_redis_client = None
 
 
-def get_session(session_id: str) -> Session:
-    if session_id in sessions:
-        session = sessions[session_id]
-        session.setdefault("stage", None)
-        session.setdefault("checkout_initiated", False)
-        session.setdefault("pending_clarification", None)
-        session.setdefault("history", [])
-        # Initialize new fields if missing
-        session.setdefault("last_user_message", None)
-        session.setdefault("last_bot_response", None)
-        session.setdefault("last_matched_items", None)
-        session.setdefault("last_action_type", None)
-        session.setdefault("last_action_data", None)
-        return session
+def _session_key(session_id: str) -> str:
+    return f"session:{session_id}"
 
-    new_session: Session = {
+
+def _default_session(session_id: str) -> dict[str, Any]:
+    return {
         "session_id": session_id,
         "cart_id": None,
         "last_items": [],
@@ -47,20 +74,327 @@ def get_session(session_id: str) -> Session:
         "checkout_initiated": False,
         "pending_clarification": None,
         "history": [],
+        "guided_order_item_id": None,
+        "guided_order_item_name": None,
+        "guided_order_phase": 1,
+        "guided_order_step": 0,
+        "guided_order_groups": [],
+        "guided_order_required_groups": [],
+        "guided_order_optional_groups": [],
+        "guided_order_selections": {},
+        "guided_order_defaulted_groups": [],
+        "guided_order_slot_state": {},
+        "guided_order_groups_meta": [],
+        "guided_order_state": None,
+        "guided_order_active_group_id": None,
+        "guided_order_quantity": None,
         "last_user_message": None,
         "last_bot_response": None,
         "last_matched_items": None,
         "last_action_type": None,
         "last_action_data": None,
+        "last_visible_choices": [],
+        "last_recommendation_items": [],
+        "_schema_version": 1,
+        "pending_operations": [],
+        "pending_operations_context": {},
     }
-    sessions[session_id] = new_session
+
+
+def _run_async(awaitable):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(awaitable)
+
+    result_queue: Queue[tuple[bool, Any]] = Queue()
+
+    def _runner() -> None:
+        try:
+            result_queue.put((True, asyncio.run(awaitable)))
+        except Exception as exc:  # pragma: no cover - exercised in sync fallback path
+            result_queue.put((False, exc))
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    ok, payload = result_queue.get()
+    if ok:
+        return payload
+    raise payload
+
+
+def _is_redis_unavailable(exc: Exception) -> bool:
+    return isinstance(exc, (RedisError, OSError, TimeoutError))
+
+
+def _get_redis_client():
+    global _redis_client
+    if settings.redis_url == "disabled":
+        return None
+    if redis_async is None:
+        return None
+    if _redis_client is None:
+        _redis_client = redis_async.from_url(
+            settings.redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+        )
+    return _redis_client
+
+
+def _to_plain(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _to_plain(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_to_plain(item) for item in value]
+    return value
+
+
+def _ensure_session_shape(session: dict[str, Any]) -> dict[str, Any]:
+    if session.get("_schema_version") != 1:
+        session.setdefault("stage", None)
+        session.setdefault("checkout_initiated", False)
+        session.setdefault("pending_clarification", None)
+        session.setdefault("history", [])
+        session.setdefault("guided_order_item_id", None)
+        session.setdefault("guided_order_item_name", None)
+        session.setdefault("guided_order_phase", 1)
+        session.setdefault("guided_order_step", 0)
+        session.setdefault("guided_order_groups", [])
+        session.setdefault("guided_order_required_groups", [])
+        session.setdefault("guided_order_optional_groups", [])
+        session.setdefault("guided_order_selections", {})
+        session.setdefault("guided_order_slot_state", {})
+        session.setdefault("guided_order_groups_meta", [])
+        session.setdefault("guided_order_state", None)
+        session.setdefault("guided_order_active_group_id", None)
+        session.setdefault("last_user_message", None)
+        session.setdefault("last_bot_response", None)
+        session.setdefault("last_matched_items", None)
+        session.setdefault("last_action_type", None)
+        session.setdefault("last_action_data", None)
+        session.setdefault("last_visible_choices", [])
+        session.setdefault("last_recommendation_items", [])
+        session.setdefault("pending_operations", [])
+        session.setdefault("pending_operations_context", {})
+        session["_schema_version"] = 1
+    session.setdefault("last_visible_choices", [])
+    session.setdefault("last_recommendation_items", [])
+    session.setdefault("guided_order_defaulted_groups", [])
+    session.setdefault("guided_order_slot_state", {})
+    session.setdefault("guided_order_groups_meta", [])
+    session.setdefault("guided_order_state", None)
+    session.setdefault("guided_order_active_group_id", None)
+    session.setdefault("guided_order_quantity", None)
+    return session
+
+
+class _PersistentList(list):
+    def __init__(self, values: list[Any], callback: Callable[[], None]) -> None:
+        self._callback = callback
+        self._suspended = True
+        super().__init__([_wrap_value(value, callback) for value in values])
+        self._suspended = False
+
+    def _notify(self) -> None:
+        if not self._suspended:
+            self._callback()
+
+    def append(self, value: Any) -> None:
+        super().append(_wrap_value(value, self._callback))
+        self._notify()
+
+    def extend(self, values) -> None:
+        super().extend(_wrap_value(value, self._callback) for value in values)
+        self._notify()
+
+    def insert(self, index: int, value: Any) -> None:
+        super().insert(index, _wrap_value(value, self._callback))
+        self._notify()
+
+    def __setitem__(self, index, value) -> None:
+        if isinstance(index, slice):
+            super().__setitem__(index, [_wrap_value(item, self._callback) for item in value])
+        else:
+            super().__setitem__(index, _wrap_value(value, self._callback))
+        self._notify()
+
+    def __delitem__(self, index) -> None:
+        super().__delitem__(index)
+        self._notify()
+
+    def pop(self, index: int = -1):
+        value = super().pop(index)
+        self._notify()
+        return value
+
+    def remove(self, value: Any) -> None:
+        super().remove(value)
+        self._notify()
+
+    def clear(self) -> None:
+        super().clear()
+        self._notify()
+
+    def sort(self, *args, **kwargs) -> None:
+        super().sort(*args, **kwargs)
+        self._notify()
+
+    def reverse(self) -> None:
+        super().reverse()
+        self._notify()
+
+
+class _PersistentDict(dict):
+    def __init__(self, values: dict[str, Any], callback: Callable[[], None]) -> None:
+        self._callback = callback
+        self._suspended = True
+        super().__init__()
+        for key, value in values.items():
+            super().__setitem__(key, _wrap_value(value, callback))
+        self._suspended = False
+
+    def _notify(self) -> None:
+        if not self._suspended:
+            self._callback()
+
+    def __setitem__(self, key, value) -> None:
+        super().__setitem__(key, _wrap_value(value, self._callback))
+        self._notify()
+
+    def __delitem__(self, key) -> None:
+        super().__delitem__(key)
+        self._notify()
+
+    def clear(self) -> None:
+        super().clear()
+        self._notify()
+
+    def pop(self, key, default=None):
+        if key in self:
+            value = super().pop(key)
+            self._notify()
+            return value
+        return default
+
+    def popitem(self):
+        item = super().popitem()
+        self._notify()
+        return item
+
+    def setdefault(self, key, default=None):
+        if key not in self:
+            super().__setitem__(key, _wrap_value(default, self._callback))
+            self._notify()
+        return super().get(key)
+
+    def update(self, *args, **kwargs) -> None:
+        incoming = dict(*args, **kwargs)
+        for key, value in incoming.items():
+            super().__setitem__(key, _wrap_value(value, self._callback))
+        self._notify()
+
+
+def _wrap_value(value: Any, callback: Callable[[], None]) -> Any:
+    if isinstance(value, _PersistentDict) or isinstance(value, _PersistentList):
+        return value
+    if isinstance(value, dict):
+        return _PersistentDict(value, callback)
+    if isinstance(value, list):
+        return _PersistentList(value, callback)
+    return value
+
+
+def _persist_session(session_id: str) -> None:
+    session = sessions.get(session_id)
+    if session is None:
+        return
+    client = _get_redis_client()
+    if client is None:
+        return
+    try:
+        _run_async(
+            client.set(
+                _session_key(session_id),
+                json.dumps(_to_plain(session)),
+                ex=settings.redis_session_ttl_seconds,
+            )
+        )
+    except Exception as exc:
+        if _is_redis_unavailable(exc):
+            logger.warning({
+                "stage": "session_store_redis_unavailable",
+                "session_id": session_id,
+                "error": str(exc),
+            })
+            return
+        raise
+
+
+def _hydrate_session(session_id: str, payload: dict[str, Any]) -> Session:
+    raw_session = _ensure_session_shape(payload)
+
+    def _save() -> None:
+        _persist_session(session_id)
+
+    session = _PersistentDict(raw_session, _save)
+    sessions[session_id] = session  # type: ignore[assignment]
+    return session  # type: ignore[return-value]
+
+
+def _load_session_from_redis(session_id: str) -> Session | None:
+    client = _get_redis_client()
+    if client is None:
+        return None
+    try:
+        raw_payload = _run_async(
+            client.getex(
+                _session_key(session_id),
+                ex=settings.redis_session_ttl_seconds,
+            )
+        )
+    except Exception as exc:
+        if _is_redis_unavailable(exc):
+            logger.warning({
+                "stage": "session_store_redis_unavailable",
+                "session_id": session_id,
+                "error": str(exc),
+            })
+            return None
+        raise
+
+    if not raw_payload:
+        return None
+
+    try:
+        payload = json.loads(raw_payload)
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return _hydrate_session(session_id, payload)
+
+
+def get_session(session_id: str) -> Session:
+    cached_session = sessions.get(session_id)
+    if cached_session is not None:
+        if not isinstance(cached_session, _PersistentDict):
+            cached_session = _hydrate_session(session_id, dict(cached_session))
+        else:
+            _ensure_session_shape(cached_session)
+        _persist_session(session_id)
+        return cached_session
+
+    redis_session = _load_session_from_redis(session_id)
+    if redis_session is not None:
+        return redis_session
+
+    new_session = _hydrate_session(session_id, _default_session(session_id))
+    _persist_session(session_id)
     return new_session
 
 
 def get_or_create_session(session_id: str | None) -> tuple[str, str | None]:
-    if session_id and session_id in sessions:
-        return session_id, sessions[session_id]["cart_id"]
-
     if session_id:
         session = get_session(session_id)
         return session_id, session["cart_id"]
@@ -100,13 +434,270 @@ def update_last_action(
     user_message: str,
     bot_response: str,
     action_type: str,
-    matched_items: list[dict] | None = None,
-    action_data: dict | None = None,
+    matched_items: list[dict[str, Any]] | None = None,
+    action_data: dict[str, Any] | None = None,
 ) -> None:
-    """Store the last user message, bot response, and action for repeat commands."""
     session = get_session(session_id)
     session["last_user_message"] = user_message
     session["last_bot_response"] = bot_response
     session["last_action_type"] = action_type
     session["last_matched_items"] = matched_items if matched_items is not None else session.get("last_items", [])
     session["last_action_data"] = action_data or {}
+
+
+def _visible_choice_name(choice: Any) -> str:
+    if isinstance(choice, str):
+        return choice.strip()
+    if not isinstance(choice, dict):
+        return ""
+    return str(
+        choice.get("item_name")
+        or choice.get("name")
+        or choice.get("label")
+        or choice.get("category")
+        or ""
+    ).strip()
+
+
+def set_last_visible_choices(
+    session_id: str,
+    choices: list[Any],
+    *,
+    source: str = "",
+) -> None:
+    session = get_session(session_id)
+    normalized: list[dict[str, Any]] = []
+    for index, choice in enumerate(choices or [], start=1):
+        name = _visible_choice_name(choice)
+        if not name:
+            continue
+        entry: dict[str, Any] = {
+            "index": index,
+            "label": name,
+            "item_name": name,
+        }
+        if source:
+            entry["source"] = source
+        if isinstance(choice, dict):
+            menu_item_id = choice.get("menu_item_id") or choice.get("id") or choice.get("_id")
+            if menu_item_id is not None:
+                entry["menu_item_id"] = menu_item_id
+        normalized.append(entry)
+
+    session["last_visible_choices"] = normalized
+    session["last_recommendation_items"] = [choice["item_name"] for choice in normalized]
+
+
+def clear_last_visible_choices(session_id: str) -> None:
+    session = get_session(session_id)
+    session["last_visible_choices"] = []
+    session["last_recommendation_items"] = []
+
+
+def get_guided_order_item_id(session_id: str) -> int | str | None:
+    session = get_session(session_id)
+    return session.get("guided_order_item_id")
+
+
+def set_guided_order_item_id(session_id: str, item_id: int | str | None) -> None:
+    session = get_session(session_id)
+    session["guided_order_item_id"] = item_id
+
+
+def get_guided_order_item_name(session_id: str) -> str | None:
+    session = get_session(session_id)
+    return session.get("guided_order_item_name")
+
+
+def set_guided_order_item_name(session_id: str, item_name: str | None) -> None:
+    session = get_session(session_id)
+    session["guided_order_item_name"] = item_name
+
+
+def get_guided_order_phase(session_id: str) -> int:
+    session = get_session(session_id)
+    return int(session.get("guided_order_phase", 1) or 1)
+
+
+def set_guided_order_phase(session_id: str, phase: int) -> None:
+    session = get_session(session_id)
+    session["guided_order_phase"] = int(phase)
+
+
+def get_guided_order_step(session_id: str) -> int:
+    session = get_session(session_id)
+    return int(session.get("guided_order_step", 0) or 0)
+
+
+def set_guided_order_step(session_id: str, step: int) -> None:
+    session = get_session(session_id)
+    session["guided_order_step"] = int(step)
+
+
+def get_guided_order_groups(session_id: str) -> list[dict[str, Any]]:
+    session = get_session(session_id)
+    return list(session.get("guided_order_groups") or [])
+
+
+def set_guided_order_groups(session_id: str, groups: list[dict[str, Any]]) -> None:
+    session = get_session(session_id)
+    session["guided_order_groups"] = list(groups or [])
+
+
+def get_guided_order_required_groups(session_id: str) -> list[dict[str, Any]]:
+    session = get_session(session_id)
+    return list(session.get("guided_order_required_groups") or [])
+
+
+def set_guided_order_required_groups(session_id: str, groups: list[dict[str, Any]]) -> None:
+    session = get_session(session_id)
+    session["guided_order_required_groups"] = list(groups or [])
+
+
+def get_guided_order_optional_groups(session_id: str) -> list[dict[str, Any]]:
+    session = get_session(session_id)
+    return list(session.get("guided_order_optional_groups") or [])
+
+
+def set_guided_order_optional_groups(session_id: str, groups: list[dict[str, Any]]) -> None:
+    session = get_session(session_id)
+    session["guided_order_optional_groups"] = list(groups or [])
+
+
+def get_guided_order_selections(session_id: str) -> dict[str, Any]:
+    session = get_session(session_id)
+    return dict(session.get("guided_order_selections") or {})
+
+
+def set_guided_order_selections(session_id: str, selections: dict[str, Any]) -> None:
+    session = get_session(session_id)
+    session["guided_order_selections"] = dict(selections or {})
+
+
+def get_guided_order_defaulted_groups(session_id: str) -> list[str]:
+    session = get_session(session_id)
+    return list(session.get("guided_order_defaulted_groups") or [])
+
+
+def set_guided_order_defaulted_groups(session_id: str, groups: list[str]) -> None:
+    session = get_session(session_id)
+    session["guided_order_defaulted_groups"] = [
+        str(group).strip()
+        for group in (groups or [])
+        if str(group).strip()
+    ]
+
+
+def get_guided_order_slot_state(session_id: str) -> dict:
+    session = get_session(session_id)
+    return dict(session.get("guided_order_slot_state") or {})
+
+
+def set_guided_order_slot_state(session_id: str, slot_state: dict) -> None:
+    session = get_session(session_id)
+    session["guided_order_slot_state"] = dict(slot_state or {})
+
+
+def get_guided_order_groups_meta(session_id: str) -> list:
+    session = get_session(session_id)
+    return list(session.get("guided_order_groups_meta") or [])
+
+
+def set_guided_order_groups_meta(session_id: str, groups_meta: list) -> None:
+    session = get_session(session_id)
+    session["guided_order_groups_meta"] = list(groups_meta or [])
+
+
+def get_guided_order_state(session_id: str) -> str | None:
+    session = get_session(session_id)
+    return session.get("guided_order_state")
+
+
+def set_guided_order_state(session_id: str, state: str | None) -> None:
+    session = get_session(session_id)
+    session["guided_order_state"] = state
+
+
+def get_guided_order_active_group_id(session_id: str) -> str | None:
+    session = get_session(session_id)
+    return session.get("guided_order_active_group_id")
+
+
+def set_guided_order_active_group_id(session_id: str, group_id: str | None) -> None:
+    session = get_session(session_id)
+    session["guided_order_active_group_id"] = group_id
+
+
+def get_guided_order_quantity(session_id: str) -> int | None:
+    session = get_session(session_id)
+    quantity = session.get("guided_order_quantity")
+    return int(quantity) if quantity is not None else None
+
+
+def set_guided_order_quantity(session_id: str, quantity: int | None) -> None:
+    session = get_session(session_id)
+    session["guided_order_quantity"] = int(quantity) if quantity is not None else None
+
+
+def clear_guided_order_session(session_id: str) -> None:
+    session = get_session(session_id)
+    session["guided_order_item_id"] = None
+    session["guided_order_item_name"] = None
+    session["guided_order_phase"] = 1
+    session["guided_order_step"] = 0
+    session["guided_order_groups"] = []
+    session["guided_order_required_groups"] = []
+    session["guided_order_optional_groups"] = []
+    session["guided_order_selections"] = {}
+    session["guided_order_defaulted_groups"] = []
+    session["guided_order_slot_state"] = {}
+    session["guided_order_groups_meta"] = []
+    session["guided_order_state"] = None
+    session["guided_order_active_group_id"] = None
+    session["guided_order_quantity"] = None
+
+
+def get_pending_operations(session_id: str) -> list[dict]:
+    session = get_session(session_id)
+    return list(session.get("pending_operations") or [])
+
+
+def set_pending_operations(session_id: str, ops: list[dict]) -> None:
+    session = get_session(session_id)
+    session["pending_operations"] = list(ops or [])
+
+
+def get_pending_operations_context(session_id: str) -> dict:
+    session = get_session(session_id)
+    return dict(session.get("pending_operations_context") or {})
+
+
+def set_pending_operations_context(session_id: str, context: dict) -> None:
+    session = get_session(session_id)
+    session["pending_operations_context"] = dict(context or {})
+
+
+def clear_pending_operations(session_id: str) -> None:
+    session = get_session(session_id)
+    session["pending_operations"] = []
+    session["pending_operations_context"] = {}
+
+
+def reset_conversation_session(session_id: str) -> None:
+    session = get_session(session_id)
+    session["cart_id"] = None
+    session["last_items"] = []
+    session["last_intent"] = None
+    session["stage"] = None
+    session["checkout_initiated"] = False
+    session["pending_clarification"] = None
+    session["history"] = []
+    session["last_user_message"] = None
+    session["last_bot_response"] = None
+    session["last_matched_items"] = None
+    session["last_action_type"] = None
+    session["last_action_data"] = None
+    session["last_visible_choices"] = []
+    session["last_recommendation_items"] = []
+    clear_guided_order_session(session_id)
+    clear_pending_operations(session_id)

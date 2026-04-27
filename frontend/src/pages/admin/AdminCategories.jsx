@@ -161,8 +161,7 @@ function getVariantGroupRef(group) {
     return ""
   }
 
-  const candidate = group.refId || group.groupId || group.id
-  return typeof candidate === "string" ? candidate.trim() : ""
+  return typeof group.groupId === "string" ? group.groupId.trim() : ""
 }
 
 function groupMetaText(group) {

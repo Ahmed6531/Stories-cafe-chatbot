@@ -2,9 +2,10 @@ import logging
 from time import perf_counter
 
 from fastapi import APIRouter, HTTPException, Request
+
 from app.schemas.chat import ChatMessageRequest, ChatMessageResponse
 from app.services.orchestrator import process_chat_message
-from app.services.session_store import get_session
+from app.services.session_store import Session, get_session, reset_conversation_session
 from app.services.tts.tts_service import tts_service
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -13,18 +14,15 @@ logger.setLevel(logging.INFO)
 uvicorn_logger = logging.getLogger("uvicorn.error")
 
 
-def _update_session_from_response(session: dict, response: ChatMessageResponse) -> None:
+def _update_session_from_response(session: Session, response: ChatMessageResponse) -> None:
     if response.metadata.get("pipeline_stage") == "checkout_redirect":
-        session["last_items"] = []
-        session["last_intent"] = None
-        session["cart_id"] = None
-        session["stage"] = None
-        session["checkout_initiated"] = False
+        reset_conversation_session(session["session_id"])
         return
 
     if response.cart_id is not None:
         session["cart_id"] = response.cart_id
 
+    session["last_intent"] = response.intent
     session["last_intent"] = response.intent
 
     requested_items = response.metadata.get("requested_items")
@@ -78,12 +76,12 @@ async def send_message(payload: ChatMessageRequest, request: Request) -> ChatMes
 
         _update_session_from_response(session, response)
 
-        # Keep last 10 turns (5 user + 5 bot) in session memory only
-        history: list = session.setdefault("history", [])
-        history.append({"role": "user", "text": payload.message})
-        history.append({"role": "bot", "text": response.reply})
-        if len(history) > 20:
-            session["history"] = history[-20:]
+        if pipeline_stage != "checkout_redirect":
+            history: list[dict[str, str]] = session.setdefault("history", [])
+            history.append({"role": "user", "text": payload.message})
+            history.append({"role": "bot", "text": response.reply})
+            if len(history) > 20:
+                session["history"] = history[-20:]
 
         audio = await tts_service.synthesize(response.reply)
         response.audio_base64 = audio
