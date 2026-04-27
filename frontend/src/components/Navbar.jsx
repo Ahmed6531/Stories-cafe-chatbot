@@ -353,7 +353,7 @@ export default function Navbar() {
               <TopbarLeft>
                 <Box
                   component="img"
-                  src="/favicon.ico"
+                  src="stories-logo.png"
                   alt="Stories"
                   sx={{ width: '42px', height: '42px', objectFit: 'contain', flexShrink: 0, display: 'block' }}
                   onError={(e) => { e.currentTarget.style.display = 'none' }}
