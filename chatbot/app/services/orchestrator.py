@@ -3841,24 +3841,6 @@ async def process_chat_message(
                 session_id=session_id,
                 status="ok",
                 reply=reply_text,
-                blocks=(
-                    [
-                        _build_recommendations_block(
-                            [
-                                {
-                                    "item_name": suggestion.get("item_name"),
-                                    "menu_item_id": suggestion.get("menu_item_id"),
-                                }
-                                for suggestion in filtered_suggestions
-                                if isinstance(suggestion, dict)
-                                and suggestion.get("item_name")
-                            ],
-                            title="Here are some picks you might like:",
-                        )
-                    ]
-                    if filtered_suggestions
-                    else []
-                ),
                 intent=intent,
                 cart_updated=False,
                 cart_id=cart_result["cart_id"],
