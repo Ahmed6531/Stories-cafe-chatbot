@@ -106,6 +106,29 @@ PENDING_OPS_CONFIRM_YES_WORDS = frozenset({
     "yes", "yep", "yeah", "sure", "ok", "okay",
     "go ahead", "do it", "sounds good", "please",
     "yes please", "absolutely", "of course",
+    "yup", "ya", "sure thing", "ok sure", "okay sure",
+    "yes i do", "sure i do", "i do",
+    "please do", "do it please",
+    "ok do it", "okay do it",
+    "ok go ahead", "okay go ahead",
+    "go for it", "sounds great", "that works",
+    "confirm", "confirmed",
+    # Multi-word confirmations (avoid ambiguous singles like plain "please")
+    "yes thanks", "yes thank you", "yes pls",
+    "yes please thanks", "yes please thank you",
+    "sure thanks", "sure thank you", "sure please",
+    "yep thanks", "yep thank you",
+    "yeah thanks", "yeah thank you", "yeah sure",
+    "yup thanks", "yup thank you",
+    "go ahead please", "go ahead thanks", "go ahead thank you",
+    "do it thanks", "do it thank you",
+    "please go ahead", "please proceed",
+    "proceed", "continue",
+    "definitely", "definitely yes",
+    "for sure", "for sure yes",
+    "works for me",
+    "looks good", "looks good thanks", "looks good thank you",
+    "sounds good thanks", "sounds good thank you",
 })
 PENDING_OPS_CONFIRM_NO_WORDS = frozenset({
     "no", "nope", "nah", "cancel", "nevermind",
@@ -127,6 +150,19 @@ GUIDED_DIRECT_WORDS = frozenset({
     "that's it",
     "nothing else",
     "looks good",
+    # Guided ordering "finalize" variants (multi-word only)
+    "done thanks", "done thank you", "done pls", "done please",
+    "done now", "done for now",
+    "add it please", "add it pls", "add it thanks", "add it thank you",
+    "add to cart please", "add to cart pls", "add to cart thanks", "add to cart thank you",
+    "add please", "add thanks", "add thank you",
+    "ok done", "okay done",
+    "sounds good done", "sounds good thanks", "sounds good thank you",
+    "thats all", "that is all",
+    "no thats all", "no that is all",
+    "all set", "all set thanks", "all set thank you",
+    "im done", "i am done", "finished",
+    "thats it thanks", "thats it thank you",
 })
 
 
@@ -729,6 +765,12 @@ def append_selected_option(
 
 def _normalize_whitespace(value: str | None) -> str:
     return " ".join(str(value or "").strip().lower().split())
+
+
+def _clean_phrase_for_match(normalized_phrase: str) -> str:
+    # Strip punctuation so "done!", "yes.", "add to cart," match vocab entries.
+    cleaned = re.sub(r"[^\w\s]", " ", normalized_phrase or "")
+    return _normalize_whitespace(cleaned)
 
 
 def _get_static_reply(normalized_phrase: str) -> str | None:
@@ -2420,7 +2462,8 @@ async def _handle_pending_ops_confirmation(
     session: Session | None,
     auth_cookie: str | None,
 ) -> ChatMessageResponse:
-    if normalized_phrase in PENDING_OPS_CONFIRM_YES_WORDS:
+    cleaned_phrase = _clean_phrase_for_match(normalized_phrase)
+    if normalized_phrase in PENDING_OPS_CONFIRM_YES_WORDS or cleaned_phrase in PENDING_OPS_CONFIRM_YES_WORDS:
         set_session_stage(session_id, None)
         pending_ops = get_pending_operations(session_id)
         context = get_pending_operations_context(session_id)
@@ -2477,7 +2520,7 @@ async def _handle_pending_ops_confirmation(
             },
         )
 
-    if normalized_phrase in PENDING_OPS_CONFIRM_NO_WORDS:
+    if normalized_phrase in PENDING_OPS_CONFIRM_NO_WORDS or cleaned_phrase in PENDING_OPS_CONFIRM_NO_WORDS:
         clear_pending_operations(session_id)
         set_session_stage(session_id, None)
         return ChatMessageResponse(
@@ -2623,7 +2666,8 @@ async def _handle_repeat_order_confirmation(
             },
         )
 
-    if normalized_phrase in PENDING_OPS_CONFIRM_NO_WORDS:
+    cleaned_phrase = _clean_phrase_for_match(normalized_phrase)
+    if normalized_phrase in PENDING_OPS_CONFIRM_NO_WORDS or cleaned_phrase in PENDING_OPS_CONFIRM_NO_WORDS:
         clear_pending_operations(session_id)
         set_session_stage(session_id, None)
         reply = "No problem. I won't reorder it."
@@ -2643,7 +2687,10 @@ async def _handle_repeat_order_confirmation(
             },
         )
 
-    if normalized_phrase not in PENDING_OPS_CONFIRM_YES_WORDS:
+    if (
+        normalized_phrase not in PENDING_OPS_CONFIRM_YES_WORDS
+        and cleaned_phrase not in PENDING_OPS_CONFIRM_YES_WORDS
+    ):
         reply = f"Your last order was:\n{summary}\n\nDo you want to reorder that? Say yes or no."
         return ChatMessageResponse(
             session_id=session_id,
@@ -2772,6 +2819,7 @@ async def process_chat_message(
 
     normalized_message = normalize_user_message(message)
     normalized_phrase = _normalize_whitespace(normalized_message)
+    cleaned_phrase = _clean_phrase_for_match(normalized_phrase)
     # Default so exception handlers always have a defined intent variable.
     intent = "unknown"
     current_stage = get_session_stage(session_id)
@@ -2816,7 +2864,9 @@ async def process_chat_message(
                 },
             )
 
-    if current_stage == "guided_ordering" and normalized_phrase in GUIDED_DIRECT_WORDS:
+    if current_stage == "guided_ordering" and (
+        normalized_phrase in GUIDED_DIRECT_WORDS or cleaned_phrase in GUIDED_DIRECT_WORDS
+    ):
         resolved = _make_guided_passthrough_resolved()
         intent = "guided_order_response"
         _skip_resolve = True

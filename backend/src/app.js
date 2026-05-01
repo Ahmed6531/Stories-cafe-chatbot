@@ -15,6 +15,7 @@ import comboAnalyticsRoutes from "./routes/comboAnalytics.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import categoryRoutes from "./routes/category.routes.js";
+import chatRoutes from "./routes/chat.routes.js";
 import { setUploadedImageHeaders } from "./utils/imageHeaders.js";
 import { errorHandler } from "./utils/error.js";
 
@@ -74,6 +75,7 @@ export function createApp() {
   app.use("/cart", cartRoutes);
   app.use("/analytics", comboAnalyticsRoutes);
   app.use("/auth", authRoutes);
+  app.use("/chat", chatRoutes);
   app.use("/admin", adminRoutes);
   app.use("/categories", categoryRoutes);
 

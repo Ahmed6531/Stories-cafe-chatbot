@@ -50,10 +50,42 @@ _REC_PHRASE_ALIASES: dict[str, list[str]] = {
     "coffee": ["coffee", "espresso", "latte", "cappuccino", "americano", "mocha"],
 }
 
+def _extract_recommendation_clause(message: str) -> str:
+    """
+    Extract just the clause that contains the recommendation ask.
+
+    This is intentionally conservative/minimal-impact: it prevents unrelated
+    follow-up intents in the same message (e.g. "and add a small latte") from
+    influencing recommendation category detection.
+    """
+    msg = (message or "").strip()
+    if not msg:
+        return ""
+
+    lower = msg.lower()
+    m = re.search(r"\b(recommend|suggest)\b", lower)
+    if not m:
+        return msg
+
+    # Keep everything up to the first clause break *after* "recommend/suggest"
+    # so "what pastries do you recommend and add a latte" → "what pastries do you recommend".
+    tail = lower[m.end():]
+    cut = None
+
+    conj = re.search(r"\b(and|then|also)\b", tail)
+    if conj:
+        cut = m.end() + conj.start()
+    else:
+        punct = re.search(r"[,;.!?]", tail)
+        if punct:
+            cut = m.end() + punct.start()
+
+    return msg[:cut].strip() if isinstance(cut, int) else msg
+
 
 def extract_recommendation_query_terms(message: str) -> list[str]:
     """Extract explicit target terms from recommendation asks, e.g. 'suggest salads'."""
-    msg = (message or "").lower().strip()
+    msg = _extract_recommendation_clause(message).lower().strip()
     if not msg:
         return []
 
@@ -96,7 +128,7 @@ def extract_recommendation_query_terms(message: str) -> list[str]:
 
 def extract_recommendation_category(message: str) -> str | None:
     """Return 'drink', 'food', 'yogurt', or None based on message keywords."""
-    msg = message.lower()
+    msg = _extract_recommendation_clause(message).lower()
     if any(kw in msg for kw in ["yogurt", "yoghurt", "froyo", "frozen yogurt"]):
         return "yogurt"
     for kw in _DRINK_KEYWORDS:

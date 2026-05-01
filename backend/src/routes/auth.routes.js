@@ -62,7 +62,7 @@ router.post("/register", validate([
 
 // LOGIN
 router.post("/login", authLimiter, validate([
-  body("email").notEmpty().withMessage("Email is required"),
+  body("email").isEmail().normalizeEmail().withMessage("Email is required"),
   body("password").notEmpty().withMessage("Password is required"),
 ]), async (req, res) => {
   const { email, password } = req.body;

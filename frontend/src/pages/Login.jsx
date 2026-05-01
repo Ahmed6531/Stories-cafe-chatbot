@@ -19,7 +19,11 @@ export default function Login() {
 
     try {
       await http.post('/auth/login', { email, password })
-      await refreshSession()
+      const user = await refreshSession()
+      if (!user) {
+        setStatus({ type: 'error', message: 'Login succeeded but session could not be established. Please try again.' })
+        return
+      }
       navigate('/dashboard')
     } catch (err) {
       const raw = err.response?.data?.message

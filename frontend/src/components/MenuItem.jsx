@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { Box, Typography, styled } from '@mui/material'
 import { menuCardLayout } from '../theme/layoutTokens'
-import { formatLL } from '../utils/currency'
 
 const ItemCard = styled(Box, {
   shouldForwardProp: (prop) => prop !== 'isAvailable',
@@ -17,6 +16,7 @@ const ItemCard = styled(Box, {
   transition: 'all 0.3s cubic-bezier(0.23, 1, 0.32, 1)',
   boxShadow: theme.brand.shadowSm,
   height: `${menuCardLayout.cardHeight.desktop}px`,
+  containerType: 'inline-size',
   position: 'relative',
   border: `1px solid ${theme.brand.border}`,
   opacity: isAvailable ? 1 : 0.7,
@@ -75,13 +75,13 @@ const ItemCta = styled('button')(({ theme }) => ({
 const ItemImageContainer = styled(Box)(({ theme }) => ({
   position: 'relative',
   width: '100%',
-  height: `${menuCardLayout.imageHeight.desktop}px`,
+  height: `${menuCardLayout.imageHeight.desktop - 4}px`,
   overflow: 'hidden',
   backgroundColor: '#ffffff',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  [theme.breakpoints.down('md')]: { height: `${menuCardLayout.imageHeight.mobile}px` },
+  [theme.breakpoints.down('md')]: { height: `${menuCardLayout.imageHeight.mobile - 4}px` },
 }))
 
 const ItemImage = styled('img')(() => ({
@@ -109,13 +109,15 @@ const ImgPlaceholder = styled(Box)(() => ({
 const ItemContent = styled(Box)(({ theme }) => ({
   display: 'flex',
   flexDirection: 'column',
-  padding: `${menuCardLayout.contentPadding.desktop}px`,
+  padding: `${menuCardLayout.contentPadding.desktop - 1}px ${menuCardLayout.contentPadding.desktop}px`,
   flex: 1,
   minHeight: 0,
   overflow: 'hidden',
-  gap: '4px',
+  gap: '3px',
   background: theme.brand.bgLight,
-  [theme.breakpoints.down('md')]: { padding: `${menuCardLayout.contentPadding.mobile}px` },
+  [theme.breakpoints.down('md')]: {
+    padding: `${menuCardLayout.contentPadding.mobile - 1}px ${menuCardLayout.contentPadding.mobile}px`,
+  },
 }))
 
 
@@ -145,24 +147,30 @@ const ItemDescription = styled(Typography)(({ theme }) => ({
   [theme.breakpoints.down('md')]: {
     // Allow up to 2 lines when space permits; title takes priority so this
     // naturally collapses when the name wraps to multiple lines.
-    WebkitLineClamp: 2,
+    WebkitLineClamp: 3,
+    fontSize: '11px',
+    lineHeight: 1.25,
     minHeight: 0,
+    marginBottom: '2px',
   },
 }))
 
-const ItemBottom = styled(Box)(() => ({
+const ItemBottom = styled(Box)(({ theme }) => ({
   marginTop: 'auto',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
   gap: '8px',
   flexShrink: 0,
+  [theme.breakpoints.down('md')]: {
+    marginTop: 'auto',
+  },
 }));
 
 const StatusPill = styled(Box, {
   shouldForwardProp: (prop) => prop !== 'isAvailable',
 })(({ theme, isAvailable }) => ({
-  padding: '5px 10px',
+  padding: '4px 10px',
   borderRadius: '999px',
   fontWeight: 600,
   fontSize: '11px',
@@ -176,11 +184,32 @@ const StatusPill = styled(Box, {
 
 const ItemPrice = styled(Typography)(({ theme }) => ({
   fontFamily: theme.brand.fontBase,
-  fontSize: '17px',
+  fontSize: 'clamp(12px, 7.2cqw, 17px)',
   fontWeight: 700,
-
+  lineHeight: 1.15,
+  whiteSpace: 'nowrap',
+  fontVariantNumeric: 'tabular-nums',
   color: theme.brand.textPrimary,
-  [theme.breakpoints.down('md')]: { fontSize: '14px' },
+  display: 'inline-flex',
+  alignItems: 'baseline',
+  gap: '3px',
+  minWidth: 'fit-content',
+  '@supports not (font-size: 1cqw)': {
+    fontSize: 'clamp(12px, 4.8vw, 17px)',
+  },
+  [theme.breakpoints.down('md')]: {
+    fontSize: 'clamp(11px, 7cqw, 14px)',
+    '@supports not (font-size: 1cqw)': {
+      fontSize: 'clamp(11px, 3.8vw, 14px)',
+    },
+  },
+}))
+
+const CurrencyPrefix = styled('span')(() => ({
+  color: '#71767e',
+  fontSize: '0.75em',
+  fontWeight: 700,
+  letterSpacing: 0,
 }))
 
 
@@ -188,6 +217,7 @@ export default function MenuItem({ item }) {
   const navigate = useNavigate()
   const [imageError, setImageError] = useState(false)
   const showPlaceholder = !item.hasImage || imageError
+  const displayPrice = Number(item.basePrice || 0).toLocaleString()
 
   const handleAction = (e) => {
     if (e) e.stopPropagation()
@@ -238,7 +268,10 @@ export default function MenuItem({ item }) {
           <StatusPill isAvailable={item.isAvailable}>
             {item.isAvailable ? 'Available' : 'Out of stock'}
           </StatusPill>
-          <ItemPrice>{formatLL(item.basePrice)}</ItemPrice>
+          <ItemPrice>
+            <CurrencyPrefix>L.L</CurrencyPrefix>
+            {displayPrice}
+          </ItemPrice>
         </ItemBottom>
       </ItemContent>
     </ItemCard>

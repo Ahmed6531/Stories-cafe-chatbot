@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import axios from 'axios'
+import chatbotHttp from '../../API/chatbotHttp'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
 import Portal from '@mui/material/Portal'
@@ -9,7 +9,6 @@ import { normalizeTranscriptForRouting, normalizeTranscriptForUi } from '../../u
 import { CHAT_STORAGE_KEY, CHAT_STORAGE_TS_KEY, getOrCreateChatSessionId, resetChatClientState } from '../../utils/chatSession'
 import { useCart } from '../../state/useCart'
 
-const CHATBOT_URL = import.meta.env.VITE_CHATBOT_URL || 'http://localhost:8000'
 const CHAT_TTL_MS = 24 * 60 * 60 * 1000
 const PARTIAL_TRANSCRIPT_DEBOUNCE_MS = 120
 const CHAT_PANEL_WIDTH = 420
@@ -1236,12 +1235,11 @@ export default function ChatWidget({
       const controller = new AbortController()
       pendingRequestAbortRef.current = controller
       const cartId = localStorage.getItem('cartId') || null
-      const response = await axios.post(`${CHATBOT_URL}/chat/message`, {
+      const response = await chatbotHttp.post('/chat/message', {
         session_id: getOrCreateChatSessionId(),
         message: routedText,
         cart_id: cartId,
       }, {
-        withCredentials: true,
         signal: controller.signal,
       })
       if (pendingRequestAbortRef.current === controller) {
